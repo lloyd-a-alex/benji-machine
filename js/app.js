@@ -647,6 +647,11 @@ class KnitApp {
         this.editor?.rotateSelection('ccw');
       } else if (e.key === ']') {
         this.editor?.rotateSelection('cw');
+      } else if (e.altKey && e.key.indexOf('Arrow') === 0 && this.editor?.shift) {
+        // Alt+Arrow wraps the whole card (toroidal) — perfect for checking that
+        // a repeat tiles seamlessly across the seam.
+        const d = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
+        if (d) { e.preventDefault(); this.editor.shift(d[0], d[1]); this.recompile(); }
       } else if (e.key === 'Escape') {
         this._closeTopModal();
       }
