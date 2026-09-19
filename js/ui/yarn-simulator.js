@@ -23,6 +23,7 @@ export class YarnSimulator {
     this.yarnColorContrast = options.yarnColorContrast || '#38bdf8'; // Electric blue / rose
     this.yarnThickness = 4.2; // pixels
     this.yarnTension = 1.0;
+    this.viewMode = 'shaded'; // wireframe, shaded, stress
 
     // Viewport
     this.panX = 0;

@@ -29,7 +29,40 @@ export class BrotherSimCanvas {
 
   setCardPattern(cardRow24) {
     this.mechanism.setPunchcardRow(cardRow24);
+    this.currentPattern = cardRow24;
     this.render();
+  }
+
+  play() {
+    this.autoSweep = true;
+    this.animating = true;
+  }
+
+  pause() {
+    this.autoSweep = false;
+  }
+
+  reset() {
+    this.mechanism.setCarriagePosition(0);
+    this.mechanism.carriageDirection = 1;
+    this.autoSweep = true;
+    this.render();
+  }
+
+  setCarriageType(type) {
+    this.carriageType = type;
+    // Update mechanism based on carriage type
+    if (type === 'lace') {
+      this.sweepSpeed = 0.4;
+    } else if (type === 'knit') {
+      this.sweepSpeed = 0.6;
+    } else if (type === 'garter') {
+      this.sweepSpeed = 0.3;
+    }
+  }
+
+  setSimSpeed(speed) {
+    this.sweepSpeed = speed;
   }
 
   setupEvents() {

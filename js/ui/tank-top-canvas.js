@@ -30,6 +30,10 @@ export class TankTopCanvas {
     this.render();
   }
 
+  getCurrentParams() {
+    return this.engine.params;
+  }
+
   setGauge(newGauge) {
     this.engine.setGauge(newGauge);
     this.render();

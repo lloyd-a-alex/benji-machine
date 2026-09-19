@@ -443,9 +443,255 @@ canvas {
 /* Schedule Tab View */
 #panel-schedule {
   flex-direction: column;
-  padding: 20px 30px;
-  overflow-y: auto;
+  overflow: hidden;
   background-color: #080c14;
+}
+
+.schedule-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toolbar-btn:hover {
+  background-color: #2e3e5c;
+  border-color: var(--accent-cyan);
+  color: var(--text-primary);
+}
+
+.toolbar-btn.active {
+  background-color: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  color: #04101e;
+}
+
+.toolbar-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background-color: var(--border-subtle);
+  margin: 0 4px;
+}
+
+.schedule-content-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 30px;
+}
+
+.schedule-stats-panel {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  margin-top: 16px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  font-family: var(--font-mono);
+}
+
+/* Schedule View Variants */
+.schedule-list.view-compact .schedule-item {
+  padding: 8px 12px;
+}
+
+.schedule-list.view-compact .stroke-notes {
+  display: none;
+}
+
+.schedule-list.view-compact .stroke-transfers {
+  display: none;
+}
+
+.schedule-list.view-timeline {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+}
+
+.schedule-list.view-timeline .schedule-item {
+  min-width: 200px;
+  flex-shrink: 0;
+  border-left-width: 6px;
+}
+
+/* Yarn Simulation Toolbar */
+.yarn-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+#panel-yarn .canvas-wrapper {
+  position: relative;
+}
+
+/* Punchcard Toolbar */
+.punchcard-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+#panel-punchcard .canvas-wrapper {
+  position: relative;
+}
+
+/* CNC Toolbar */
+.cnc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.cnc-toolbar .cnc-speed-slider {
+  width: 80px;
+  accent-color: var(--accent-cyan);
+  cursor: pointer;
+}
+
+.cnc-toolbar .cnc-speed-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  min-width: 28px;
+  text-align: right;
+}
+
+#panel-cnc .canvas-wrapper {
+  position: relative;
+}
+
+/* Tank Top Toolbar */
+.tanktop-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+#panel-tanktop {
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#panel-tanktop .tanktop-sidebar {
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+#panel-tanktop .tanktop-viewport {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Brother Kinematics Toolbar */
+.brother-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.brother-toolbar .cnc-speed-slider {
+  width: 80px;
+  accent-color: var(--accent-cyan);
+  cursor: pointer;
+}
+
+.brother-toolbar .cnc-speed-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  min-width: 28px;
+  text-align: right;
+}
+
+#panel-brother .canvas-wrapper {
+  position: relative;
 }
 
 .schedule-header-card {
@@ -671,6 +917,127 @@ canvas {
 .quick-exports .btn-action {
   justify-content: center;
   text-align: center;
+}
+
+/* Ensure all toolbars have consistent spacing and appearance */
+.schedule-toolbar,
+.yarn-toolbar,
+.punchcard-toolbar,
+.cnc-toolbar,
+.tanktop-toolbar,
+.brother-toolbar {
+  background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-surface-elevated) 100%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Consistent toolbar button styling across all sections */
+.schedule-toolbar .toolbar-btn,
+.yarn-toolbar .toolbar-btn,
+.punchcard-toolbar .toolbar-btn,
+.cnc-toolbar .toolbar-btn,
+.tanktop-toolbar .toolbar-btn,
+.brother-toolbar .toolbar-btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.schedule-toolbar .toolbar-btn:hover,
+.yarn-toolbar .toolbar-btn:hover,
+.punchcard-toolbar .toolbar-btn:hover,
+.cnc-toolbar .toolbar-btn:hover,
+.tanktop-toolbar .toolbar-btn:hover,
+.brother-toolbar .toolbar-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+}
+
+.schedule-toolbar .toolbar-btn:active,
+.yarn-toolbar .toolbar-btn:active,
+.punchcard-toolbar .toolbar-btn:active,
+.cnc-toolbar .toolbar-btn:active,
+.tanktop-toolbar .toolbar-btn:active,
+.brother-toolbar .toolbar-btn:active {
+  transform: translateY(0);
+}
+
+/* Consistent slider styling */
+.cnc-speed-slider,
+#brother-speed {
+  background: var(--bg-surface-elevated);
+  border-radius: 4px;
+  height: 4px;
+}
+
+.cnc-speed-slider::-webkit-slider-thumb,
+#brother-speed::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--accent-cyan);
+  border-radius: 50%;
+  cursor: pointer;
+  margin-top: -4px;
+}
+
+.cnc-speed-slider::-webkit-slider-runnable-track,
+#brother-speed::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--bg-surface-elevated);
+  border-radius: 2px;
+}
+
+/* Ensure all modals have consistent styling */
+.modal-card {
+  background: linear-gradient(145deg, var(--bg-surface) 0%, var(--bg-surface-elevated) 100%);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+/* Ensure all panels have consistent spacing */
+.sidebar-panel {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 16px;
+}
+
+/* Ensure all canvas wrappers have consistent behavior */
+.canvas-wrapper {
+  position: relative;
+  overflow: hidden;
+  background: #080c14;
+}
+
+/* Consistent panel title styling */
+.sidebar-title,
+.tanktop-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--accent-cyan);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Consistent button styling across the app */
+.btn-action,
+.toolbar-btn {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+/* Ensure romance theme consistency */
+body.theme-romance .toolbar-btn:hover,
+body.theme-romance .btn-action:hover {
+  border-color: var(--accent-rose);
+  box-shadow: 0 4px 12px rgba(244, 63, 94, 0.3);
+}
+
+body.theme-romance .toolbar-btn.active,
+body.theme-romance .btn-action.btn-primary {
+  background: linear-gradient(135deg, #be185d, #9d174d);
+  border-color: var(--accent-rose);
 }
 
 /* --- Bottom Status Bar --- */
@@ -1009,12 +1376,43 @@ body.theme-romance .brand-title::after {
   opacity: 0.7;
   user-select: none;
   pointer-events: none;
+  will-change: transform, opacity;
+  transform: translateZ(0); /* GPU acceleration */
 }
 
 @keyframes heartFall {
   0%   { transform: translateY(0) rotate(0deg) scale(1);   opacity: 0.8; }
   50%  { opacity: 0.9; transform: translateY(45vh) rotate(15deg) scale(1.1); }
   100% { transform: translateY(110vh) rotate(-10deg) scale(0.8); opacity: 0; }
+}
+
+/* Optimized romantic sparkles */
+.love-sparkles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.sparkle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: radial-gradient(circle, #fbbf24 0%, transparent 70%);
+  border-radius: 50%;
+  animation: sparkleFloat 3s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes sparkleFloat {
+  0%, 100% { 
+    transform: translate(0, 0) scale(1); 
+    opacity: 0; 
+  }
+  50% { 
+    transform: translate(var(--sparkle-x, 20px), var(--sparkle-y, -30px)) scale(1.5); 
+    opacity: 1; 
+  }
 }
 
 .love-popup-inner {

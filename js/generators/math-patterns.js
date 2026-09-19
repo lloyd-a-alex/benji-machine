@@ -379,4 +379,254 @@ export class MathPatternGenerators {
     }
     return stitchMatrix;
   }
-}
+
+  /**
+   * Perlin-like Noise Generator with Octave Layering
+   * Creates organic, flowing patterns with multiple frequency layers
+   */
+  static generatePerlinNoise(rows, cols, octaves = 4, persistence = 0.5, scale = 0.1) {
+    const matrix = [];
+    const values = [];
+    
+    // Simple value noise function
+    const noise = (x, y) => {
+      const i = Math.floor(x);
+      const j = Math.floor(y);
+      const f = x - i;
+      const g = y - j;
+      
+      // Hash function for deterministic random values
+      const hash = (n) => {
+        n = (n << 13) ^ n;
+        return ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 2147483648.0;
+      };
+      
+      const a = hash(i + j * 57);
+      const b = hash(i + 1 + j * 57);
+      const c = hash(i + (j + 1) * 57);
+      const d = hash(i + 1 + (j + 1) * 57);
+      
+      const u = f * f * (3.0 - 2.0 * f);
+      const v = g * g * (3.0 - 2.0 * g);
+      
+      return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+    };
+    
+    let maxVal = -Infinity;
+    let minVal = Infinity;
+    
+    for (let r = 0; r < rows; r++) {
+      values[r] = [];
+      for (let c = 0; c < cols; c++) {
+        let amplitude = 1.0;
+        let frequency = scale;
+        let noiseValue = 0.0;
+        let maxValue = 0.0;
+        
+        for (let o = 0; o < octaves; o++) {
+          noiseValue += noise(c * frequency, r * frequency) * amplitude;
+          maxValue += amplitude;
+          amplitude *= persistence;
+          frequency *= 2.0;
+        }
+        
+        noiseValue /= maxValue;
+        values[r][c] = noiseValue;
+        
+        if (noiseValue > maxVal) maxVal = noiseValue;
+        if (noiseValue < minVal) minVal = noiseValue;
+      }
+    }
+    
+    const threshold = minVal + (maxVal - minVal) * 0.5;
+    for (let r = 0; r < rows; r++) {
+      matrix[r] = [];
+      for (let c = 0; c < cols; c++) {
+        matrix[r][c] = values[r][c] > threshold ? 1 : 0;
+      }
+    }
+    
+    return matrix;
+  }
+
+  /**
+   * L-System (Lindenmayer System) Generator
+   * Creates branching, plant-like patterns using rewrite rules
+   */
+  static generateLSystem(rows, cols, axiom = 'F', rules = { 'F': 'FF+[+F-F-F]-[-F+F+F]' }, iterations = 4, angle = 25) {
+    let current = axiom;
+    
+    for (let i = 0; i < iterations; i++) {
+      let next = '';
+      for (const char of current) {
+        next += rules[char] || char;
+      }
+      current = next;
+    }
+    
+    // Turtle graphics interpretation
+    const matrix = [];
+    for (let r = 0; r < rows; r++) {
+      matrix[r] = new Array(cols).fill(0);
+    }
+    
+    let x = Math.floor(cols / 2);
+    let y = rows - 1;
+    let angleRad = -Math.PI / 2; // Pointing up
+    const angleStep = (angle * Math.PI) / 180;
+    const stepSize = 1;
+    
+    const stack = [];
+    
+    for (const char of current) {
+      switch (char) {
+        case 'F':
+          const newX = Math.round(x + Math.cos(angleRad) * stepSize);
+          const newY = Math.round(y + Math.sin(angleRad) * stepSize);
+          
+          if (newX >= 0 && newX < cols && newY >= 0 && newY < rows) {
+            matrix[newY][newX] = 1;
+            // Draw line
+            const steps = Math.max(Math.abs(newX - x), Math.abs(newY - y));
+            for (let s = 0; s <= steps; s++) {
+              const t = s / steps;
+              const lx = Math.round(x + (newX - x) * t);
+              const ly = Math.round(y + (newY - y) * t);
+              if (lx >= 0 && lx < cols && ly >= 0 && ly < rows) {
+                matrix[ly][lx] = 1;
+              }
+            }
+          }
+          x = newX;
+          y = newY;
+          break;
+        case '+':
+          angleRad += angleStep;
+          break;
+        case '-':
+          angleRad -= angleStep;
+          break;
+        case '[':
+          stack.push({ x, y, angleRad });
+          break;
+        case ']':
+          const state = stack.pop();
+          if (state) {
+            x = state.x;
+            y = state.y;
+            angleRad = state.angleRad;
+          }
+          break;
+      }
+    }
+    
+    return matrix;
+  }
+
+  /**
+   * Penrose Tiling Approximation
+   * Creates quasi-periodic patterns with fivefold symmetry
+   */
+  static generatePenroseTiling(rows, cols, scale = 8) {
+    const matrix = [];
+    for (let r = 0; r < rows; r++) {
+      matrix[r] = new Array(cols).fill(0);
+    }
+    
+    const goldenRatio = (1 + Math.sqrt(5)) / 2;
+    const angles = [0, 2 * Math.PI / 5, 4 * Math.PI / 5, 6 * Math.PI / 5, 8 * Math.PI / 5];
+    
+    const centerX = cols / 2;
+    const centerY = rows / 2;
+    
+    // Generate rhombus tiles
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const dx = c - centerX;
+        const dy = r - centerY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        // Create pentagonal symmetry
+        let maxProj = -Infinity;
+        for (const angle of angles) {
+          const proj = dx * Math.cos(angle) + dy * Math.sin(angle);
+          if (proj > maxProj) maxProj = proj;
+        }
+        
+        // Quasi-periodic modulation
+        const modulation = Math.sin(dist / scale * goldenRatio) * Math.cos(maxProj / scale);
+        matrix[r][c] = modulation > 0.3 ? 1 : 0;
+      }
+    }
+    
+    return matrix;
+  }
+
+  /**
+   * Spiral Phyllotaxis Pattern
+   * Based on golden angle patterns found in nature (sunflowers, pinecones)
+   */
+  static generatePhyllotaxis(rows, cols, points = 100, spread = 0.5) {
+    const matrix = [];
+    for (let r = 0; r < rows; r++) {
+      matrix[r] = new Array(cols).fill(0);
+    }
+    
+    const goldenAngle = 2.39996; // 137.5 degrees in radians
+    const centerX = cols / 2;
+    const centerY = rows / 2;
+    
+    for (let i = 0; i < points; i++) {
+      const angle = i * goldenAngle;
+      const radius = spread * Math.sqrt(i);
+      
+      const x = Math.round(centerX + radius * Math.cos(angle));
+      const y = Math.round(centerY + radius * Math.sin(angle));
+      
+      if (x >= 0 && x < cols && y >= 0 && y < rows) {
+        // Draw small circle around each point
+        const circleRadius = 2;
+        for (let dy = -circleRadius; dy <= circleRadius; dy++) {
+          for (let dx = -circleRadius; dx <= circleRadius; dx++) {
+            if (dx * dx + dy * dy <= circleRadius * circleRadius) {
+              const nx = x + dx;
+              const ny = y + dy;
+              if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+                matrix[ny][nx] = 1;
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    return matrix;
+  }
+
+  /**
+   * Moiré Interference Pattern
+   * Creates optical interference patterns from overlapping grids
+   */
+  static generateMoiréPattern(rows, cols, angle1 = 0, angle2 = 0.1, frequency = 0.2) {
+    const matrix = [];
+    
+    for (let r = 0; r < rows; r++) {
+      matrix[r] = [];
+      for (let c = 0; c < cols; c++) {
+        // First pattern
+        const x1 = c * Math.cos(angle1) - r * Math.sin(angle1);
+        const y1 = c * Math.sin(angle1) + r * Math.cos(angle1);
+        const pattern1 = Math.sin(x1 * frequency) > 0 ? 1 : 0;
+        
+        // Second pattern
+        const x2 = c * Math.cos(angle2) - r * Math.sin(angle2);
+        const y2 = c * Math.sin(angle2) + r * Math.cos(angle2);
+        const pattern2 = Math.sin(y2 * frequency) > 0 ? 1 : 0;
+        
+        // Interference
+        matrix[r][c] = (pattern1 !== pattern2) ? 1 : 0;
+      }
+    }
+    
+    return matrix;
+  }

@@ -245,6 +245,11 @@ export class KnitTopologyNetwork {
     this.matrix = []; // 2D [row][col] mapping to LoopNode
     this.totalStrainEnergy = 0;
     this.gaussianCurvatures = [];
+    this.gravityEnabled = false;
+    this.gravity = new Vec3(0, -9.8, 0);
+    this.windForce = new Vec3(0, 0, 0);
+    this.collisionEnabled = true;
+    this.subSteps = 4;
 
     // Automatically initialize default plain knit matrix so the network is never in an invalid state
     this.initDefaultMatrix();
@@ -400,27 +405,121 @@ export class KnitTopologyNetwork {
   /**
    * Numerical Relaxation Step
    * Performs Verlet integration & Jacobi constraint projection iterations.
+   * Enhanced with gravity, wind forces, and sub-stepping for stability.
    */
   stepPhysics(iterations = 8, dt = 0.016, damping = 0.92) {
-    // 1. Verlet position update
-    for (let i = 0; i < this.nodes.length; i++) {
-      this.nodes[i].verletStep(dt, damping);
+    const subDt = dt / this.subSteps;
+    
+    // Sub-stepping for stability
+    for (let sub = 0; sub < this.subSteps; sub++) {
+      // 1. Apply external forces (gravity, wind)
+      for (let i = 0; i < this.nodes.length; i++) {
+        const node = this.nodes[i];
+        
+        if (this.gravityEnabled) {
+          node.applyForce(this.gravity.clone().scale(node.mass));
+        }
+        
+        if (this.windForce.lengthSq() > 0) {
+          // Add some turbulence based on position
+          const turbulence = Math.sin(node.pos.x * 0.1 + Date.now() * 0.001) * 0.5;
+          node.applyForce(this.windForce.clone().scale(1 + turbulence));
+        }
+      }
+      
+      // 2. Verlet position update
+      for (let i = 0; i < this.nodes.length; i++) {
+        this.nodes[i].verletStep(subDt, damping);
+      }
+      
+      // 3. Solve distance constraints iteratively
+      for (let iter = 0; iter < iterations; iter++) {
+        for (let c = 0; c < this.constraints.length; c++) {
+          this.constraints[c].resolve();
+        }
+      }
+      
+      // 4. Collision detection and response
+      if (this.collisionEnabled) {
+        this.resolveCollisions();
+      }
     }
 
-    // 2. Solve distance constraints iteratively
+    // Calculate total strain energy for analysis
     this.totalStrainEnergy = 0;
-    for (let iter = 0; iter < iterations; iter++) {
-      for (let c = 0; c < this.constraints.length; c++) {
-        const cons = this.constraints[c];
-        cons.resolve();
+    for (let c = 0; c < this.constraints.length; c++) {
+      const cons = this.constraints[c];
+      const d = cons.nodeA.pos.distanceTo(cons.nodeB.pos);
+      const strain = Math.abs(d - cons.restLength) / cons.restLength;
+      this.totalStrainEnergy += 0.5 * cons.stiffness * strain * strain;
+    }
+  }
 
-        if (iter === iterations - 1) {
-          const d = cons.nodeA.pos.distanceTo(cons.nodeB.pos);
-          const strain = Math.abs(d - cons.restLength) / cons.restLength;
-          this.totalStrainEnergy += 0.5 * cons.stiffness * strain * strain;
+  /**
+   * Simple collision detection and response
+   */
+  resolveCollisions() {
+    const minDistance = this.spacingX * 0.3;
+    
+    for (let i = 0; i < this.nodes.length; i++) {
+      for (let j = i + 1; j < this.nodes.length; j++) {
+        const nodeA = this.nodes[i];
+        const nodeB = this.nodes[j];
+        
+        // Skip if nodes are connected by constraints
+        const isConnected = this.constraints.some(c => 
+          (c.nodeA === nodeA && c.nodeB === nodeB) || 
+          (c.nodeA === nodeB && c.nodeB === nodeA)
+        );
+        
+        if (isConnected) continue;
+        
+        const dist = nodeA.pos.distanceTo(nodeB.pos);
+        if (dist < minDistance && dist > 1e-6) {
+          const pushFactor = (minDistance - dist) / dist * 0.5;
+          const pushX = (nodeA.pos.x - nodeB.pos.x) * pushFactor;
+          const pushY = (nodeA.pos.y - nodeB.pos.y) * pushFactor;
+          const pushZ = (nodeA.pos.z - nodeB.pos.z) * pushFactor;
+          
+          if (!nodeA.isFixed) {
+            nodeA.pos.x += pushX;
+            nodeA.pos.y += pushY;
+            nodeA.pos.z += pushZ;
+          }
+          if (!nodeB.isFixed) {
+            nodeB.pos.x -= pushX;
+            nodeB.pos.y -= pushY;
+            nodeB.pos.z -= pushZ;
+          }
         }
       }
     }
+  }
+
+  /**
+   * Set wind force for fabric simulation
+   */
+  setWindForce(x, y, z) {
+    this.windForce.set(x, y, z);
+  }
+
+  /**
+   * Calculate fabric strain at specific node
+   */
+  calculateNodeStrain(node) {
+    let totalStrain = 0;
+    let constraintCount = 0;
+    
+    for (const cons of this.constraints) {
+      if (cons.nodeA === node || cons.nodeB === node) {
+        const d = cons.nodeA.pos.distanceTo(cons.nodeB.pos);
+        const strain = Math.abs(d - cons.restLength) / cons.restLength;
+        totalStrain += strain;
+        constraintCount++;
+      }
+    }
+    
+    return constraintCount > 0 ? totalStrain / constraintCount : 0;
   }
 
   /**

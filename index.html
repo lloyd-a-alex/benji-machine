@@ -25,7 +25,7 @@
         <h2 class="love-popup-title">I LOVE YOU BENJI!!!!!</h2>
         <p class="love-popup-subtitle">You are the best boyfriend ever!!!&nbsp;💖</p>
         <p class="love-popup-msg">4 my cute boy<br></p>
-        <button class="love-popup-close" id="love-popup-close">i love u sm ♥ click here</button>
+        <button class="love-popup-close" id="love-popup-close">i love u sm to da moon & back!!! ♥ click here</button>
       </div>
     </div>
   </div>
@@ -310,19 +310,211 @@
 
           <!-- Tab 2: Carriage Pass Schedule -->
           <div class="tab-panel" id="panel-schedule">
-            <div class="schedule-header-card">
-              <div class="schedule-title">Industrial Carriage Action Sequence Decompiler</div>
-              <div class="schedule-desc">
-                Converts your high-level lace pattern into physical carriage passes.
-                Brother and Silver Reed machines require separate directional passes because transfer cams can only
-                transfer stitches in the direction of carriage travel.
+            <div class="schedule-toolbar">
+              <div class="toolbar-group">
+                <span class="toolbar-label">Schedule Actions</span>
+                <button class="toolbar-btn" id="btn-schedule-verify" title="Verify physical feasibility">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                  Verify
+                </button>
+                <button class="toolbar-btn" id="btn-schedule-optimize" title="Optimize carriage passes">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                    <polyline points="2 17 12 22 22 17" />
+                    <polyline points="2 12 12 17 22 12" />
+                  </svg>
+                  Optimize
+                </button>
+                <button class="toolbar-btn" id="btn-schedule-export" title="Export schedule to CSV">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" x2="12" y1="15" y2="3" />
+                  </svg>
+                  Export
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">View Options</span>
+                <button class="toolbar-btn active" id="btn-view-detailed" title="Detailed view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="8" y1="6" x2="21" y2="6" />
+                    <line x1="8" y1="12" x2="21" y2="12" />
+                    <line x1="8" y1="18" x2="21" y2="18" />
+                    <line x1="3" y1="6" x2="3.01" y2="6" />
+                    <line x1="3" y1="12" x2="3.01" y2="12" />
+                    <line x1="3" y1="18" x2="3.01" y2="18" />
+                  </svg>
+                  Detailed
+                </button>
+                <button class="toolbar-btn" id="btn-view-compact" title="Compact view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect width="18" height="18" x="3" y="3" rx="2" />
+                  </svg>
+                  Compact
+                </button>
+                <button class="toolbar-btn" id="btn-view-timeline" title="Timeline view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                  Timeline
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Analysis</span>
+                <button class="toolbar-btn" id="btn-schedule-stats" title="Show statistics">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="20" x2="18" y2="10" />
+                    <line x1="12" y1="20" x2="12" y2="4" />
+                    <line x1="6" y1="20" x2="6" y2="14" />
+                  </svg>
+                  Stats
+                </button>
+                <button class="toolbar-btn" id="btn-schedule-collisions" title="Detect collisions">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="m3 3 18 18M3 21 21 3" />
+                  </svg>
+                  Collisions
+                </button>
               </div>
             </div>
-            <div class="schedule-list" id="schedule-list"></div>
+            <div class="schedule-content-wrapper">
+              <div class="schedule-header-card">
+                <div class="schedule-title">Industrial Carriage Action Sequence Decompiler</div>
+                <div class="schedule-desc">
+                  Converts your high-level lace pattern into physical carriage passes.
+                  Brother and Silver Reed machines require separate directional passes because transfer cams can only
+                  transfer stitches in the direction of carriage travel.
+                </div>
+              </div>
+              <div class="schedule-list" id="schedule-list"></div>
+              <div class="schedule-stats-panel" id="schedule-stats-panel" style="display: none;">
+                <div class="stats-grid">
+                  <div class="stat-item">
+                    <div class="stat-label">Total Passes</div>
+                    <div class="stat-value" id="stat-total-passes">0</div>
+                  </div>
+                  <div class="stat-item">
+                    <div class="stat-label">Lace Passes</div>
+                    <div class="stat-value" id="stat-lace-passes">0</div>
+                  </div>
+                  <div class="stat-item">
+                    <div class="stat-label">Knit Passes</div>
+                    <div class="stat-value" id="stat-knit-passes">0</div>
+                  </div>
+                  <div class="stat-item">
+                    <div class="stat-label">Transfers</div>
+                    <div class="stat-value" id="stat-transfers">0</div>
+                  </div>
+                  <div class="stat-item">
+                    <div class="stat-label">Est. Time</div>
+                    <div class="stat-value" id="stat-est-time">0s</div>
+                  </div>
+                  <div class="stat-item">
+                    <div class="stat-label">Efficiency</div>
+                    <div class="stat-value" id="stat-efficiency">0%</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Tab 3: 3D Physical Yarn Simulation -->
           <div class="tab-panel" id="panel-yarn">
+            <div class="yarn-toolbar">
+              <div class="toolbar-group">
+                <span class="toolbar-label">Physics</span>
+                <button class="toolbar-btn" id="btn-yarn-relax" title="Force relaxation">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                  Relax
+                </button>
+                <button class="toolbar-btn" id="btn-yarn-tension" title="Adjust tension">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
+                  Tension
+                </button>
+                <button class="toolbar-btn" id="btn-yarn-gravity" title="Toggle gravity">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 3v18" />
+                    <path d="m16 17-4 4-4-4" />
+                  </svg>
+                  Gravity
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Material</span>
+                <button class="toolbar-btn" id="btn-yarn-cotton" title="Cotton material">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                  </svg>
+                  Cotton
+                </button>
+                <button class="toolbar-btn" id="btn-yarn-wool" title="Wool material">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
+                  </svg>
+                  Wool
+                </button>
+                <button class="toolbar-btn" id="btn-yarn-silk" title="Silk material">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                  </svg>
+                  Silk
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">View</span>
+                <button class="toolbar-btn" id="btn-yarn-wireframe" title="Wireframe view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 3h18v18H3z" />
+                    <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+                  </svg>
+                  Wireframe
+                </button>
+                <button class="toolbar-btn" id="btn-yarn-shaded" title="Shaded view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 2a10 10 0 0 1 0 20" />
+                  </svg>
+                  Shaded
+                </button>
+                <button class="toolbar-btn" id="btn-yarn-stress" title="Stress visualization">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v20M2 12h20" />
+                  </svg>
+                  Stress
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Export</span>
+                <button class="toolbar-btn" id="btn-yarn-screenshot" title="Take screenshot">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                  Screenshot
+                </button>
+                <button class="toolbar-btn" id="btn-yarn-export-obj" title="Export 3D model">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                  </svg>
+                  3D Export
+                </button>
+              </div>
+            </div>
             <div class="canvas-wrapper">
               <canvas id="yarn-canvas"></canvas>
             </div>
@@ -330,6 +522,95 @@
 
           <!-- Tab 4: Punchcard Ribbon View -->
           <div class="tab-panel" id="panel-punchcard">
+            <div class="punchcard-toolbar">
+              <div class="toolbar-group">
+                <span class="toolbar-label">Card Actions</span>
+                <button class="toolbar-btn" id="btn-punch-verify" title="Verify punchcard pattern">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                  Verify
+                </button>
+                <button class="toolbar-btn" id="btn-punch-invert" title="Invert all holes">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 2a10 10 0 0 1 0 20" />
+                  </svg>
+                  Invert
+                </button>
+                <button class="toolbar-btn" id="btn-punch-clear" title="Clear all holes">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 6h18" />
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                  </svg>
+                  Clear
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">View Mode</span>
+                <button class="toolbar-btn active" id="btn-punch-standard" title="Standard view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect width="18" height="18" x="3" y="3" rx="2" />
+                  </svg>
+                  Standard
+                </button>
+                <button class="toolbar-btn" id="btn-punch-mirror" title="Mirror view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="m18 16 4-4-4-4" />
+                    <path d="m6 8-4 4 4 4" />
+                  </svg>
+                  Mirror
+                </button>
+                <button class="toolbar-btn" id="btn-punch-overlay" title="Overlay view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v20M2 12h20" />
+                  </svg>
+                  Overlay
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Export</span>
+                <button class="toolbar-btn" id="btn-punch-print" title="Print 1:1 scale">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 6 2 18 2 18 9" />
+                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                    <rect width="12" height="12" x="6" y="14" />
+                  </svg>
+                  Print
+                </button>
+                <button class="toolbar-btn" id="btn-punch-image" title="Export as image">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                    <circle cx="9" cy="9" r="2" />
+                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                  </svg>
+                  Image
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Analysis</span>
+                <button class="toolbar-btn" id="btn-punch-stats" title="Show statistics">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="20" x2="18" y2="10" />
+                    <line x1="12" y1="20" x2="12" y2="4" />
+                    <line x1="6" y1="20" x2="6" y2="14" />
+                  </svg>
+                  Stats
+                </button>
+                <button class="toolbar-btn" id="btn-punch-density" title="Density analysis">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <circle cx="12" cy="12" r="4" />
+                  </svg>
+                  Density
+                </button>
+              </div>
+            </div>
             <div class="canvas-wrapper" style="overflow-y: auto;">
               <canvas id="punchcard-canvas"></canvas>
             </div>
@@ -337,57 +618,129 @@
 
           <!-- Tab 5: CNC Toolpath Simulation -->
           <div class="tab-panel" id="panel-cnc">
-            <div class="cnc-controls-floating">
-              <button class="btn-action" id="btn-cnc-play" title="Play CNC simulation (Spacebar)">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5 3 19 12 5 21 5 3" />
-                </svg>
-                Play
-              </button>
-              <button class="btn-action" id="btn-cnc-pause" title="Pause simulation">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                  <rect width="4" height="16" x="6" y="4" />
-                  <rect width="4" height="16" x="14" y="4" />
-                </svg>
-                Pause
-              </button>
-              <button class="btn-action" id="btn-cnc-reset" title="Reset to beginning">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                </svg>
-                Reset
-              </button>
-              <div class="cnc-divider-v"></div>
-              <button class="btn-action" id="btn-cnc-zoom-in" title="Zoom In (scroll up / +)">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  <line x1="11" y1="8" x2="11" y2="14" />
-                  <line x1="8" y1="11" x2="14" y2="11" />
-                </svg>
-                Zoom +
-              </button>
-              <button class="btn-action" id="btn-cnc-zoom-out" title="Zoom Out (scroll down / -)">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  <line x1="8" y1="11" x2="14" y2="11" />
-                </svg>
-                Zoom −
-              </button>
-              <button class="btn-action" id="btn-cnc-fit" title="Fit entire card to viewport (F)">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path
-                    d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-                </svg>
-                Fit
-              </button>
-              <div class="cnc-divider-v"></div>
-              <label class="cnc-speed-label" for="cnc-sim-speed">Speed:</label>
-              <input type="range" id="cnc-sim-speed" class="cnc-speed-slider" min="0.5" max="20" step="0.5" value="4"
-                title="Simulation playback speed multiplier">
-              <span id="cnc-speed-val" class="cnc-speed-val">4×</span>
+            <div class="cnc-toolbar">
+              <div class="toolbar-group">
+                <span class="toolbar-label">Simulation</span>
+                <button class="toolbar-btn" id="btn-cnc-play" title="Play CNC simulation (Spacebar)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
+                  Play
+                </button>
+                <button class="toolbar-btn" id="btn-cnc-pause" title="Pause simulation">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <rect width="4" height="16" x="6" y="4" />
+                    <rect width="4" height="16" x="14" y="4" />
+                  </svg>
+                  Pause
+                </button>
+                <button class="toolbar-btn" id="btn-cnc-reset" title="Reset to beginning">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                  Reset
+                </button>
+                <button class="toolbar-btn" id="btn-cnc-step" title="Step forward">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 4 15 12 5 20 5 4" />
+                    <line x1="19" y1="5" x2="19" y2="19" />
+                  </svg>
+                  Step
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">View</span>
+                <button class="toolbar-btn" id="btn-cnc-zoom-in" title="Zoom In (scroll up / +)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    <line x1="11" y1="8" x2="11" y2="14" />
+                    <line x1="8" y1="11" x2="14" y2="11" />
+                  </svg>
+                  Zoom +
+                </button>
+                <button class="toolbar-btn" id="btn-cnc-zoom-out" title="Zoom Out (scroll down / -)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    <line x1="8" y1="11" x2="14" y2="11" />
+                  </svg>
+                  Zoom −
+                </button>
+                <button class="toolbar-btn" id="btn-cnc-fit" title="Fit entire card to viewport (F)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                  </svg>
+                  Fit
+                </button>
+                <button class="toolbar-btn" id="btn-cnc-pan" title="Pan mode">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M12 3v18" />
+                  </svg>
+                  Pan
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Speed</span>
+                <input type="range" id="cnc-sim-speed" class="cnc-speed-slider" min="0.5" max="20" step="0.5" value="4"
+                  title="Simulation playback speed multiplier">
+                <span id="cnc-speed-val" class="cnc-speed-val">4×</span>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Toolpath</span>
+                <button class="toolbar-btn" id="btn-cnc-optimize" title="Optimize toolpath">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                    <polyline points="2 17 12 22 22 17" />
+                    <polyline points="2 12 12 17 22 12" />
+                  </svg>
+                  Optimize
+                </button>
+                <button class="toolbar-btn" id="btn-cnc-reverse" title="Reverse direction">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="m16 3 4 4-4 4" />
+                    <path d="M20 7H4" />
+                    <path d="m8 21-4-4 4-4" />
+                    <path d="M4 17h16" />
+                  </svg>
+                  Reverse
+                </button>
+                <button class="toolbar-btn" id="btn-cnc-show-all" title="Show all toolpaths">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" />
+                    <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  Show All
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Export</span>
+                <button class="toolbar-btn" id="btn-cnc-export-gcode" title="Export G-Code">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  G-Code
+                </button>
+                <button class="toolbar-btn" id="btn-cnc-export-dxf" title="Export DXF">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                  </svg>
+                  DXF
+                </button>
+                <button class="toolbar-btn" id="btn-cnc-screenshot" title="Screenshot">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                  Screenshot
+                </button>
+              </div>
             </div>
             <div class="canvas-wrapper">
               <canvas id="toolpath-canvas"></canvas>
@@ -396,6 +749,96 @@
 
           <!-- Tab 6: Benji's Tank Top Tailor CAD -->
           <div class="tab-panel" id="panel-tanktop">
+            <div class="tanktop-toolbar">
+              <div class="toolbar-group">
+                <span class="toolbar-label">Pattern Actions</span>
+                <button class="toolbar-btn" id="btn-tank-auto-fit" title="Auto-fit to measurements">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v20M2 12h20" />
+                  </svg>
+                  Auto-Fit
+                </button>
+                <button class="toolbar-btn" id="btn-tank-symmetry" title="Toggle symmetry">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 3v18M5 12h14" />
+                  </svg>
+                  Symmetry
+                </button>
+                <button class="toolbar-btn" id="btn-tank-reset" title="Reset to default">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                  Reset
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Design Style</span>
+                <button class="toolbar-btn" id="btn-tank-classic" title="Classic tank top">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                  </svg>
+                  Classic
+                </button>
+                <button class="toolbar-btn" id="btn-tank-cropped" title="Cropped style">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect width="18" height="12" x="3" y="6" rx="2" />
+                  </svg>
+                  Cropped
+                </button>
+                <button class="toolbar-btn" id="btn-tank-oversized" title="Oversized fit">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect width="20" height="20" x="2" y="2" rx="2" />
+                  </svg>
+                  Oversized
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Measurements</span>
+                <button class="toolbar-btn" id="btn-tank-import-measurements" title="Import measurements">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" x2="12" y1="15" y2="3" />
+                  </svg>
+                  Import
+                </button>
+                <button class="toolbar-btn" id="btn-tank-export-measurements" title="Export measurements">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  Export
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Export Pattern</span>
+                <button class="toolbar-btn" id="btn-tank-svg" title="Export SVG pattern">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect width="18" height="18" x="3" y="3" rx="2" />
+                  </svg>
+                  SVG
+                </button>
+                <button class="toolbar-btn" id="btn-tank-dxf" title="Export DXF pattern">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                  </svg>
+                  DXF
+                </button>
+                <button class="toolbar-btn" id="btn-tank-print" title="Print pattern">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 6 2 18 2 18 9" />
+                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                    <rect width="12" height="12" x="6" y="14" />
+                  </svg>
+                  Print
+                </button>
+              </div>
+            </div>
             <div class="tanktop-sidebar">
               <div class="tanktop-section-title">Anatomic Body Parameters</div>
 
@@ -481,6 +924,85 @@
 
           <!-- Tab 7: Brother KH-830 Kinematics Mechanism -->
           <div class="tab-panel" id="panel-brother">
+            <div class="brother-toolbar">
+              <div class="toolbar-group">
+                <span class="toolbar-label">Simulation</span>
+                <button class="toolbar-btn" id="btn-brother-play" title="Play kinematic simulation">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
+                  Play
+                </button>
+                <button class="toolbar-btn" id="btn-brother-pause" title="Pause simulation">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <rect width="4" height="16" x="6" y="4" />
+                    <rect width="4" height="16" x="14" y="4" />
+                  </svg>
+                  Pause
+                </button>
+                <button class="toolbar-btn" id="btn-brother-reset" title="Reset simulation">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                  Reset
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Carriage</span>
+                <button class="toolbar-btn" id="btn-brother-lace" title="Lace carriage">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
+                  Lace
+                </button>
+                <button class="toolbar-btn" id="btn-brother-knit" title="Knit carriage">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect width="18" height="18" x="3" y="3" rx="2" />
+                  </svg>
+                  Knit
+                </button>
+                <button class="toolbar-btn" id="btn-brother-garter" title="Garter carriage">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                  </svg>
+                  Garter
+                </button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Speed</span>
+                <input type="range" id="brother-speed" class="cnc-speed-slider" min="0.5" max="5" step="0.5" value="2">
+                <span id="brother-speed-val" class="cnc-speed-val">2×</span>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <span class="toolbar-label">Analysis</span>
+                <button class="toolbar-btn" id="btn-brother-timing" title="Timing analysis">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                  Timing
+                </button>
+                <button class="toolbar-btn" id="btn-brother-stress" title="Stress analysis">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v20M2 12h20" />
+                  </svg>
+                  Stress
+                </button>
+                <button class="toolbar-btn" id="btn-brother-export" title="Export kinematics data">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" x2="12" y1="15" y2="3" />
+                  </svg>
+                  Export
+                </button>
+              </div>
+            </div>
             <div class="canvas-wrapper">
               <canvas id="brother-canvas"></canvas>
             </div>
@@ -582,6 +1104,11 @@
             <option value="celtic">Planar Ribbon Celtic Knotwork (Gauss Crossing Parity)</option>
             <option value="wolfram">Wolfram 1D Cellular Automata (Rule 110, 30, 90)</option>
             <option value="fractal">Complex Analytic Fractal Slicing (Julia / Mandelbrot)</option>
+            <option value="perlin">Perlin Noise with Octave Layering</option>
+            <option value="lsystem">L-System Branching Patterns</option>
+            <option value="penrose">Penrose Quasi-Periodic Tiling</option>
+            <option value="phyllotaxis">Golden Angle Phyllotaxis</option>
+            <option value="moire">Moiré Interference Patterns</option>
           </select>
         </div>
 
@@ -711,8 +1238,18 @@
             • <b>1:1 Scale Vector PDF / Printable Sheets</b>: Multi-page tiled printing for A4 / Letter with 50mm
             ruler.<br>
             • <b>CNC G-Code (.gcode / .nc)</b>: 2-Opt TSP optimized toolpaths with rapid travel minimization.<br>
-            • <b>DesignaKnit (.pat) & AYAB (.bin)</b>: Direct compatibility with modern electronic consoles.
+            • <b>DesignaKnit (.pat) & AYAB (.bin)</b>: Direct compatibility with modern electronic consoles.<br>
+            • <b>Brother KH-930 Disk Image</b>: Authentic floppy disk format for vintage machines.<br>
+            • <b>XML Pattern Exchange</b>: Standardized XML format for cross-platform compatibility.<br>
+            • <b>Documentation</b>: Complete pattern documentation with statistics.
           </div>
+        </div>
+        
+        <div class="quick-exports">
+          <button class="btn-action" id="btn-export-ayab">AYAB Format</button>
+          <button class="btn-action" id="btn-export-brother">Brother Disk</button>
+          <button class="btn-action" id="btn-export-xml">XML Exchange</button>
+          <button class="btn-action" id="btn-export-docs">Documentation</button>
         </div>
       </div>
       <div class="modal-footer">
