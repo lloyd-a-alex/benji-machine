@@ -103,9 +103,10 @@ export class BrotherSimCanvas {
 
   resize() {
     const parent = this.canvas.parentElement;
-    if (parent) {
-      this.canvas.width = parent.clientWidth || 800;
-      this.canvas.height = parent.clientHeight || 500;
+    // Skip while the tab is hidden — a 0×0 layout would bake in a stale buffer
+    if (parent && parent.clientWidth > 0 && parent.clientHeight > 0) {
+      this.canvas.width = parent.clientWidth;
+      this.canvas.height = parent.clientHeight;
       this.render();
     }
   }

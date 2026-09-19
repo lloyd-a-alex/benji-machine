@@ -87,4 +87,10 @@ using an initial greedy nearest-neighbor tour followed by 2-Opt local search edg
 
 ## 5. Getting Started
 
-Simply open `index.html` in any modern web browser (Google Chrome, Mozilla Firefox, Microsoft Edge, or Safari). No build tools, package managers, or server installations are required.
+This app uses native ES modules, which browsers block over `file://`. Serve the folder with any static web server:
+
+```bash
+node server.js 3000      # zero dependencies — or: npm start
+```
+
+Then open **http://localhost:3000** in any modern web browser (Chrome, Firefox, Edge, or Safari). No build tools or package installations are required.

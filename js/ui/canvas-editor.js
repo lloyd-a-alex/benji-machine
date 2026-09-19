@@ -52,6 +52,7 @@ export class CanvasEditor {
 
     // Selection
     this.selection = null; // { r1, c1, r2, c2 }
+    this.clipboard = null; // { rows, cols, cells[][] } captured for paste
 
     // Symmetry options
     this.symmetryH = false;
@@ -96,8 +97,64 @@ export class CanvasEditor {
   }
 
   setMode(newMode) {
+    const oldMode = this.mode;
+    if (newMode === oldMode) {
+      this.render();
+      return;
+    }
     this.mode = newMode;
+    // Convert the cell representation whenever we cross between Lace mode (which
+    // stores STITCH_TYPE strings such as 'K'/'O') and the direct-pattern modes
+    // (fair_isle / tuck / slip, which store numeric 0/1). Without this the punchcard
+    // compiler misreads every leftover 'K' as a punched hole, so a Fair Isle drawing
+    // appears as a fully-punched card that hides what you actually drew.
+    this.convertMatrixForMode(oldMode, newMode);
+    this._normalizeStrayStrings();
+    this.selection = null;
+    this.saveState();
     this.render();
+  }
+
+  static isDirectMode(mode) {
+    return mode === 'fair_isle' || mode === 'tuck' || mode === 'slip';
+  }
+
+  convertMatrixForMode(oldMode, newMode) {
+    this.matrix = CanvasEditor.convertMatrixBetweenModes(oldMode, newMode, this.matrix);
+  }
+
+  // Pure, DOM-free converter so the lace<->numeric logic is unit-testable in Node.
+  static convertMatrixBetweenModes(oldMode, newMode, matrix) {
+    const fromDirect = CanvasEditor.isDirectMode(oldMode);
+    const toDirect = CanvasEditor.isDirectMode(newMode);
+    if (fromDirect === toDirect) return matrix; // direct<->direct only needs cleanup below
+    const LACE_BLANK = [STITCH_TYPE.KNIT, STITCH_TYPE.EMPTY, STITCH_TYPE.PURL];
+    const out = [];
+    for (let r = 0; r < matrix.length; r++) {
+      const row = [];
+      for (let c = 0; c < matrix[r].length; c++) {
+        const v = matrix[r][c];
+        if (!fromDirect && toDirect) {
+          row.push((typeof v === 'number') ? (v ? 1 : 0) : (LACE_BLANK.includes(v) ? 0 : 1));
+        } else {
+          row.push((v === 1 || v === true) ? STITCH_TYPE.EYELET : STITCH_TYPE.KNIT);
+        }
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  _normalizeStrayStrings() {
+    const LACE_BLANK = [STITCH_TYPE.KNIT, STITCH_TYPE.EMPTY, STITCH_TYPE.PURL];
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const v = this.matrix[r][c];
+        if (CanvasEditor.isDirectMode(this.mode) && typeof v === 'string') {
+          this.matrix[r][c] = LACE_BLANK.includes(v) ? 0 : 1;
+        }
+      }
+    }
   }
 
   setMatrix(newMatrix) {
@@ -179,6 +236,7 @@ export class CanvasEditor {
         }
       }
     }
+    this.selection = null; // a flip is a one-time op: don't leave a stale marquee
     this.saveState();
     this.render();
     this.onChange();
@@ -186,6 +244,7 @@ export class CanvasEditor {
 
   flipVertical() {
     this.matrix.reverse();
+    this.selection = null; // a flip is a one-time op: don't leave a stale marquee
     this.saveState();
     this.render();
     this.onChange();
@@ -205,6 +264,110 @@ export class CanvasEditor {
     this.saveState();
     this.render();
     this.onChange();
+  }
+
+  // ---- Selection operations (copy / cut / paste / delete / rotate) ----
+  // All are bounds-clamped and no-op safely when nothing is selected, so they can
+  // never corrupt cells outside the marquee or throw on empty selections.
+  getSelectionBounds() {
+    if (!this.selection) return null;
+    const s = this.selection;
+    const r1 = Math.max(0, Math.min(s.r1, s.r2));
+    const r2 = Math.min(this.rows - 1, Math.max(s.r1, s.r2));
+    const c1 = Math.max(0, Math.min(s.c1, s.c2));
+    const c2 = Math.min(this.cols - 1, Math.max(s.c1, s.c2));
+    if (r1 > r2 || c1 > c2) return null;
+    return { r1, r2, c1, c2 };
+  }
+
+  copySelection() {
+    const b = this.getSelectionBounds();
+    if (!b) { this.clipboard = null; return false; }
+    const cells = [];
+    for (let r = b.r1; r <= b.r2; r++) {
+      const row = [];
+      for (let c = b.c1; c <= b.c2; c++) row.push(this.matrix[r][c]);
+      cells.push(row);
+    }
+    this.clipboard = { rows: cells.length, cols: cells[0].length, cells };
+    return true;
+  }
+
+  deleteSelection() {
+    const b = this.getSelectionBounds();
+    if (!b) return false;
+    const erase = this.getEraseValue();
+    for (let r = b.r1; r <= b.r2; r++)
+      for (let c = b.c1; c <= b.c2; c++) this.matrix[r][c] = erase;
+    this.saveState(); this.render(); this.onChange();
+    return true;
+  }
+
+  cutSelection() {
+    const ok = this.copySelection();
+    if (ok) this.deleteSelection();
+    return ok;
+  }
+
+  // Paste at the current selection origin, else at the hovered cell, else top-left.
+  pasteClipboard() {
+    if (!this.clipboard) return false;
+    let anchorR = 0, anchorC = 0;
+    const b = this.getSelectionBounds();
+    if (b) { anchorR = b.r1; anchorC = b.c1; }
+    else if (this.hoverCell && this.hoverCell.r >= 0) { anchorR = this.hoverCell.r; anchorC = this.hoverCell.c; }
+
+    for (let r = 0; r < this.clipboard.rows; r++) {
+      for (let c = 0; c < this.clipboard.cols; c++) {
+        const tr = anchorR + r, tc = anchorC + c;
+        if (tr >= 0 && tr < this.rows && tc >= 0 && tc < this.cols) {
+          this.matrix[tr][tc] = this.clipboard.cells[r][c];
+        }
+      }
+    }
+    // Move the marquee to cover the pasted block.
+    this.selection = {
+      r1: anchorR, c1: anchorC,
+      r2: Math.min(this.rows - 1, anchorR + this.clipboard.rows - 1),
+      c2: Math.min(this.cols - 1, anchorC + this.clipboard.cols - 1)
+    };
+    this.saveState(); this.render(); this.onChange();
+    return true;
+  }
+
+  // Rotate the selected (or whole-grid) block 90 degrees. dir: 'cw' | 'ccw'.
+  // The rotated block is written back from the same top-left origin and clipped
+  // to the canvas, so a rotation can never overflow or throw.
+  rotateSelection(dir = 'cw') {
+    const b = this.getSelectionBounds() || { r1: 0, c1: 0, r2: this.rows - 1, c2: this.cols - 1 };
+    const h = b.r2 - b.r1 + 1;
+    const w = b.c2 - b.c1 + 1;
+    const src = [];
+    for (let r = 0; r < h; r++) {
+      const row = [];
+      for (let c = 0; c < w; c++) row.push(this.matrix[b.r1 + r][b.c1 + c]);
+      src.push(row);
+    }
+    const blank = this.getEraseValue();
+    // Destination is w tall x h wide.
+    for (let dr = 0; dr < w; dr++) {
+      for (let dc = 0; dc < h; dc++) {
+        let sr, sc;
+        if (dir === 'cw') { sr = h - 1 - dc; sc = dr; }      // (sr,sc) -> (sc, h-1-sr)
+        else { sr = dc; sc = w - 1 - dr; }                    // ccw
+        const tr = b.r1 + dr, tc = b.c1 + dc;
+        if (tr >= 0 && tr < this.rows && tc >= 0 && tc < this.cols) {
+          this.matrix[tr][tc] = (src[sr] && src[sr][sc] !== undefined) ? src[sr][sc] : blank;
+        }
+      }
+    }
+    this.selection = {
+      r1: b.r1, c1: b.c1,
+      r2: Math.min(this.rows - 1, b.r1 + w - 1),
+      c2: Math.min(this.cols - 1, b.c1 + h - 1)
+    };
+    this.saveState(); this.render(); this.onChange();
+    return true;
   }
 
   setActiveTool(tool) {
@@ -342,7 +505,7 @@ export class CanvasEditor {
         } else if (this.activeTool === 'eraser') {
           this.applyStitchAt(cell.r, cell.c, this.getEraseValue());
           this.render();
-        } else if (['line', 'rect', 'circle', 'select'].includes(this.activeTool)) {
+        } else if (['line', 'rect', 'rectOutline', 'circle', 'circleOutline', 'select'].includes(this.activeTool)) {
           // Preview geometry during drag
           this.render();
         }
@@ -369,8 +532,12 @@ export class CanvasEditor {
             this.drawLine(this.dragStartCell.r, this.dragStartCell.c, cell.r, cell.c, val);
           } else if (this.activeTool === 'rect') {
             this.drawRect(this.dragStartCell.r, this.dragStartCell.c, cell.r, cell.c, val);
+          } else if (this.activeTool === 'rectOutline') {
+            this.drawRectOutline(this.dragStartCell.r, this.dragStartCell.c, cell.r, cell.c, val);
           } else if (this.activeTool === 'circle') {
             this.drawCircle(this.dragStartCell.r, this.dragStartCell.c, cell.r, cell.c, val);
+          } else if (this.activeTool === 'circleOutline') {
+            this.drawEllipseOutline(this.dragStartCell.r, this.dragStartCell.c, cell.r, cell.c, val);
           } else if (this.activeTool === 'select') {
             this.selection = {
               r1: Math.min(this.dragStartCell.r, cell.r),
@@ -412,14 +579,18 @@ export class CanvasEditor {
 
   resizeCanvas() {
     const parent = this.canvas.parentElement;
-    if (parent) {
-      this.canvas.width = parent.clientWidth || 800;
-      this.canvas.height = parent.clientHeight || 600;
+    // Skip while hidden (0×0) — otherwise the CSS 100% scaling stretches a
+    // stale fallback buffer across the panel (e.g. on first tab switch).
+    if (parent && parent.clientWidth > 0 && parent.clientHeight > 0) {
+      this.canvas.width = parent.clientWidth;
+      this.canvas.height = parent.clientHeight;
     }
   }
 
   getActiveDrawValue() {
-    return (this.mode === 'lace') ? this.activeStitch : 1;
+    if (this.mode === 'lace') return this.activeStitch;
+    // Direct modes: honour the selected yarn (A = 0 background, B = 1 contrast/hole).
+    return this.activeColor === 0 ? 0 : 1;
   }
 
   getEraseValue() {
@@ -502,6 +673,36 @@ export class CanvasEditor {
         if (normDist <= 1.0) {
           this.applyStitchAt(r, c, value);
         }
+      }
+    }
+  }
+
+  // Rectangle drawn as a 1-cell-thick perimeter only (outline), not filled.
+  drawRectOutline(r0, c0, r1, c1, value) {
+    const minR = Math.min(r0, r1), maxR = Math.max(r0, r1);
+    const minC = Math.min(c0, c1), maxC = Math.max(c0, c1);
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        if (r === minR || r === maxR || c === minC || c === maxC) this.applyStitchAt(r, c, value);
+      }
+    }
+  }
+
+  // Ellipse drawn as a perimeter ring (outline), computed with a rotated-
+  // superellipse membership test so the ring stays a consistent 1 cell thick.
+  drawEllipseOutline(r0, c0, r1, c1, value) {
+    const centerR = (r0 + r1) / 2, centerC = (c0 + c1) / 2;
+    const radiusR = Math.abs(r1 - r0) / 2, radiusC = Math.abs(c1 - c0) / 2;
+    const minR = Math.max(0, Math.floor(centerR - radiusR) - 1);
+    const maxR = Math.min(this.rows - 1, Math.ceil(centerR + radiusR) + 1);
+    const minC = Math.max(0, Math.floor(centerC - radiusC) - 1);
+    const maxC = Math.min(this.cols - 1, Math.ceil(centerC + radiusC) + 1);
+    const rr = radiusR || 1, rc = radiusC || 1;
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        const d = Math.pow((c - centerC) / rc, 2) + Math.pow((r - centerR) / rr, 2);
+        // Ring band between the outer edge and a slightly inset inner edge.
+        if (d <= 1.0 && d >= 0.55) this.applyStitchAt(r, c, value);
       }
     }
   }
@@ -617,8 +818,8 @@ export class CanvasEditor {
     }
     ctx.stroke();
 
-    // Active tool drag preview (line/rect/circle)
-    if (this.isMouseDown && this.dragStartCell && ['line', 'rect', 'circle'].includes(this.activeTool)) {
+    // Active tool drag preview (line/rect/rectOutline/circle/circleOutline)
+    if (this.isMouseDown && this.dragStartCell && ['line', 'rect', 'rectOutline', 'circle', 'circleOutline'].includes(this.activeTool)) {
       this.renderToolPreview(ctx);
     }
 
@@ -645,15 +846,32 @@ export class CanvasEditor {
     ctx.restore();
   }
 
+  // Draws a knit stitch as a filled "V" (two legs meeting at the base) so a
+  // colourwork / filled region reads as real stockinette rather than flat blocks.
+  drawStitchV(ctx, x, y, size, color) {
+    const pad = Math.max(1, size * 0.12);
+    const left = x + pad, right = x + size - pad;
+    const top = y + pad, bottom = y + size - pad;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.5, size * 0.16);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(left, top);
+    ctx.lineTo(x + size / 2, bottom);
+    ctx.lineTo(right, top);
+    ctx.stroke();
+  }
+
   renderCellContent(ctx, x, y, size, stitch, r, c) {
     const cx = x + size / 2;
     const cy = y + size / 2;
 
     if (this.mode === 'fair_isle') {
-      if (stitch === 1) {
-        ctx.fillStyle = '#38bdf8'; // Contrast yarn color
-        ctx.fillRect(x + 1, y + 1, size - 2, size - 2);
-      }
+      // Render each cell as an actual knit "V" stitch so the colourwork reads
+      // like real stockinette (much easier to eyeball while knitting).
+      const col = (stitch === 1) ? '#38bdf8' : '#e2e8f0';
+      this.drawStitchV(ctx, x, y, size, col);
       return;
     }
 
@@ -756,7 +974,8 @@ export class CanvasEditor {
     const x1 = h.c * this.zoom;
     const y1 = (this.rows - 1 - h.r) * this.zoom;
 
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)';
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.20)';
     ctx.lineWidth = 2.0;
 
     if (this.activeTool === 'line') {
@@ -764,12 +983,26 @@ export class CanvasEditor {
       ctx.moveTo(x0 + this.zoom / 2, y0 + this.zoom / 2);
       ctx.lineTo(x1 + this.zoom / 2, y1 + this.zoom / 2);
       ctx.stroke();
-    } else if (this.activeTool === 'rect') {
+    } else if (this.activeTool === 'rect' || this.activeTool === 'rectOutline') {
       const rx = Math.min(x0, x1);
       const ry = Math.min(y0, y1);
       const rw = Math.abs(x1 - x0) + this.zoom;
       const rh = Math.abs(y1 - y0) + this.zoom;
+      if (this.activeTool === 'rect') ctx.fillRect(rx, ry, rw, rh);
+      ctx.setLineDash(this.activeTool === 'rectOutline' ? [4, 3] : []);
       ctx.strokeRect(rx, ry, rw, rh);
+      ctx.setLineDash([]);
+    } else if (this.activeTool === 'circle' || this.activeTool === 'circleOutline') {
+      const cx = (x0 + x1) / 2 + this.zoom / 2;
+      const cy = (y0 + y1) / 2 + this.zoom / 2;
+      const rxC = Math.abs(x1 - x0) / 2 + this.zoom / 2;
+      const ryC = Math.abs(y1 - y0) / 2 + this.zoom / 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rxC, ryC, 0, 0, Math.PI * 2);
+      if (this.activeTool === 'circle') ctx.fill();
+      ctx.setLineDash(this.activeTool === 'circleOutline' ? [4, 3] : []);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
   }
 

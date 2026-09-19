@@ -17,8 +17,11 @@ import { VectorSvgExporter } from './exporters/vector-svg.js';
 import { FormatsExporter } from './exporters/formats-dak.js';
 import { PATTERN_PRESETS } from './presets/preset-library.js';
 import { TankTopCanvas } from './ui/tank-top-canvas.js';
+import { BeanieEngine } from './tailor/beanie-engine.js';
 import { BrotherSimCanvas } from './ui/brother-sim-canvas.js';
 import { NotificationCenter } from './ui/notifications.js';
+import { installGlobalErrorBoundary, installRoundRectPolyfill, runGuarded } from './ui/safety.js';
+import { initExtras } from './features/extras.js';
 
 class KnitApp {
   constructor() {
@@ -28,6 +31,11 @@ class KnitApp {
     this.romanceMode = true; // Always on — this machine is made for Benji ♥
     this.punchcardViewMode = 'standard';
     this.notifications = new NotificationCenter('toast-container');
+
+    // Safety layer first: canvas polyfill + global error boundary so a single
+    // failure anywhere can never silently freeze the whole app.
+    installRoundRectPolyfill();
+    installGlobalErrorBoundary(this.notifications);
 
     this.compiler = new LaceCompiler(this.currentProfile);
     this.compilationResult = null;
@@ -49,6 +57,12 @@ class KnitApp {
     } catch (e) {
       console.error('[KnitCAD] initEvents error:', e);
     }
+
+    // Personalization + UX extras. Fully contained: if it ever fails, the core
+    // CAD app is completely unaffected.
+    runGuarded('Extras layer', () => {
+      this.extras = initExtras({ notifier: this.notifications });
+    }, { notifier: this.notifications });
 
     // Show the Benji love popup on first load with delay to ensure DOM is ready
     // Use requestIdleCallback for non-blocking initialization
@@ -148,6 +162,9 @@ class KnitApp {
           this.updateTankTopInstructions();
         }
 
+        // 5b. Beanie tailor (self-contained engine, renders on demand)
+        this.beanie = new BeanieEngine();
+
         // 6. Brother KH-830 Kinematic Simulator
         const brotherEl = document.getElementById('brother-canvas');
         if (brotherEl) {
@@ -207,6 +224,8 @@ class KnitApp {
         document.querySelector('[data-tool="rect"]')?.click();
       } else if (e.key === 'c') {
         document.querySelector('[data-tool="circle"]')?.click();
+      } else if (e.key === 'o') {
+        document.querySelector('[data-tool="rectOutline"]')?.click();
       } else if (e.key === 'f') {
         document.querySelector('[data-tool="fill"]')?.click();
       } else if (e.key === 's') {
@@ -273,6 +292,16 @@ class KnitApp {
         this.elements.stitchButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         if (this.editor) this.editor.activeStitch = btn.dataset.stitch;
+      });
+    });
+
+    // Fair Isle / Jacquard Yarn selectors (A = blank, B = punch hole). Previously
+    // these buttons did nothing, so every stroke painted Yarn B regardless of choice.
+    document.querySelectorAll('#color-palette .stitch-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#color-palette .stitch-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (this.editor) this.editor.activeColor = parseInt(btn.dataset.color, 10) || 0;
       });
     });
 
@@ -477,7 +506,42 @@ class KnitApp {
     document.getElementById('btn-tanktop-svg')?.addEventListener('click', () => this.exportTankTopSvg());
     document.getElementById('btn-tanktop-dxf')?.addEventListener('click', () => this.exportTankTopDxf());
 
+    // Tank Top draw-on-grid + gauge ("just make it so I can draw", "fits your yarn")
+    document.getElementById('btn-tank-draw')?.addEventListener('click', () => this.toggleTankDraw());
+    document.getElementById('btn-tank-symmetry-side')?.addEventListener('click', () => this.toggleTankSymmetry());
+    document.getElementById('btn-tank-clear-draw')?.addEventListener('click', () => {
+      this.tankTopCanvas?.clearDrawing();
+      this.notifications.info('Cleared drawn stitches.');
+    });
+    ['tanktop-gauge-sts', 'tanktop-gauge-rows'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', () => this.applyTankGauge());
+    });
+    // Swatch helper: count sts/rows over N cm → per-10cm gauge, applied live.
+    document.getElementById('btn-swatch-calc')?.addEventListener('click', () => this.swatchToGauge('sts'));
+    document.getElementById('btn-swatch-calc-rows')?.addEventListener('click', () => this.swatchToGauge('rows'));
+    // Reflect the default symmetry (mirror ON) on both symmetry buttons at boot.
+    if (this.tankTopCanvas) {
+      document.getElementById('btn-tank-symmetry')?.classList.toggle('active', this.tankTopCanvas.symmetry);
+      document.getElementById('btn-tank-symmetry-side')?.classList.toggle('active', this.tankTopCanvas.symmetry);
+    }
+
     // (CNC controls now wired above with zoom/fit/speed)
+
+    // Beanie tailor: live re-render on any input change.
+    ['beanie-head', 'beanie-height', 'beanie-rib', 'beanie-segments'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', () => this.renderBeanie());
+    });
+    ['beanie-ribtype', 'beanie-pom', 'beanie-gauge-sts', 'beanie-gauge-rows'].forEach(id => {
+      const el = document.getElementById(id);
+      el?.addEventListener('change', () => this.renderBeanie());
+      el?.addEventListener('input', () => this.renderBeanie());
+    });
+    document.getElementById('btn-beanie-svg')?.addEventListener('click', () => this.exportBeanieSvg());
+    document.getElementById('btn-beanie-reversible')?.addEventListener('click', () => {
+      this.loadPreset('reversible_double_bed_chevron');
+      this.notifications.info('Loaded a seamless reversible double-bed repeat (fits 24 sts).');
+      document.querySelector('.tab-btn[data-tab="editor"]')?.click();
+    });
 
     // Export Actions
     document.getElementById('btn-export-dxf')?.addEventListener('click', () => this.exportDXF());
@@ -529,6 +593,22 @@ class KnitApp {
         document.querySelector('[data-tool="rect"]')?.click();
       } else if (e.key === 'g') {
         document.querySelector('[data-tool="fill"]')?.click();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+        if (this.editor?.copySelection()) { e.preventDefault(); this.notifications.info('Copied selection.'); }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) {
+        if (this.editor?.cutSelection()) { e.preventDefault(); this.notifications.info('Cut selection.'); }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+        if (this.editor?.pasteClipboard()) { e.preventDefault(); this.notifications.info('Pasted selection.'); }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+        // Ctrl+D duplicates the selection in place (offset by one cell).
+        e.preventDefault();
+        this.duplicateSelection?.();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (this.editor?.deleteSelection()) { e.preventDefault(); }
+      } else if (e.key === '[') {
+        this.editor?.rotateSelection('ccw');
+      } else if (e.key === ']') {
+        this.editor?.rotateSelection('cw');
       }
     });
   }
@@ -576,15 +656,28 @@ class KnitApp {
   }
 
   onTabSwitched(tab) {
+    // Contained: a throwing tab render only affects that tab, never the whole app.
+    runGuarded(`Switched to "${tab}" tab`, () => this._renderTab(tab), {
+      notifier: this.notifications
+    });
+  }
+
+  _renderTab(tab) {
     if (this.yarnSim) this.yarnSim.stop();
     if (this.brotherCanvas) this.brotherCanvas.pause();
 
-    if (tab === 'yarn') {
+    if (tab === 'editor') {
+      this.editor?.resizeCanvas();
+      this.editor?.render();
+    } else if (tab === 'yarn') {
       this.yarnSim.resize();
       this.yarnSim.updateFabric(this.editor.matrix);
       this.yarnSim.startAnimationLoop();
     } else if (tab === 'punchcard') {
-      this.renderPunchcardRibbon();
+      // Always regenerate the card for the CURRENT mode before drawing, so a
+      // Fair Isle / Tuck / Slip drawing you just made is reflected on the ribbon
+      // (previously it could show a stale or lace-only compilation).
+      this.recompile();
     } else if (tab === 'cnc') {
       this.toolpathViewer.resize();
       this.toolpathViewer.setCardData(this.currentProfile, this.compilationResult.cardMatrix);
@@ -592,12 +685,31 @@ class KnitApp {
       this.tankTopCanvas?.resize();
       this.tankTopCanvas?.render();
       this.updateTankTopInstructions();
+    } else if (tab === 'beanie') {
+      this.renderBeanie();
     } else if (tab === 'brother') {
       this.brotherCanvas?.resize();
       const firstCardRow = this.compilationResult?.cardMatrix?.[0] || [];
       this.brotherCanvas?.setCardPattern(firstCardRow);
       this.brotherCanvas?.play();
     }
+  }
+
+  // Duplicate the current marquee selection offset by one cell down-right.
+  duplicateSelection() {
+    const ed = this.editor;
+    if (!ed || !ed.copySelection()) return;
+    const b = ed.getSelectionBounds();
+    if (!b) return;
+    const src = ed.clipboard;
+    for (let r = 0; r < src.rows; r++) {
+      for (let c = 0; c < src.cols; c++) {
+        const tr = b.r1 + 1 + r, tc = b.c1 + 1 + c;
+        if (tr >= 0 && tr < ed.rows && tc >= 0 && tc < ed.cols) ed.matrix[tr][tc] = src.cells[r][c];
+      }
+    }
+    ed.saveState(); ed.render(); ed.onChange();
+    this.notifications.info('Duplicated selection.');
   }
 
   updateScheduleUI() {
@@ -641,7 +753,12 @@ class KnitApp {
     const diagList = this.elements.diagnosticsContainer;
     if (!diagList) return;
 
-    const diags = this.compilationResult?.diagnostics || [];
+    const diags = (this.compilationResult?.diagnostics || []).slice();
+    // Fair Isle / slip / tuck: very long floats (unworked yarn carried behind)
+    // snag on fingers and pull the fabric in. Warn about them (advisory only).
+    const floatWarn = this.analyzeFloats();
+    if (floatWarn) diags.push(floatWarn);
+
     if (diags.length === 0) {
       diagList.innerHTML = '<div class="diag-ok">✓ No physical collisions or carriage conflicts detected. Pattern is 100% machine executable!</div>';
       return;
@@ -651,9 +768,30 @@ class KnitApp {
       <div class="diag-item diag-${d.type}">
         <span class="diag-icon">${d.type === 'error' ? '⚠' : 'ℹ'}</span>
         <span class="diag-msg">${d.message}</span>
-        ${d.row !== null ? `<span class="diag-loc">[Row ${d.row + 1}${d.col !== null ? `, Col ${d.col + 1}` : ''}]</span>` : ''}
+        ${d.row !== null && d.row !== undefined ? `<span class="diag-loc">[Row ${d.row + 1}${d.col !== null && d.col !== undefined ? `, Col ${d.col + 1}` : ''}]</span>` : ''}
       </div>
     `).join('');
+  }
+
+  // Scan the current pattern matrix for the longest same-colour run (float) in a
+  // row. Returns an advisory warning when it exceeds the machine's safe limit.
+  analyzeFloats() {
+    if (!this.editor || !CanvasEditor.isDirectMode(this.currentMode)) return null;
+    const maxSafe = 9; // needles a float may span before stitching it down is advised
+    const m = this.editor.matrix;
+    let worst = 0, worstRow = -1;
+    for (let r = 0; r < m.length; r++) {
+      let run = 0;
+      for (let c = 0; c < m[r].length; c++) {
+        // A float is a stretch of one colour while the other colour is absent.
+        run = (m[r][c] === 1) ? run + 1 : 0;
+        if (run > worst) { worst = run; worstRow = r; }
+      }
+    }
+    if (worst > maxSafe) {
+      return { type: 'warning', message: `Long Fair Isle float of ${worst} stitches (row ${worstRow + 1}). Consider weaving floats longer than ${maxSafe} sts on the wrong side.`, row: worstRow, col: null };
+    }
+    return null;
   }
 
   updateStatusStats() {
@@ -708,6 +846,17 @@ class KnitApp {
     const cardMatrix = this.compilationResult.cardMatrix;
     const rows = cardMatrix.length;
     const cols = cardMatrix[0]?.length || 24;
+
+    // Per-card-row carriage metadata so the ribbon shows WHICH carriage runs each
+    // row and WHICH WAY it travels (for BOTH the lace and the knit carriage).
+    const strokes = this.compilationResult.strokes || [];
+    const rowDir = new Array(rows).fill(null);
+    const rowCarriage = new Array(rows).fill(null);
+    for (const s of strokes) {
+      const idx = s.cardRowIndex;
+      if (idx >= 0 && idx < rows) { rowDir[idx] = s.direction; rowCarriage[idx] = s.carriageType; }
+    }
+    const leadRows = this.currentProfile.carriageRules?.cardReadingOffsetRows || 0;
 
     const cellPitch = 14;
     const cardW = (cols + 6) * cellPitch;
@@ -783,6 +932,56 @@ class KnitApp {
     ctx.textAlign = 'center';
     ctx.fillText(`${this.currentProfile.name.toUpperCase()} - ${cols} STITCHES`, startX + cardW / 2, startY + 22);
 
+    // ── Carriage direction + carriage type per row (BOTH carriages) ──
+    // Left gutter: which carriage runs the row. Right gutter: which way it travels.
+    const CAR_COLOR = { LACE: '#34d399', KNIT: '#38bdf8', COMB: '#f59e0b' };
+    const CAR_LETTER = { LACE: 'L', KNIT: 'K', COMB: 'C' };
+    ctx.font = 'bold 11px monospace';
+    ctx.textBaseline = 'middle';
+    for (let r = 0; r < rows; r++) {
+      const car = rowCarriage[r];
+      if (!car) continue;
+      const y = startY + (rows - r + 1) * cellPitch;
+      const color = CAR_COLOR[car] || '#64748b';
+
+      // Carriage letter (left of the left sprocket)
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.fillText(CAR_LETTER[car] || '?', startX + cellPitch * 0.6, y);
+
+      // Direction arrow (right of the right sprocket): ▶ = L→R, ◀ = R→L
+      const toRight = rowDir[r] === DIRECTION.LEFT_TO_RIGHT;
+      ctx.fillStyle = color;
+      ctx.fillText(toRight ? '\u25B6' : '\u25C0', rightSprockX + cellPitch * 1.1, y);
+    }
+
+    // Legend
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('carriage per row:  L = lace   K = knit   C = combined     ▶ = left\u2192right   \u25C0 = right\u2192left', startX, startY + cardH + 14);
+
+    // Reading-head / leading-edge marker: this is where Brother (7) vs Silver Reed
+    // (5) genuinely differ \u2014 the sensor reads the card N rows below the needles.
+    if (leadRows > 0) {
+      const yBase = startY + (rows - 0 + 1) * cellPitch;
+      const yMark = yBase + (leadRows - 0.5) * cellPitch;
+      ctx.save();
+      ctx.strokeStyle = '#22d3ee';
+      ctx.setLineDash([5, 3]);
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(startX, yMark);
+      ctx.lineTo(startX + cardW, yMark);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#22d3ee';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(`\u25C4 LEADING EDGE \u2014 feed ${leadRows} blank rows before row 1 (${this.currentProfile.name.split(' ')[0]} reads ${leadRows} rows ahead)`, startX + cardW / 2, yMark + 12);
+      ctx.restore();
+    }
+
     ctx.restore();
 
     // Overlay mode: show pattern overlay
@@ -821,6 +1020,7 @@ class KnitApp {
 
     container.innerHTML = PATTERN_PRESETS.map(p => `
       <div class="preset-card" data-preset="${p.id}">
+        <canvas class="preset-thumb" width="120" height="90"></canvas>
         <div class="preset-title">${p.name}</div>
         <div class="preset-badge">${p.category}</div>
         <div class="preset-desc">${p.description}</div>
@@ -828,6 +1028,8 @@ class KnitApp {
     `).join('');
 
     container.querySelectorAll('.preset-card').forEach(card => {
+      const preset = PATTERN_PRESETS.find(x => x.id === card.dataset.preset);
+      this.renderPresetThumb(card.querySelector('.preset-thumb'), preset);
       card.addEventListener('click', () => {
         this.loadPreset(card.dataset.preset);
         this.closeAllModals();
@@ -835,6 +1037,30 @@ class KnitApp {
     });
 
     this.openModal('presets');
+  }
+
+  // Draw a tiny preview of a preset without touching the main editor state.
+  renderPresetThumb(canvas, preset) {
+    if (!canvas || !preset || typeof preset.generate !== 'function') return;
+    try {
+      const ctx = canvas.getContext('2d');
+      const cols = 24, rows = 18;
+      const matrix = preset.generate(rows, cols) || [];
+      ctx.fillStyle = '#0b0f19';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const cw = canvas.width / cols, ch = canvas.height / rows;
+      const blank = ['K', 'P', 'EMPTY', 0, undefined];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const v = matrix[r] ? matrix[r][c] : undefined;
+          const active = !(blank.includes(v));
+          if (active) {
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillRect(c * cw, (rows - 1 - r) * ch, Math.ceil(cw), Math.ceil(ch));
+          }
+        }
+      }
+    } catch (e) { /* decorative only; never let a thumbnail break the modal */ }
   }
 
   // Mathematical Generators
@@ -966,7 +1192,7 @@ class KnitApp {
   // Exporters
   exportDXF() {
     const dxfStr = CadDxfExporter.generateDxf(this.currentProfile, this.compilationResult.cardMatrix);
-    this.downloadFile(dxfStr, `${this.currentProfile.id}_punchcard.dxf`, 'application/dxf');
+    this.downloadFile(this._stampWatermarkDxf(dxfStr), `${this.currentProfile.id}_punchcard.dxf`, 'application/dxf');
   }
 
   exportGCode() {
@@ -976,12 +1202,12 @@ class KnitApp {
       optimizePath: true
     });
     const gcodeStr = exporter.generateGCode(this.currentProfile, this.compilationResult.cardMatrix);
-    this.downloadFile(gcodeStr, `${this.currentProfile.id}_punchcard.gcode`, 'text/plain');
+    this.downloadFile(this._stampWatermarkDxf(gcodeStr), `${this.currentProfile.id}_punchcard.gcode`, 'text/plain');
   }
 
   exportLaserSVG() {
     const svgStr = VectorSvgExporter.generateLaserSvg(this.currentProfile, this.compilationResult.cardMatrix);
-    this.downloadFile(svgStr, `${this.currentProfile.id}_laser.svg`, 'image/svg+xml');
+    this.downloadFile(this._stampWatermark(svgStr), `${this.currentProfile.id}_laser.svg`, 'image/svg+xml');
   }
 
   exportPrintableSheet() {
@@ -1129,24 +1355,178 @@ class KnitApp {
     if (!container) return;
 
     const pattern = this.tankTopCanvas.engine.computePattern();
+    const estimate = this.estimateTankYarn(pattern);
+    const estCard = estimate ? `
+      <div class="instruction-step-card" style="border-color:#22d3ee44;">
+        <div class="instruction-step-num" style="color:#22d3ee;">Yarn Estimate</div>
+        <div class="instruction-step-text">${estimate}</div>
+      </div>` : '';
     container.innerHTML = pattern.instructions.map(inst => `
       <div class="instruction-step-card">
         <div class="instruction-step-num">Step ${inst.step}: ${inst.title}</div>
         <div class="instruction-step-text">${inst.text}</div>
       </div>
-    `).join('');
+    `).join('') + estCard;
+  }
+
+  // ---- Beanie tailor (self-contained; drives beanie-engine.js) ----
+  _readBeanieParams() {
+    const val = (id, fallback) => {
+      const el = document.getElementById(id);
+      if (!el) return fallback;
+      const n = parseFloat(el.value);
+      return Number.isFinite(n) ? n : fallback;
+    };
+    return {
+      params: {
+        headCircumferenceCm: val('beanie-head', 56),
+        beanieHeightCm: val('beanie-height', 20),
+        ribbingHeightCm: val('beanie-rib', 5),
+        crownSegments: val('beanie-segments', 6),
+        ribbingType: document.getElementById('beanie-ribtype')?.value || '1x1',
+        pomPom: document.getElementById('beanie-pom')?.checked ?? true
+      },
+      gauge: {
+        stitchesPer10Cm: val('beanie-gauge-sts', 28),
+        rowsPer10Cm: val('beanie-gauge-rows', 40)
+      }
+    };
+  }
+
+  renderBeanie() {
+    if (!this.beanie) return;
+    const canvas = document.getElementById('beanie-canvas');
+    const { params, gauge } = this._readBeanieParams();
+    // Keep value labels in sync with the sliders.
+    const setLabel = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+    setLabel('val-beanie-head', `${params.headCircumferenceCm} cm`);
+    setLabel('val-beanie-height', `${params.beanieHeightCm} cm`);
+    setLabel('val-beanie-rib', `${params.ribbingHeightCm} cm`);
+    setLabel('val-beanie-seg', `${params.crownSegments}`);
+    const model = this.beanie.compute(params, gauge);
+    this._beanieModel = model;
+    if (canvas && canvas.getContext) {
+      const parent = canvas.parentElement;
+      if (parent && parent.clientWidth > 0 && parent.clientHeight > 0) {
+        canvas.width = parent.clientWidth;
+        canvas.height = parent.clientHeight;
+      }
+      this.beanie.draw(canvas.getContext('2d'), canvas, model);
+    }
+    const list = document.getElementById('beanie-instructions-list');
+    if (list) {
+      list.innerHTML = model.instructions.map(inst => `
+        <div class="instruction-step-card">
+          <div class="instruction-step-num">Step ${inst.step}: ${inst.title}</div>
+          <div class="instruction-step-text">${inst.text}</div>
+        </div>`).join('');
+    }
+  }
+
+  exportBeanieSvg() {
+    if (!this.beanie) return;
+    const model = this._beanieModel || this.beanie.compute(this._readBeanieParams().params, this._readBeanieParams().gauge);
+    const svgStr = this._stampWatermark(this.beanie.toSvg(model));
+    this.downloadFile(svgStr, 'benji_beanie_pattern_1to1.svg', 'image/svg+xml');
+  }
+
+  // Rough yarn-consumption estimate from gauge + cast-on + row count.
+  estimateTankYarn(pattern) {
+    try {
+      const g = this.tankTopCanvas.engine.gauge;
+      const d = pattern.dimensions;
+      if (!g.stitchesPer10Cm || !g.rowsPer10Cm) return null;
+      const cellW = 100 / g.stitchesPer10Cm;   // mm width of one stitch
+      const cellH = 100 / g.rowsPer10Cm;         // mm height of one row
+      const perStitchMm = 2 * cellW + cellH;     // a knit loop wraps ~2 widths + 1 row
+      const totalStitches = d.castOnStitches * d.totalRows * 0.9; // ~10% off for shaping
+      const meters = (totalStitches * perStitchMm) / 1000;
+      return `Approx. ${meters.toFixed(0)} m of yarn for the front piece (≈ ${(meters / 2).toFixed(0)} m for the back). Buy ~10% extra for swatching & tension — weigh your yarn to convert metres to grams.`;
+    } catch (e) {
+      return null;
+    }
   }
 
   exportTankTopSvg() {
     if (!this.tankTopCanvas) return;
-    const svgStr = this.tankTopCanvas.engine.generatePatternSvg();
+    let svgStr = this.tankTopCanvas.engine.generatePatternSvg();
+    svgStr = this._injectTankStitchesSvg(svgStr);
+    svgStr = this._stampWatermark(svgStr);
     this.downloadFile(svgStr, 'benji_tank_top_pattern_1to1.svg', 'image/svg+xml');
   }
 
   exportTankTopDxf() {
     if (!this.tankTopCanvas) return;
     const dxfStr = this.tankTopCanvas.engine.generatePatternDxf();
-    this.downloadFile(dxfStr, 'benji_tank_top_pattern.dxf', 'application/dxf');
+    const withStitches = this._injectTankStitchesDxf(dxfStr);
+    this.downloadFile(this._stampWatermarkDxf(withStitches), 'benji_tank_top_pattern.dxf', 'application/dxf');
+  }
+
+  // ---- Drawn-stitch export helpers (tank top) ----
+  _tankStitchGeometry() {
+    const data = this.tankTopCanvas.getPaintedMatrix();
+    const { matrix, cols, rows, dims } = data;
+    const widthMm = dims.widthMm, heightMm = dims.heightMm;
+    const cellW = widthMm / cols, cellH = heightMm / rows;
+    const halfW = widthMm / 2;
+    return { matrix, cols, rows, widthMm, heightMm, cellW, cellH, halfW };
+  }
+
+  _injectTankStitchesSvg(svgStr) {
+    try {
+      const gm = this._tankStitchGeometry();
+      if (!gm.matrix.some(row => row.some(v => v))) return svgStr;
+      const w = gm.widthMm + 40, h = gm.heightMm + 40, cx = w / 2;
+      let rects = '';
+      for (let r = 0; r < gm.rows; r++) {
+        for (let c = 0; c < gm.cols; c++) {
+          if (!gm.matrix[r][c]) continue;
+          const mmX = -gm.halfW + c * gm.cellW;
+          const mmYTop = (r + 1) * gm.cellH;
+          const sx = (cx + mmX).toFixed(2);
+          const sy = (h - 20 - mmYTop).toFixed(2);
+          rects += `<rect x="${sx}" y="${sy}" width="${gm.cellW.toFixed(2)}" height="${gm.cellH.toFixed(2)}" fill="#e11d48" fill-opacity="0.85" />`;
+        }
+      }
+      const group = `\n<g id="drawn-stitches">\n${rects}\n</g>\n`;
+      return svgStr.replace('</svg>', group + '</svg>');
+    } catch (e) { return svgStr; }
+  }
+
+  _injectTankStitchesDxf(dxfStr) {
+    try {
+      const gm = this._tankStitchGeometry();
+      if (!gm.matrix.some(row => row.some(v => v))) return dxfStr;
+      const ents = [];
+      for (let r = 0; r < gm.rows; r++) {
+        for (let c = 0; c < gm.cols; c++) {
+          if (!gm.matrix[r][c]) continue;
+          const x0 = -gm.halfW + c * gm.cellW, y0 = r * gm.cellH;
+          const x1 = x0 + gm.cellW, y1 = y0 + gm.cellH;
+          ents.push('0\nLWPOLYLINE\n8\nCUT_LINE\n90\n4\n70\n1',
+            `10\n${x0.toFixed(3)}\n20\n${y0.toFixed(3)}`,
+            `10\n${x1.toFixed(3)}\n20\n${y0.toFixed(3)}`,
+            `10\n${x1.toFixed(3)}\n20\n${y1.toFixed(3)}`,
+            `10\n${x0.toFixed(3)}\n20\n${y1.toFixed(3)}`);
+        }
+      }
+      return dxfStr.replace('0\nENDSEC\n0\nEOF', ents.join('\n') + '\n0\nENDSEC\n0\nEOF');
+    } catch (e) { return dxfStr; }
+  }
+
+  // ---- Romance watermark (Part 3) ----
+  _stampWatermark(svgStr) {
+    try {
+      const m = svgStr.match(/viewBox="[\d.\s-]+\s+([\d.]+)\s+([\d.]+)"/);
+      const w = m ? parseFloat(m[1]) : 200, h = m ? parseFloat(m[2]) : 300;
+      const stamp = `\n<text x="${(w - 3).toFixed(1)}" y="${(h - 2).toFixed(1)}" text-anchor="end" ` +
+        `font-family="sans-serif" font-size="4" fill="#94a3b8" fill-opacity="0.7">ily, Benji \u2665 \u00b7 KnitCAD</text>\n`;
+      return svgStr.replace('</svg>', stamp + '</svg>');
+    } catch (e) { return svgStr; }
+  }
+
+  _stampWatermarkDxf(dxfStr) {
+    return `; ily, Benji \u2665 \u00b7 KnitCAD\n${dxfStr}`;
   }
 
   downloadFile(content, filename, mimeType) {
@@ -1181,12 +1561,15 @@ class KnitApp {
   }
 
   optimizeSchedule() {
-    if (!this.compilationResult) return;
+    if (!this.compilationResult || !Array.isArray(this.compilationResult.strokes)) return;
+    const originalStrokes = this.compilationResult.strokes;
+    const originalCount = originalStrokes.length;
+
     // Simple optimization: remove redundant consecutive knit passes
     const optimizedStrokes = [];
     let lastWasKnit = false;
-    
-    for (const stroke of this.compilationResult.strokes) {
+
+    for (const stroke of originalStrokes) {
       if (stroke.carriageType !== CARRIAGE_TYPE.KNIT) {
         optimizedStrokes.push(stroke);
         lastWasKnit = false;
@@ -1195,12 +1578,12 @@ class KnitApp {
         lastWasKnit = true;
       }
     }
-    
+
     this.compilationResult.strokes = optimizedStrokes;
     this.compilationResult.totalPasses = optimizedStrokes.length;
     this.updateScheduleUI();
     this.updateStatusStats();
-    const removed = strokes.length - optimizedStrokes.length;
+    const removed = originalCount - optimizedStrokes.length;
     this.notifications.success('Schedule optimized.', {
       details: removed > 0 ? [`Removed ${removed} redundant knit pass(es).`] : ['No redundant passes found.']
     });
@@ -1614,8 +1997,18 @@ class KnitApp {
 
   optimizeCncToolpath() {
     if (!this.toolpathViewer) return;
-    this.toolpathViewer.optimize?.();
-    this.notifications.success('Toolpath optimized — rapid travel between holes reduced.');
+    const result = this.toolpathViewer.optimize?.();
+    if (result && result.beforeMm > 0) {
+      const saved = result.beforeMm - result.afterMm;
+      const pct = ((saved / result.beforeMm) * 100).toFixed(1);
+      if (saved > 0.1) {
+        this.notifications.success(`Toolpath optimized — rapid travel reduced by ${saved.toFixed(1)} mm (${pct}%).`);
+      } else {
+        this.notifications.info('Toolpath already near-optimal — no shorter route found.');
+      }
+    } else {
+      this.notifications.warn('Not enough punched holes to optimize a toolpath.');
+    }
   }
 
   reverseCncToolpath() {
@@ -1661,11 +2054,53 @@ class KnitApp {
 
   toggleTankSymmetry() {
     if (!this.tankTopCanvas) return;
-    this.tankTopCanvas.symmetric = !this.tankTopCanvas.symmetric;
-    this.tankTopCanvas.render();
-    const symBtn = document.getElementById('btn-tank-symmetry');
-    if (symBtn) symBtn.classList.toggle('active', this.tankTopCanvas.symmetric);
-    this.notifications.info(`Pattern symmetry ${this.tankTopCanvas.symmetric ? 'enabled' : 'disabled'}.`, { duration: 2500 });
+    const on = this.tankTopCanvas.toggleSymmetry();
+    document.getElementById('btn-tank-symmetry')?.classList.toggle('active', on);
+    document.getElementById('btn-tank-symmetry-side')?.classList.toggle('active', on);
+    this.notifications.info(`Symmetry mirror ${on ? 'ON' : 'off'}.`, { duration: 2200 });
+  }
+
+  toggleTankDraw() {
+    if (!this.tankTopCanvas) return;
+    const on = this.tankTopCanvas.setDrawMode(!this.tankTopCanvas.drawMode);
+    const btn = document.getElementById('btn-tank-draw');
+    if (btn) btn.classList.toggle('active', on);
+    this.notifications.info(on
+      ? 'Draw mode ON — click/drag on the grid to knit stitches (right-drag erases).'
+      : 'Draw mode OFF — drag to pan.', { duration: 3200 });
+  }
+
+  // Convert a counted swatch (sts or rows over N cm) into the per-10cm gauge field.
+  swatchToGauge(kind) {
+    const countId = kind === 'sts' ? 'swatch-sts' : 'swatch-rows';
+    const cmId = kind === 'sts' ? 'swatch-cm' : 'swatch-rows-cm';
+    const targetId = kind === 'sts' ? 'tanktop-gauge-sts' : 'tanktop-gauge-rows';
+    const count = parseFloat(document.getElementById(countId)?.value);
+    const cm = parseFloat(document.getElementById(cmId)?.value);
+    if (!Number.isFinite(count) || !Number.isFinite(cm) || cm <= 0) {
+      this.notifications.warn('Enter the stitches/rows and the cm you measured them over.');
+      return;
+    }
+    const per10 = Math.round((count * 10 / cm) * 10) / 10;
+    const target = document.getElementById(targetId);
+    if (target) target.value = per10;
+    this.applyTankGauge();
+    this.notifications.success(`${kind === 'sts' ? 'Stitch' : 'Row'} gauge set to ${per10} / 10 cm.`);
+  }
+
+  applyTankGauge() {
+    if (!this.tankTopCanvas) return;
+    const stsEl = document.getElementById('tanktop-gauge-sts');
+    const rowsEl = document.getElementById('tanktop-gauge-rows');
+    const sts = parseFloat(stsEl && stsEl.value);
+    const rows = parseFloat(rowsEl && rowsEl.value);
+    const gauge = {};
+    if (Number.isFinite(sts) && sts > 0) gauge.stitchesPer10Cm = Math.min(120, sts);
+    if (Number.isFinite(rows) && rows > 0) gauge.rowsPer10Cm = Math.min(200, rows);
+    if (Object.keys(gauge).length) {
+      this.tankTopCanvas.setGauge(gauge);
+      this.updateTankTopInstructions();
+    }
   }
 
   resetTankTop() {
@@ -1682,6 +2117,7 @@ class KnitApp {
     });
     this.updateTankTopSliders();
     this.updateTankTopInstructions();
+    this.tankTopCanvas.clearDrawing();
     this.notifications.info('Tank top measurements reset to defaults.');
   }
 

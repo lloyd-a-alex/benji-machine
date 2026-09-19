@@ -255,6 +255,13 @@ export class TankTopTailoringEngine {
       .text-label { font-family: -apple-system, monospace; font-size: 5px; fill: #0f172a; font-weight: bold; }
     </style>`);
 
+    // Define the arrow marker referenced by .grain-line (was missing → arrow never rendered).
+    svg.push(`<defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f172a" />
+      </marker>
+    </defs>`);
+
     // Path string for full symmetric tank top
     let pathD = `M ${cx} ${h - 20 - pts[0].y}`;
     // Right half

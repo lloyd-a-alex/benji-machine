@@ -26,7 +26,7 @@
         <h2 class="love-popup-title">I LOVE YOU BENJI!!!!!</h2>
         <p class="love-popup-subtitle">You are the best boyfriend ever!!!&nbsp;💖</p>
         <p class="love-popup-msg">4 my cute boy<br></p>
-        <button class="love-popup-close" id="love-popup-close" onclick="document.getElementById('benji-love-popup').style.display='none'">i love u sm to da moon &amp; back!!! ♥ click here</button>
+        <button class="love-popup-close" id="love-popup-close" type="button">i love u sm to da moon &amp; back!!! ♥ click here</button>
       </div>
     </div>
   </div>
@@ -124,13 +124,23 @@
               <line x1="5" y1="19" x2="19" y2="5" />
             </svg>
           </button>
-          <button class="tool-btn" data-tool="rect" id="tool-rect" title="Rectangle (R)">
+          <button class="tool-btn" data-tool="rect" id="tool-rect" title="Rectangle (filled) - R">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect width="18" height="18" x="3" y="3" rx="2" />
             </svg>
           </button>
-          <button class="tool-btn" data-tool="circle" id="tool-circle" title="Ellipse / Circle">
+          <button class="tool-btn" data-tool="rectOutline" id="tool-rect-outline" title="Rectangle (outline only) - O">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2">
+              <rect width="18" height="18" x="3" y="3" rx="2" />
+            </svg>
+          </button>
+          <button class="tool-btn" data-tool="circle" id="tool-circle" title="Ellipse (filled)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="9" />
+            </svg>
+          </button>
+          <button class="tool-btn" data-tool="circleOutline" id="tool-circle-outline" title="Ellipse (outline only)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2">
               <circle cx="12" cy="12" r="9" />
             </svg>
           </button>
@@ -264,6 +274,14 @@
               <path d="M16 10a4 4 0 0 1-8 0" />
             </svg>
             Tank Top Tailor CAD
+          </button>
+          <button class="tab-btn" data-tab="beanie" id="tab-btn-beanie" title="Knit a beanie to fit a head and your yarn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 15a8 8 0 0 1 16 0" />
+              <rect x="3" y="15" width="18" height="4" rx="1" />
+              <circle cx="12" cy="6" r="1.4" />
+            </svg>
+            Beanie
           </button>
           <button class="tab-btn" data-tab="brother" id="tab-btn-brother">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -928,6 +946,55 @@
                 <input type="range" id="tanktop-strap-w" min="2.5" max="9" step="0.5" value="5">
               </div>
 
+             <div class="tanktop-section-title" style="margin-top: 14px;">Your Yarn Gauge</div>
+              <div class="param-slider-row">
+                <div class="param-slider-header">
+                  <span>Stitches / 10 cm:</span>
+                </div>
+                <input type="number" id="tanktop-gauge-sts" class="num-input" value="28" min="8" max="120" step="0.5"
+                  title="Type your swatch result (or a pattern's listed gauge) so the stitch grid fits your yarn">
+              </div>
+              <div class="param-slider-row">
+                <div class="param-slider-header">
+                  <span>Rows / 10 cm:</span>
+                </div>
+                <input type="number" id="tanktop-gauge-rows" class="num-input" value="40" min="8" max="200" step="0.5"
+                  title="Rows per 10 cm from your swatch">
+              </div>
+              <div class="param-slider-row">
+                <div class="param-slider-header"><span>Swatch helper</span></div>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <input type="number" id="swatch-sts" class="num-input" placeholder="sts" min="1" step="0.5" title="Stitches you counted" style="width: 62px;">
+                  <span style="color:#94a3b8; font-size:11px;">over</span>
+                  <input type="number" id="swatch-cm" class="num-input" placeholder="cm" min="1" step="0.1" title="...measured over this many cm" style="width: 62px;">
+                  <button class="btn-action" id="btn-swatch-calc" title="Convert your swatch into stitches / 10 cm" style="padding: 4px 8px;">→ sts/10cm</button>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center; margin-top: 6px;">
+                  <input type="number" id="swatch-rows" class="num-input" placeholder="rows" min="1" step="0.5" title="Rows you counted" style="width: 62px;">
+                  <span style="color:#94a3b8; font-size:11px;">over</span>
+                  <input type="number" id="swatch-rows-cm" class="num-input" placeholder="cm" min="1" step="0.1" title="...measured over this many cm" style="width: 62px;">
+                  <button class="btn-action" id="btn-swatch-calc-rows" title="Convert your swatch into rows / 10 cm" style="padding: 4px 8px;">→ rows/10cm</button>
+                </div>
+              </div>
+
+              <div class="tanktop-section-title" style="margin-top: 14px;">Draw on the Stitch Grid</div>
+              <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <button class="btn-action" id="btn-tank-draw" style="flex: 1; justify-content: center;" title="Toggle draw mode">
+                  ✏ Draw
+                </button>
+                <button class="btn-action" id="btn-tank-symmetry-side" style="flex: 1; justify-content: center;" title="Mirror stitches left/right across the centre">
+                  ⇋ Symmetry
+                </button>
+                <button class="btn-action" id="btn-tank-clear-draw" style="flex: 1; justify-content: center;" title="Erase all drawn stitches">
+                  Clear
+                </button>
+              </div>
+              <p style="font-size: 10px; color: #64748b; line-height: 1.5; margin: 0 0 6px;">
+                Turn on <b>Draw</b>, then click or drag on the grid to knit stitches. Right-drag erases.
+                <b>Symmetry</b> mirrors each stitch across the centre line. The grid squares are real
+                stitches sized to your gauge above.
+              </p>
+
               <div style="display: flex; gap: 8px; margin-top: 6px;">
                 <button class="btn-action btn-primary" id="btn-tanktop-svg"
                   style="flex: 1; justify-content: center;">Print 1:1 SVG</button>
@@ -941,6 +1008,62 @@
 
             <div class="tanktop-viewport">
               <canvas id="tanktop-canvas"></canvas>
+            </div>
+          </div>
+
+          <!-- Tab 6b: Beanie (self-contained tailor) -->
+          <div class="tab-panel" id="panel-beanie">
+            <div class="tanktop-sidebar">
+              <div class="tanktop-section-title">Beanie Fit ♥</div>
+              <p style="font-size:10px;color:#64748b;line-height:1.5;margin:0 0 10px;">Enter a head size and your swatch gauge. Everything below is calculated for you — cast-on, rib, rows and an even crown that closes shut.</p>
+
+              <div class="param-slider-row">
+                <div class="param-slider-header"><span>Head circumference:</span><span class="param-slider-val" id="val-beanie-head">56 cm</span></div>
+                <input type="range" id="beanie-head" min="46" max="68" step="1" value="56">
+              </div>
+              <div class="param-slider-row">
+                <div class="param-slider-header"><span>Beanie height:</span><span class="param-slider-val" id="val-beanie-height">20 cm</span></div>
+                <input type="range" id="beanie-height" min="14" max="30" step="1" value="20">
+              </div>
+              <div class="param-slider-row">
+                <div class="param-slider-header"><span>Ribbing height:</span><span class="param-slider-val" id="val-beanie-rib">5 cm</span></div>
+                <input type="range" id="beanie-rib" min="2" max="10" step="1" value="5">
+              </div>
+              <div class="param-slider-row">
+                <div class="param-slider-header"><span>Crown segments:</span><span class="param-slider-val" id="val-beanie-seg">6</span></div>
+                <input type="range" id="beanie-segments" min="5" max="10" step="1" value="6">
+              </div>
+              <div class="param-slider-row" style="display:flex;gap:14px;align-items:center;">
+                <label style="font-size:12px;display:flex;gap:6px;align-items:center;">Rib
+                  <select id="beanie-ribtype" class="num-input" style="width:auto;">
+                    <option value="1x1">1×1</option>
+                    <option value="2x2">2×2</option>
+                  </select>
+                </label>
+                <label style="font-size:12px;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="beanie-pom" checked> Pom-pom</label>
+              </div>
+
+              <div class="tanktop-section-title" style="margin-top:14px;">Your Yarn Gauge</div>
+              <div class="param-slider-row">
+                <div class="param-slider-header"><span>Stitches / 10 cm:</span></div>
+                <input type="number" id="beanie-gauge-sts" class="num-input" value="28" min="8" max="120" step="0.5">
+              </div>
+              <div class="param-slider-row">
+                <div class="param-slider-header"><span>Rows / 10 cm:</span></div>
+                <input type="number" id="beanie-gauge-rows" class="num-input" value="40" min="8" max="200" step="0.5">
+              </div>
+
+              <div style="display:flex;gap:8px;margin-top:10px;">
+                <button class="btn-action btn-primary" id="btn-beanie-svg" style="flex:1;justify-content:center;">Print 1:1 SVG</button>
+                <button class="btn-action" id="btn-beanie-reversible" style="flex:1;justify-content:center;" title="Load a seamless reversible double-bed repeat into the editor">Reversible repeat</button>
+              </div>
+
+              <div class="tanktop-section-title" style="margin-top:14px;">Round-by-Round Steps</div>
+              <div id="beanie-instructions-list"></div>
+            </div>
+
+            <div class="tanktop-viewport">
+              <canvas id="beanie-canvas"></canvas>
             </div>
           </div>
 

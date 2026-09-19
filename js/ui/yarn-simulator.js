@@ -4,6 +4,9 @@
 
 import { KnitTopologyNetwork, STITCH_TYPE } from '../math/knit-topology.js';
 
+// Set to true via window.__KNITCAD_DEBUG__ to emit per-frame timing logs.
+const DEBUG = typeof window !== 'undefined' ? !!window.__KNITCAD_DEBUG__ : false;
+
 export class YarnSimulator {
   constructor(canvasElement, options = {}) {
     this.canvas = canvasElement;
@@ -61,7 +64,7 @@ export class YarnSimulator {
       this.animating = true;
       this.centerFabric();
       this.render();
-      console.log(`[KnitCAD][Yarn] updateFabric completed in ${Math.round(performance.now() - t0)}ms (${this.rows}×${this.cols})`);
+      if (DEBUG) console.log(`[KnitCAD][Yarn] updateFabric completed in ${Math.round(performance.now() - t0)}ms (${this.rows}×${this.cols})`);
     } catch (err) {
       console.error('[KnitCAD][Yarn] updateFabric error:', err);
     }
@@ -71,10 +74,21 @@ export class YarnSimulator {
     if (!profile || !this.topology?.constraints) return;
     this.materialProfile = { ...this.materialProfile, ...profile };
     this.topology.damping = this.materialProfile.damping;
+
+    // Tension is yarn *tightness*, not solver stiffness. Pushing stiffness > 1
+    // makes the relaxation overshoot and the whole lattice flips out. Instead:
+    //   - stiffness eases toward the solver-stable cap as tension rises
+    //   - rest length shortens as tension rises (fabric pulls taut / dense)
+    // At tension = 1.0 this reproduces the original material exactly.
+    const T = Math.max(0.2, Math.min(3.0, this.yarnTension || 1.0));
+    const baseStiff = this.materialProfile.stiffness;
+    const stiff = Math.max(0.15, Math.min(1.0, baseStiff * (0.5 + 0.5 * T)));
+    const restScale = Math.max(0.78, Math.min(1.22, this.materialProfile.restMultiplier / (0.6 + 0.4 * T)));
+
     for (const c of this.topology.constraints) {
       if (c.baseRestLength == null) c.baseRestLength = c.restLength;
-      c.stiffness = this.materialProfile.stiffness * this.yarnTension;
-      c.restLength = c.baseRestLength * this.materialProfile.restMultiplier;
+      c.stiffness = stiff;
+      c.restLength = c.baseRestLength * restScale;
     }
   }
 
@@ -113,7 +127,7 @@ export class YarnSimulator {
     this.prevStrainEnergy = 0;
     this.animating = true;
     this.centerFabric();
-    console.log('[KnitCAD][Yarn] Fabric mounting reset to needle-bed anchors');
+    if (DEBUG) console.log('[KnitCAD][Yarn] Fabric mounting reset to needle-bed anchors');
   }
 
   centerFabric() {
@@ -125,21 +139,29 @@ export class YarnSimulator {
 
   resize() {
     const parent = this.canvas.parentElement;
-    if (parent) {
-      this.canvas.width = parent.clientWidth || 800;
-      this.canvas.height = parent.clientHeight || 600;
+    // Ignore resize events fired while the tab is hidden (0×0 layout)
+    if (parent && parent.clientWidth > 0 && parent.clientHeight > 0) {
+      this.canvas.width = parent.clientWidth;
+      this.canvas.height = parent.clientHeight;
       this.centerFabric();
     }
   }
 
   setupEvents() {
-    this.canvas.addEventListener('mousedown', e => {
+    // Keep refs so destroy() can detach every listener (no leaked handlers).
+    this._listeners = [];
+    const on = (target, type, handler, opts) => {
+      target.addEventListener(type, handler, opts);
+      this._listeners.push({ target, type, handler, opts });
+    };
+
+    on(this.canvas, 'mousedown', e => {
       this.animating = true;
       this.isMouseDown = true;
       this.lastMouse = { x: e.clientX, y: e.clientY };
     });
 
-    window.addEventListener('mousemove', e => {
+    on(window, 'mousemove', e => {
       if (this.isMouseDown) {
         this.panX += e.clientX - this.lastMouse.x;
         this.panY += e.clientY - this.lastMouse.y;
@@ -147,19 +169,30 @@ export class YarnSimulator {
       }
     });
 
-    window.addEventListener('mouseup', () => {
+    on(window, 'mouseup', () => {
       this.isMouseDown = false;
     });
 
-    this.canvas.addEventListener('wheel', e => {
+    on(this.canvas, 'wheel', e => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.12 : 0.89;
       this.zoom = Math.max(0.3, Math.min(4.0, this.zoom * factor));
     });
 
-    window.addEventListener('resize', () => {
+    on(window, 'resize', () => {
       this.resize();
     });
+  }
+
+  /** Detach all listeners and stop the loop. Safe to call more than once. */
+  destroy() {
+    this.stop();
+    if (this._listeners) {
+      for (const { target, type, handler, opts } of this._listeners) {
+        target.removeEventListener(type, handler, opts);
+      }
+      this._listeners = null;
+    }
   }
 
   startAnimationLoop() {
@@ -167,7 +200,7 @@ export class YarnSimulator {
     this.animating = true;
     const loop = () => {
       if (this.animating) {
-        this.topology.stepPhysics(1, 0.016, this.topology.damping);
+        this.topology.stepPhysics(4, 0.016, this.topology.damping);
         const energy = this.topology.totalStrainEnergy;
         // Never sleep while gravity is draping the fabric — keep integrating
         if (!this.topology.gravityEnabled &&
@@ -183,6 +216,7 @@ export class YarnSimulator {
   }
 
   stop() {
+    this.animating = false;
     if (this.animFrameId) {
       cancelAnimationFrame(this.animFrameId);
       this.animFrameId = null;

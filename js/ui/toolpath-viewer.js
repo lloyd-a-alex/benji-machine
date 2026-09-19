@@ -151,17 +151,20 @@ export class ToolpathViewer {
   /**
    * Reduce rapid-travel distance with a nearest-neighbour rebuild followed by
    * 2-opt improvement passes (classic TSP heuristic for punch-card drilling).
+   * Returns { beforeMm, afterMm } so callers can report the real gain.
    */
   optimize() {
     const pts = this.toolpathPoints;
-    if (pts.length < 3) return;
+    if (pts.length < 3) return { beforeMm: this.totalRapidDistanceMm, afterMm: this.totalRapidDistanceMm };
 
     const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    const origin = { x: 0, y: 0 };
+    const beforeMm = this.totalRapidDistanceMm;
 
     // ── Nearest neighbour from the machine home origin (0, 0) ──
     const remaining = pts.slice();
     const ordered = [];
-    let cur = { x: 0, y: 0 };
+    let cur = origin;
     while (remaining.length) {
       let bestI = 0, bestD = Infinity;
       for (let i = 0; i < remaining.length; i++) {
@@ -172,23 +175,26 @@ export class ToolpathViewer {
       ordered.push(cur);
     }
 
-    // ── 2-opt: repeatedly remove path crossings until no gain ──
+    // ── 2-opt: reverse interior segments to remove path crossings ──
     let improved = true;
     let guard = 0;
-    while (improved && guard++ < 20) {
+    while (improved && guard++ < 30) {
       improved = false;
-      for (let i = 0; i < ordered.length - 2; i++) {
-        for (let j = i + 1; j < ordered.length; j++) {
-          const a = ordered[i - 1] || { x: 0, y: 0 };
-          const b = ordered[i];
+      const n = ordered.length;
+      for (let i = 0; i < n - 1 && !improved; i++) {
+        const a = i === 0 ? origin : ordered[i - 1];
+        const b = ordered[i];
+        for (let j = i + 1; j < n; j++) {
           const c = ordered[j];
-          const nxt = ordered[j + 1];
-          const delta = dist(a, c) + dist(b, nxt)
-                      - (dist(a, b) + dist(c, nxt));
+          // Open path: reversing at the tail only replaces edge a→b with a→c
+          const delta = (j === n - 1)
+            ? dist(a, c) - dist(a, b)
+            : dist(a, c) + dist(b, ordered[j + 1]) - (dist(a, b) + dist(c, ordered[j + 1]));
           if (delta < -1e-6) {
             const seg = ordered.splice(i, j - i + 1);
             ordered.splice(i, 0, ...seg.reverse());
             improved = true;
+            break;
           }
         }
       }
@@ -198,6 +204,7 @@ export class ToolpathViewer {
     this.currentToolIndex = 0;
     this.isPlaying = false;
     this._recomputeMetrics();
+    return { beforeMm, afterMm: this.totalRapidDistanceMm };
   }
 
   /** Zoom around the viewport centre by a multiplicative factor */
@@ -241,9 +248,10 @@ export class ToolpathViewer {
 
   resize() {
     const parent = this.canvas.parentElement;
-    if (!parent) return;
-    const w = parent.clientWidth  || 800;
-    const h = parent.clientHeight || 600;
+    // Skip while the tab is hidden — a 0×0 layout would bake in a stale buffer
+    if (!parent || parent.clientWidth <= 0 || parent.clientHeight <= 0) return;
+    const w = parent.clientWidth;
+    const h = parent.clientHeight;
     this.canvas.width        = w;
     this.canvas.height       = h;
     this.offscreen.width     = w;

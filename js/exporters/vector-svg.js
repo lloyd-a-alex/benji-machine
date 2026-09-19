@@ -23,8 +23,11 @@ export class VectorSvgExporter {
       includeText = true
     } = options;
 
-    const rows = cardMatrix.length;
-    const cols = cardMatrix[0]?.length || 24;
+    let rows = cardMatrix.length;
+    let cols = cardMatrix[0]?.length || 24;
+    // Physical leader differs by machine (Brother 7 vs Silver Reed 5 reading rows).
+    const lead = profile.carriageRules?.cardReadingOffsetRows || 0;
+    if (lead > 0) { cardMatrix = [...Array.from({ length: lead }, () => new Array(cols).fill(false)), ...cardMatrix]; rows = cardMatrix.length; }
     const dims = calculateCardDimensions(profile, rows, cols);
 
     const holeR = profile.holeDiameter / 2.0;
@@ -96,8 +99,10 @@ export class VectorSvgExporter {
       ? { widthMm: 215.9, heightMm: 279.4 }
       : { widthMm: 210.0, heightMm: 297.0 }; // Standard A4
 
-    const rows = cardMatrix.length;
-    const cols = cardMatrix[0]?.length || 24;
+    let rows = cardMatrix.length;
+    let cols = cardMatrix[0]?.length || 24;
+    const lead = profile.carriageRules?.cardReadingOffsetRows || 0;
+    if (lead > 0) { cardMatrix = [...Array.from({ length: lead }, () => new Array(cols).fill(false)), ...cardMatrix]; rows = cardMatrix.length; }
     const dims = calculateCardDimensions(profile, rows, cols);
 
     const printableMargin = 15.0; // mm margins on paper

@@ -816,6 +816,117 @@ export const PATTERN_PRESETS = [
       }
       return matrix;
     }
+  },
+
+  // ─── Reversible Double-Bed Jacquard (for the ribber) ────────────────────────
+  // Engineered to sit inside a single 24-stitch punchcard AND tile edge-to-edge
+  // with no visible seam, with balanced A/B stitch counts so both faces read the
+  // same motif when knit as a double-bed (interlock / rib-jacquard) fabric.
+
+  {
+    id: 'reversible_double_bed_chevron',
+    name: 'Reversible Double-Bed Chevron',
+    category: 'Reversible \u00b7 Ribber',
+    rows: 24,
+    cols: 24,
+    mode: 'fair_isle',
+    description: 'Interlock-safe 2-colour chevron that fits the 24-stitch card and repeats seamlessly. Balanced counts make it read on both sides \u2014 perfect for a reversible beanie brim or scarf.',
+    generate: (rows, cols) => {
+      const W = 12, H = 12; // both divide 24 -> seamless tiling
+      const matrix = [];
+      for (let r = 0; r < rows; r++) {
+        matrix[r] = [];
+        const ry = r % H;
+        for (let c = 0; c < cols; c++) {
+          const cx = c % W;
+          const ramp = Math.abs((cx % 6) - 2.5);       // zig-zag across the V
+          matrix[r][c] = ((ry + Math.round(ramp)) % 6 < 3) ? 1 : 0;
+        }
+      }
+      return matrix;
+    }
+  },
+
+  {
+    id: 'reversible_double_bed_diamond',
+    name: 'Reversible Double-Bed Diamond',
+    category: 'Reversible \u00b7 Ribber',
+    rows: 24,
+    cols: 24,
+    mode: 'fair_isle',
+    description: 'Nested diamond lattice on an 8x8 repeat (x3 across the 24 needles). Colour-symmetric vertically, so the wrong side mirrors the right when worked double-bed.',
+    generate: (rows, cols) => {
+      const S = 8;
+      const matrix = [];
+      for (let r = 0; r < rows; r++) {
+        matrix[r] = [];
+        for (let c = 0; c < cols; c++) {
+          const x = c % S, y = r % S;
+          // Manhattan distance from tile centre -> concentric diamond rings.
+          const d = Math.abs(x - (S - 1) / 2) + Math.abs(y - (S - 1) / 2);
+          matrix[r][c] = (Math.round(d) % 3 === 0) ? 1 : 0;
+        }
+      }
+      return matrix;
+    }
+  },
+
+  // ─── Detailed tessellations (crisp geometry, seamless repeats) ─────────────
+
+  {
+    id: 'hexagon_tessellation',
+    name: 'Honeycomb Hexagon Tessellation',
+    category: 'Fair Isle',
+    rows: 24,
+    cols: 24,
+    mode: 'fair_isle',
+    description: 'Honeycomb of outlined hexagons \u2014 walls only, no solid fill \u2014 on a seamless 8x8 grid.',
+    generate: (rows, cols) => {
+      const matrix = [];
+      const s = 8; // hex cell size
+      for (let r = 0; r < rows; r++) {
+        matrix[r] = [];
+        for (let c = 0; c < cols; c++) {
+          // Pointy-top hex grid membership via axial rounding distance to centre.
+          const q = (c / (s * 0.75));
+          const rr = (r / s) + ((Math.floor(q) % 2) * 0.5);
+          const cq = Math.round(q), cr = Math.round(rr);
+          const dq = q - cq, dr = rr - cr;
+          const edge = Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr) * 0.6);
+          matrix[r][c] = (edge > 0.42) ? 1 : 0; // thin wall ring
+        }
+      }
+      return matrix;
+    }
+  },
+
+  {
+    id: 'detailed_star_tessellation',
+    name: 'Distant Starfield (Detailed)',
+    category: 'Fair Isle',
+    rows: 24,
+    cols: 24,
+    mode: 'fair_isle',
+    description: 'Fine scattered 5-point stars with radiating spokes on a 12x12 seamless repeat \u2014 high detail, low floats.',
+    generate: (rows, cols) => {
+      const S = 12;
+      const matrix = [];
+      for (let r = 0; r < rows; r++) {
+        matrix[r] = [];
+        for (let c = 0; c < cols; c++) {
+          const x = (c % S) - (S - 1) / 2;
+          const y = (r % S) - (S - 1) / 2;
+          const ang = Math.atan2(y, x);
+          const dist = Math.sqrt(x * x + y * y);
+          // 5-fold rose-modulated radius -> star shape; also a centred pixel.
+          const rose = Math.abs(Math.cos(2.5 * ang));
+          const starR = 1.5 + 3.2 * rose;
+          const onStar = dist < starR && dist > starR - 1.4;
+          matrix[r][c] = (onStar || (Math.abs(x) < 0.6 && Math.abs(y) < 0.6)) ? 1 : 0;
+        }
+      }
+      return matrix;
+    }
   }
 ];
 

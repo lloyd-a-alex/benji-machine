@@ -178,16 +178,24 @@ export class LoopNode {
     this.acc.z += f.z / this.mass;
   }
 
-  verletStep(dt, damping = 0.94) {
+  verletStep(dt, damping = 0.94, maxStep = 12) {
     if (this.isFixed) return;
 
     const tempX = this.pos.x;
     const tempY = this.pos.y;
     const tempZ = this.pos.z;
 
-    this.pos.x += (this.pos.x - this.prevPos.x) * damping + this.acc.x * dt * dt;
-    this.pos.y += (this.pos.y - this.prevPos.y) * damping + this.acc.y * dt * dt;
-    this.pos.z += (this.pos.z - this.prevPos.z) * damping + this.acc.z * dt * dt;
+    // Damped velocity, hard-clamped per axis so no force/tension/timestep can
+    // drive a node faster than maxStep units per step. This is a stability floor:
+    // even a mis-configured solver can never make the fabric "explode".
+    const clampV = (v) => v > maxStep ? maxStep : (v < -maxStep ? -maxStep : v);
+    const vx = clampV((this.pos.x - this.prevPos.x) * damping);
+    const vy = clampV((this.pos.y - this.prevPos.y) * damping);
+    const vz = clampV((this.pos.z - this.prevPos.z) * damping);
+
+    this.pos.x += vx + this.acc.x * dt * dt;
+    this.pos.y += vy + this.acc.y * dt * dt;
+    this.pos.z += vz + this.acc.z * dt * dt;
 
     this.prevPos.set(tempX, tempY, tempZ);
     this.acc.set(0, 0, 0);
@@ -216,7 +224,11 @@ export class YarnSegmentConstraint {
     if (currentDist < 1e-6) return;
 
     const diff = (currentDist - this.restLength) / currentDist;
-    const factor = diff * 0.5 * this.stiffness;
+    // Gauss-Seidel relaxation is only stable for stiffness in [0,1]; >1 overshoots
+    // past the constraint and diverges (the "flip out" we saw at high tension).
+    // Clamp here so no upstream code can ever push the solver unstable.
+    const stiffness = this.stiffness > 1 ? 1 : (this.stiffness < 0 ? 0 : this.stiffness);
+    const factor = diff * 0.5 * stiffness;
 
     const offsetX = dx * factor;
     const offsetY = dy * factor;
@@ -247,8 +259,10 @@ export class KnitTopologyNetwork {
     this.totalStrainEnergy = 0;
     this.gaussianCurvatures = [];
     this.gravityEnabled = false;
-    // Gravity in pixel-space units (~100 px per metre ⇒ 9.8 m/s² ≈ 980 px/s²)
-    this.gravity = new Vec3(0, -980, 0);
+    // Gravity in pixel-space (lattice ≈ 22 px per stitch). Real 9.8 m/s² would
+    // be sub-pixel at Verlet's dt² scale, so we use an exaggerated drape
+    // acceleration tuned for visible fabric sag between the needle-bed anchors.
+    this.gravity = new Vec3(0, -18000, 0);
     this.windForce = new Vec3(0, 0, 0);
     this.collisionEnabled = true;
     this.subSteps = 4;

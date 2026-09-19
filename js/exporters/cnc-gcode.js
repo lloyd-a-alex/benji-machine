@@ -35,8 +35,12 @@ export class CncGcodeExporter {
    * Generates optimized G-Code program string for a punchcard bitmask
    */
   generateGCode(profile, cardMatrix) {
+    let cols = cardMatrix[0]?.length || 24;
+    // Machine-specific physical leader (Brother 7 vs Silver Reed 5 reading rows)
+    // makes the drilled card positionally different between machines.
+    const lead = profile.carriageRules?.cardReadingOffsetRows || 0;
+    if (lead > 0) cardMatrix = [...Array.from({ length: lead }, () => new Array(cols).fill(false)), ...cardMatrix];
     const rows = cardMatrix.length;
-    const cols = cardMatrix[0]?.length || 24;
     const dims = calculateCardDimensions(profile, rows, cols);
 
     // 1. Gather all hole coordinates (X, Y) in millimeters

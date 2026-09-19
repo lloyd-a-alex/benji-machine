@@ -25,8 +25,14 @@ export class CadDxfExporter {
       kerfOffsetMm = 0.0 // Laser kerf compensation
     } = options;
 
-    const rows = cardMatrix.length;
     const cols = cardMatrix[0]?.length || 24;
+    // Physical leader: the sensor reads the card a fixed number of rows below the
+    // needles, and that offset differs by machine (Brother 7, Silver Reed 5, etc.).
+    // Prepending blank rows makes the punched pattern sit at the correct physical
+    // height so two machines' cards are genuinely different, not identical.
+    const lead = profile.carriageRules?.cardReadingOffsetRows || 0;
+    if (lead > 0) cardMatrix = [...Array.from({ length: lead }, () => new Array(cols).fill(false)), ...cardMatrix];
+    const rows = cardMatrix.length;
     const dims = calculateCardDimensions(profile, rows, cols);
 
     const dxf = [];
