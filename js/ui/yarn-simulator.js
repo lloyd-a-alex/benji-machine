@@ -53,8 +53,8 @@ export class YarnSimulator {
 
       // Fast Jacobi warm-up without quadratic collision passes
       this.topology.collisionEnabled = false;
-      for (let i = 0; i < 15; i++) {
-        this.topology.stepPhysics(4, 0.016, this.topology.damping);
+      for (let i = 0; i < 6; i++) {
+        this.topology.stepPhysics(3, 0.016, this.topology.damping);
       }
 
       this.prevStrainEnergy = this.topology.totalStrainEnergy;
@@ -167,9 +167,11 @@ export class YarnSimulator {
     this.animating = true;
     const loop = () => {
       if (this.animating) {
-        this.topology.stepPhysics(2, 0.016, this.topology.damping);
+        this.topology.stepPhysics(1, 0.016, this.topology.damping);
         const energy = this.topology.totalStrainEnergy;
-        if (Math.abs(this.prevStrainEnergy - energy) < this.energySleepThreshold) {
+        // Never sleep while gravity is draping the fabric — keep integrating
+        if (!this.topology.gravityEnabled &&
+            Math.abs(this.prevStrainEnergy - energy) < this.energySleepThreshold) {
           this.animating = false;
         }
         this.prevStrainEnergy = energy;
@@ -237,7 +239,7 @@ export class YarnSimulator {
   }
 
   _strokeCatmullRomPath(ctx, pts, yOffset, xOffset = 0) {
-    const numSubdivisions = 8;
+    const numSubdivisions = 5;
     ctx.beginPath();
     let started = false;
 

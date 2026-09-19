@@ -247,7 +247,8 @@ export class KnitTopologyNetwork {
     this.totalStrainEnergy = 0;
     this.gaussianCurvatures = [];
     this.gravityEnabled = false;
-    this.gravity = new Vec3(0, -9.8, 0);
+    // Gravity in pixel-space units (~100 px per metre ⇒ 9.8 m/s² ≈ 980 px/s²)
+    this.gravity = new Vec3(0, -980, 0);
     this.windForce = new Vec3(0, 0, 0);
     this.collisionEnabled = true;
     this.subSteps = 4;

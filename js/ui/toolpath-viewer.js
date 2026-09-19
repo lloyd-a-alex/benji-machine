@@ -55,6 +55,10 @@ export class ToolpathViewer {
     this.currentToolIndex = 0;
     this.simSpeed         = 4;
 
+    // ─── Toolbar Modes ────────────────────────────────────────────────────────
+    this.panMode       = true;  // pointer drag translates the viewport
+    this.showAllLayers = false; // render full machined path regardless of playhead
+
     this.toolpathPoints       = [];
     this.totalRapidDistanceMm = 0;
     this.estimatedTimeSeconds = 0;
@@ -112,6 +116,16 @@ export class ToolpathViewer {
       }
     }
 
+    this._recomputeMetrics();
+
+    this.currentToolIndex = 0;
+    this._dirty = true;
+    this.fitToViewport();
+  }
+
+  /** Recompute rapid travel distance and cycle estimate from current point order */
+  _recomputeMetrics() {
+    this.totalRapidDistanceMm = 0;
     let prevX = 0, prevY = 0;
     for (const pt of this.toolpathPoints) {
       const dx = pt.x - prevX, dy = pt.y - prevY;
@@ -122,10 +136,68 @@ export class ToolpathViewer {
     const rapidTime = (this.totalRapidDistanceMm / 3000) * 60;
     const punchTime = this.toolpathPoints.length * 0.18;
     this.estimatedTimeSeconds = Math.round(rapidTime + punchTime);
-
-    this.currentToolIndex = 0;
     this._dirty = true;
-    this.fitToViewport();
+  }
+
+  /** Reverse the machining order of the toolpath (punch last hole first) */
+  reverse() {
+    if (this.toolpathPoints.length < 2) return;
+    this.toolpathPoints.reverse();
+    this.currentToolIndex = 0;
+    this.isPlaying = false;
+    this._recomputeMetrics();
+  }
+
+  /**
+   * Reduce rapid-travel distance with a nearest-neighbour rebuild followed by
+   * 2-opt improvement passes (classic TSP heuristic for punch-card drilling).
+   */
+  optimize() {
+    const pts = this.toolpathPoints;
+    if (pts.length < 3) return;
+
+    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+    // ── Nearest neighbour from the machine home origin (0, 0) ──
+    const remaining = pts.slice();
+    const ordered = [];
+    let cur = { x: 0, y: 0 };
+    while (remaining.length) {
+      let bestI = 0, bestD = Infinity;
+      for (let i = 0; i < remaining.length; i++) {
+        const d = dist(cur, remaining[i]);
+        if (d < bestD) { bestD = d; bestI = i; }
+      }
+      cur = remaining.splice(bestI, 1)[0];
+      ordered.push(cur);
+    }
+
+    // ── 2-opt: repeatedly remove path crossings until no gain ──
+    let improved = true;
+    let guard = 0;
+    while (improved && guard++ < 20) {
+      improved = false;
+      for (let i = 0; i < ordered.length - 2; i++) {
+        for (let j = i + 1; j < ordered.length; j++) {
+          const a = ordered[i - 1] || { x: 0, y: 0 };
+          const b = ordered[i];
+          const c = ordered[j];
+          const nxt = ordered[j + 1];
+          const delta = dist(a, c) + dist(b, nxt)
+                      - (dist(a, b) + dist(c, nxt));
+          if (delta < -1e-6) {
+            const seg = ordered.splice(i, j - i + 1);
+            ordered.splice(i, 0, ...seg.reverse());
+            improved = true;
+          }
+        }
+      }
+    }
+
+    this.toolpathPoints = ordered;
+    this.currentToolIndex = 0;
+    this.isPlaying = false;
+    this._recomputeMetrics();
   }
 
   /** Zoom around the viewport centre by a multiplicative factor */
@@ -236,7 +308,8 @@ export class ToolpathViewer {
         this.zoom       = nz;
         this._dirty     = true;
       } else if (this._isDragging && this._pointers.size === 1) {
-        // Drag pan
+        // Drag pan (only while pan mode is active)
+        if (!this.panMode) return;
         const dx = e.clientX - prev.x;
         const dy = e.clientY - prev.y;
         this.panX += dx;
@@ -425,10 +498,12 @@ export class ToolpathViewer {
     }
 
     // ── 4. Toolpath lines ────────────────────────────────────────────────────
-    const maxIdx = Math.min(
-      this.toolpathPoints.length - 1,
-      Math.floor(this.currentToolIndex)
-    );
+    const maxIdx = this.showAllLayers
+      ? this.toolpathPoints.length - 1
+      : Math.min(
+          this.toolpathPoints.length - 1,
+          Math.floor(this.currentToolIndex)
+        );
 
     if (this.toolpathPoints.length > 1) {
       // Full path (very dim background guide)
@@ -507,7 +582,8 @@ export class ToolpathViewer {
 
   _renderHUD(ctx, w, h, activePt) {
     const totalPts = this.toolpathPoints.length;
-    const progress = totalPts > 0 ? Math.max(0, activePt) / totalPts : 0;
+    const machined = this.showAllLayers ? totalPts : Math.max(0, activePt);
+    const progress = totalPts > 0 ? machined / totalPts : 0;
 
     const hudW = 290;
     const hudH = 150;
@@ -542,7 +618,7 @@ export class ToolpathViewer {
     const etStr  = `${Math.floor(et / 60)}m ${et % 60}s`;
 
     ctx.fillText(`Machine:    ${this.profile ? this.profile.name : 'Standard'}`, hudX + 14, hudY + 38);
-    ctx.fillText(`Machined:   ${Math.max(0, activePt)} / ${totalPts} holes`, hudX + 14, hudY + 54);
+    ctx.fillText(`Machined:   ${machined} / ${totalPts} holes`, hudX + 14, hudY + 54);
     ctx.fillText(`Rapid:      ${this.totalRapidDistanceMm.toFixed(1)} mm`, hudX + 14, hudY + 70);
     ctx.fillText(`Cycle est.: ${etStr}`, hudX + 14, hudY + 86);
     ctx.fillText(`Path opt.:  2-OPT TSP (active)`, hudX + 14, hudY + 102);
