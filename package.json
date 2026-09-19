@@ -1,0 +1,8 @@
+{
+  "name": "knitcad",
+  "version": "1.0.0",
+  "description": "Antigravity KnitCAD — industrial knitting machine CAD/CAM studio",
+  "scripts": {
+    "start": "node server.js 3000"
+  }
+}

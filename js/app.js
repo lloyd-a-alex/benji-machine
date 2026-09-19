@@ -18,6 +18,7 @@ import { FormatsExporter } from './exporters/formats-dak.js';
 import { PATTERN_PRESETS } from './presets/preset-library.js';
 import { TankTopCanvas } from './ui/tank-top-canvas.js';
 import { BrotherSimCanvas } from './ui/brother-sim-canvas.js';
+import { NotificationCenter } from './ui/notifications.js';
 
 class KnitApp {
   constructor() {
@@ -26,6 +27,7 @@ class KnitApp {
     this.activeTab = 'editor';
     this.romanceMode = true; // Always on — this machine is made for Benji ♥
     this.punchcardViewMode = 'standard';
+    this.notifications = new NotificationCenter('toast-container');
 
     this.compiler = new LaceCompiler(this.currentProfile);
     this.compilationResult = null;
@@ -46,12 +48,6 @@ class KnitApp {
       this.initEvents();
     } catch (e) {
       console.error('[KnitCAD] initEvents error:', e);
-    }
-
-    try {
-      this.loadPreset('feather_fan_lace');
-    } catch (e) {
-      console.error('[KnitCAD] loadPreset error:', e);
     }
 
     // Show the Benji love popup on first load with delay to ensure DOM is ready
@@ -108,52 +104,64 @@ class KnitApp {
   initComponents() {
     // Use requestIdleCallback to defer heavy initialization for faster startup
     const initComponents = () => {
-      // 1. Grid Canvas Editor
-      this.editor = new CanvasEditor(this.elements.editorCanvas, {
-        rows: 24,
-        cols: this.currentProfile.columns,
-        mode: this.currentMode,
-        onChange: () => this.handlePatternChange()
-      });
+      try {
+        // 1. Grid Canvas Editor
+        this.editor = new CanvasEditor(this.elements.editorCanvas, {
+          rows: 24,
+          cols: this.currentProfile.columns,
+          mode: this.currentMode,
+          onChange: () => this.handlePatternChange()
+        });
 
-      // 2. Physical Yarn Simulator — always romantic pink for Benji ♥
-      this.yarnSim = new YarnSimulator(this.elements.yarnCanvas, {
-        rows: 24,
-        cols: this.currentProfile.columns
-      });
-      if (this.yarnSim && this.yarnSim.setYarnColors) {
-        this.yarnSim.setYarnColors('#fbcfe8', '#e11d48');
+        // 2. Physical Yarn Simulator — always romantic pink for Benji ♥
+        this.yarnSim = new YarnSimulator(this.elements.yarnCanvas, {
+          rows: 24,
+          cols: this.currentProfile.columns
+        });
+        if (this.yarnSim && this.yarnSim.setYarnColors) {
+          this.yarnSim.setYarnColors('#fbcfe8', '#e11d48');
+        }
+        this.setYarnMaterial('cotton');
+        this.setYarnViewMode('shaded');
+
+        // 3. CNC Toolpath Viewer
+        this.toolpathViewer = new ToolpathViewer(this.elements.toolpathCanvas, {
+          profile: this.currentProfile
+        });
+
+        // 4. Punchcard 2D Canvas context
+        this.punchcardCtx = this.elements.punchcardCanvas.getContext('2d');
+
+        // 5. Tank Top Tailoring CAD
+        const tankTopEl = document.getElementById('tanktop-canvas');
+        if (tankTopEl) {
+          this.tankTopCanvas = new TankTopCanvas(tankTopEl, {
+          chestCircumferenceCm: 92,
+          easeCm: 4,
+          bodyLengthCm: 38,
+          armholeDepthCm: 21,
+          shoulderWidthCm: 35,
+          neckWidthCm: 18,
+          frontNeckDropCm: 13,
+          strapWidthCm: 5
+          });
+          this.updateTankTopInstructions();
+        }
+
+        // 6. Brother KH-830 Kinematic Simulator
+        const brotherEl = document.getElementById('brother-canvas');
+        if (brotherEl) {
+          this.brotherCanvas = new BrotherSimCanvas(brotherEl);
+        }
+
+        // Now that components are ready, load the preset
+        this.loadPreset('feather_fan_lace');
+        
+        // Initialize component-dependent event listeners
+        this.initComponentEvents();
+      } catch (e) {
+        console.error('[KnitCAD] Component initialization error:', e);
       }
-
-      // 3. CNC Toolpath Viewer
-      this.toolpathViewer = new ToolpathViewer(this.elements.toolpathCanvas, {
-        profile: this.currentProfile
-      });
-
-      // 4. Punchcard 2D Canvas context
-      this.punchcardCtx = this.elements.punchcardCanvas.getContext('2d');
-
-      // 5. Tank Top Tailoring CAD
-      const tankTopEl = document.getElementById('tanktop-canvas');
-      if (tankTopEl) {
-        this.tankTopCanvas = new TankTopCanvas(tankTopEl, {
-        chestCircumferenceCm: 92,
-        easeCm: 4,
-        bodyLengthCm: 38,
-        armholeDepthCm: 21,
-        shoulderWidthCm: 35,
-        neckWidthCm: 18,
-        frontNeckDropCm: 13,
-        strapWidthCm: 5
-      });
-      this.updateTankTopInstructions();
-    }
-
-    // 6. Brother KH-830 Kinematic Simulator
-    const brotherEl = document.getElementById('brother-canvas');
-    if (brotherEl) {
-      this.brotherCanvas = new BrotherSimCanvas(brotherEl);
-    }
     };
 
     // Defer initialization for faster startup
@@ -162,6 +170,53 @@ class KnitApp {
     } else {
       setTimeout(() => initComponents(), 100);
     }
+  }
+
+  initComponentEvents() {
+    // Status bar tracking - only if editor is ready
+    if (this.editor && this.editor.canvas) {
+      this.editor.canvas.addEventListener('mousemove', () => {
+        const hc = this.editor.hoverCell;
+        if (hc && hc.r >= 0 && hc.c >= 0) {
+          this.elements.statusCoords.textContent = `Row: ${hc.r + 1} | Needle: ${hc.c + 1}`;
+        } else {
+          this.elements.statusCoords.textContent = `Needle: -- | Row: --`;
+        }
+      });
+    }
+
+    // Keyboard shortcuts that depend on editor
+    window.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      if (!this.editor) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (e.shiftKey) this.editor.redo();
+        else this.editor.undo();
+        e.preventDefault();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        this.editor.redo();
+        e.preventDefault();
+      } else if (e.key === 'p' || e.key === 'b') {
+        document.querySelector('[data-tool="pencil"]')?.click();
+      } else if (e.key === 'e') {
+        document.querySelector('[data-tool="eraser"]')?.click();
+      } else if (e.key === 'l') {
+        document.querySelector('[data-tool="line"]')?.click();
+      } else if (e.key === 'r') {
+        document.querySelector('[data-tool="rect"]')?.click();
+      } else if (e.key === 'c') {
+        document.querySelector('[data-tool="circle"]')?.click();
+      } else if (e.key === 'f') {
+        document.querySelector('[data-tool="fill"]')?.click();
+      } else if (e.key === 's') {
+        document.querySelector('[data-tool="select"]')?.click();
+      } else if (e.key === 'u') {
+        this.editor.undo();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        this.editor.clear();
+      }
+    });
   }
 
   initEvents() {
@@ -208,7 +263,7 @@ class KnitApp {
       btn.addEventListener('click', () => {
         this.elements.toolButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        this.editor.activeTool = btn.dataset.tool;
+        if (this.editor) this.editor.activeTool = btn.dataset.tool;
       });
     });
 
@@ -217,32 +272,33 @@ class KnitApp {
       btn.addEventListener('click', () => {
         this.elements.stitchButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        this.editor.activeStitch = btn.dataset.stitch;
+        if (this.editor) this.editor.activeStitch = btn.dataset.stitch;
       });
     });
 
     // Undo / Redo / Clear / Invert / Symmetry
-    document.getElementById('btn-undo')?.addEventListener('click', () => this.editor.undo());
-    document.getElementById('btn-redo')?.addEventListener('click', () => this.editor.redo());
-    document.getElementById('btn-clear')?.addEventListener('click', () => this.editor.clear());
-    document.getElementById('btn-invert')?.addEventListener('click', () => this.editor.invert());
-    document.getElementById('btn-flip-h')?.addEventListener('click', () => this.editor.flipHorizontal());
-    document.getElementById('btn-flip-v')?.addEventListener('click', () => this.editor.flipVertical());
+    document.getElementById('btn-undo')?.addEventListener('click', () => this.editor?.undo());
+    document.getElementById('btn-redo')?.addEventListener('click', () => this.editor?.redo());
+    document.getElementById('btn-clear')?.addEventListener('click', () => this.editor?.clear());
+    document.getElementById('btn-invert')?.addEventListener('click', () => this.editor?.invert());
+    document.getElementById('btn-flip-h')?.addEventListener('click', () => this.editor?.flipHorizontal());
+    document.getElementById('btn-flip-v')?.addEventListener('click', () => this.editor?.flipVertical());
     
     // View controls
-    document.getElementById('btn-pan')?.addEventListener('click', () => this.editor.setActiveTool('pan'));
-    document.getElementById('btn-fit')?.addEventListener('click', () => this.editor.fitToView());
+    document.getElementById('btn-pan')?.addEventListener('click', () => this.editor?.setActiveTool('pan'));
+    document.getElementById('btn-fit')?.addEventListener('click', () => this.editor?.fitToView());
 
     // Symmetry checkboxes
     document.getElementById('chk-sym-h')?.addEventListener('change', e => {
-      this.editor.symmetryH = e.target.checked;
+      if (this.editor) this.editor.symmetryH = e.target.checked;
     });
     document.getElementById('chk-sym-v')?.addEventListener('change', e => {
-      this.editor.symmetryV = e.target.checked;
+      if (this.editor) this.editor.symmetryV = e.target.checked;
     });
 
     // Grid dimension inputs
     document.getElementById('input-rows')?.addEventListener('change', e => {
+      if (!this.editor) return;
       const rows = Math.max(8, Math.min(240, parseInt(e.target.value) || 24));
       this.editor.setDimensions(rows, this.editor.cols);
     });
@@ -327,6 +383,7 @@ class KnitApp {
     document.getElementById('btn-yarn-relax')?.addEventListener('click', () => this.forceYarnRelaxation());
     document.getElementById('btn-yarn-tension')?.addEventListener('click', () => this.cycleYarnTension());
     document.getElementById('btn-yarn-gravity')?.addEventListener('click', () => this.toggleYarnGravity());
+    document.getElementById('btn-yarn-reset')?.addEventListener('click', () => this.resetFabricMounting());
     document.getElementById('btn-yarn-cotton')?.addEventListener('click', () => this.setYarnMaterial('cotton'));
     document.getElementById('btn-yarn-wool')?.addEventListener('click', () => this.setYarnMaterial('wool'));
     document.getElementById('btn-yarn-silk')?.addEventListener('click', () => this.setYarnMaterial('silk'));
@@ -439,15 +496,17 @@ class KnitApp {
     document.getElementById('btn-export-xml')?.addEventListener('click', () => this.exportXML());
     document.getElementById('btn-export-docs')?.addEventListener('click', () => this.exportDocumentation());
 
-    // Status bar tracking
-    this.editor.canvas.addEventListener('mousemove', () => {
-      const hc = this.editor.hoverCell;
-      if (hc && hc.r >= 0 && hc.c >= 0) {
-        this.elements.statusCoords.textContent = `Row: ${hc.r + 1} | Needle: ${hc.c + 1}`;
-      } else {
-        this.elements.statusCoords.textContent = `Needle: -- | Row: --`;
-      }
-    });
+    // Status bar tracking - only if editor is ready
+    if (this.editor && this.editor.canvas) {
+      this.editor.canvas.addEventListener('mousemove', () => {
+        const hc = this.editor.hoverCell;
+        if (hc && hc.r >= 0 && hc.c >= 0) {
+          this.elements.statusCoords.textContent = `Row: ${hc.r + 1} | Needle: ${hc.c + 1}`;
+        } else {
+          this.elements.statusCoords.textContent = `Needle: -- | Row: --`;
+        }
+      });
+    }
 
     // Keyboard Shortcuts
     window.addEventListener('keydown', e => {
@@ -476,7 +535,9 @@ class KnitApp {
 
   setPatternMode(mode) {
     this.currentMode = mode;
-    this.editor.setMode(mode);
+    if (this.editor) {
+      this.editor.setMode(mode);
+    }
 
     if (mode === 'lace') {
       this.elements.lacePalette.style.display = 'flex';
@@ -515,9 +576,13 @@ class KnitApp {
   }
 
   onTabSwitched(tab) {
+    if (this.yarnSim) this.yarnSim.stop();
+    if (this.brotherCanvas) this.brotherCanvas.pause();
+
     if (tab === 'yarn') {
       this.yarnSim.resize();
       this.yarnSim.updateFabric(this.editor.matrix);
+      this.yarnSim.startAnimationLoop();
     } else if (tab === 'punchcard') {
       this.renderPunchcardRibbon();
     } else if (tab === 'cnc') {
@@ -531,7 +596,7 @@ class KnitApp {
       this.brotherCanvas?.resize();
       const firstCardRow = this.compilationResult?.cardMatrix?.[0] || [];
       this.brotherCanvas?.setCardPattern(firstCardRow);
-      this.brotherCanvas?.render();
+      this.brotherCanvas?.play();
     }
   }
 
@@ -998,7 +1063,7 @@ class KnitApp {
         if (data.mode) this.setPatternMode(data.mode);
         if (data.stitchMatrix) this.editor.setMatrix(data.stitchMatrix);
       } catch (err) {
-        alert('Invalid project file format: ' + err.message);
+        this.notifications.error('Invalid project file format.', { details: err.message });
       }
     };
     reader.readAsText(file);
@@ -1007,7 +1072,7 @@ class KnitApp {
   // Advanced Export Functions
   exportAYAB() {
     if (!this.compilationResult || !this.compilationResult.cardMatrix) {
-      alert('No pattern data to export.');
+      this.notifications.warn('No pattern data to export.');
       return;
     }
     
@@ -1017,7 +1082,7 @@ class KnitApp {
 
   exportBrotherDisk() {
     if (!this.compilationResult || !this.compilationResult.cardMatrix) {
-      alert('No pattern data to export.');
+      this.notifications.warn('No pattern data to export.');
       return;
     }
     
@@ -1106,9 +1171,12 @@ class KnitApp {
     }
     
     if (hasErrors) {
-      alert(`Schedule verification failed with ${diags.filter(d => d.type === 'error').length} errors. Check diagnostics panel.`);
+      const errorCount = diags.filter(d => d.type === 'error').length;
+      this.notifications.error('Schedule verification failed.', {
+        details: [`${errorCount} error(s) found. See Diagnostics panel for details.`]
+      });
     } else {
-      alert('✓ Schedule verified successfully! All carriage passes are physically feasible.');
+      this.notifications.success('Schedule verified — all carriage passes are physically feasible.');
     }
   }
 
@@ -1132,11 +1200,15 @@ class KnitApp {
     this.compilationResult.totalPasses = optimizedStrokes.length;
     this.updateScheduleUI();
     this.updateStatusStats();
+    const removed = strokes.length - optimizedStrokes.length;
+    this.notifications.success('Schedule optimized.', {
+      details: removed > 0 ? [`Removed ${removed} redundant knit pass(es).`] : ['No redundant passes found.']
+    });
   }
 
   exportScheduleCSV() {
     if (!this.compilationResult || this.compilationResult.strokes.length === 0) {
-      alert('No schedule data to export.');
+      this.notifications.warn('No schedule data to export.');
       return;
     }
     
@@ -1193,9 +1265,12 @@ class KnitApp {
     const collisions = diags.filter(d => d.type === 'error' && d.message.toLowerCase().includes('collision'));
     
     if (collisions.length > 0) {
-      alert(`⚠ Found ${collisions.length} potential collision(s):\n${collisions.map(c => c.message).join('\n')}`);
+      this.notifications.warn(`Found ${collisions.length} potential collision(s).`, {
+        details: collisions.map(c => c.message),
+        duration: 8000
+      });
     } else {
-      alert('✓ No collisions detected in current schedule.');
+      this.notifications.success('No collisions detected in the current schedule.');
     }
   }
 
@@ -1224,12 +1299,22 @@ class KnitApp {
 
   // Yarn Simulation Toolbar Functions
   forceYarnRelaxation() {
-    if (!this.yarnSim || !this.yarnSim.topology) return;
-    // Run 50 intensive relaxation steps
-    for (let i = 0; i < 50; i++) {
-      this.yarnSim.topology.stepPhysics(8, 0.012, 0.88);
+    if (!this.yarnSim || !this.yarnSim.topology) {
+      this.notifications.warn('Yarn simulator is not ready yet.');
+      return;
     }
+    const topo = this.yarnSim.topology;
+    const prevCollision = topo.collisionEnabled;
+    topo.collisionEnabled = false;
+    const t0 = performance.now();
+    for (let i = 0; i < 20; i++) {
+      topo.stepPhysics(4, 0.016, topo.damping);
+    }
+    topo.collisionEnabled = prevCollision;
+    this.yarnSim.animating = true;
     this.yarnSim.render();
+    const ms = Math.round(performance.now() - t0);
+    this.notifications.success(`Fabric relaxation complete (${ms} ms).`);
   }
 
   cycleYarnTension() {
@@ -1238,74 +1323,134 @@ class KnitApp {
     const currentTension = this.yarnSim.yarnTension || 1.0;
     const currentIndex = tensions.indexOf(currentTension);
     const nextIndex = (currentIndex + 1) % tensions.length;
-    this.yarnSim.setTension(tensions[nextIndex]);
+    const nextTension = tensions[nextIndex];
+    this.yarnSim.setTension(nextTension);
     this.yarnSim.render();
+    this.notifications.info(`Yarn tension set to ${nextTension.toFixed(1)}×.`);
   }
 
   toggleYarnGravity() {
     if (!this.yarnSim || !this.yarnSim.topology) return;
     this.yarnSim.topology.gravityEnabled = !this.yarnSim.topology.gravityEnabled;
-    
-    // Update button visual state
+    this.yarnSim.animating = true;
+
     const gravityBtn = document.getElementById('btn-yarn-gravity');
     if (gravityBtn) {
       gravityBtn.classList.toggle('active', this.yarnSim.topology.gravityEnabled);
     }
-    
+
     this.yarnSim.render();
+    this.notifications.info(
+      this.yarnSim.topology.gravityEnabled
+        ? 'Gravity enabled — fabric will drape from needle-bed anchors.'
+        : 'Gravity disabled — fabric held in neutral lattice.'
+    );
+  }
+
+  resetFabricMounting() {
+    if (!this.yarnSim?.topology) {
+      this.notifications.warn('Yarn simulator is not ready yet.');
+      return;
+    }
+    this.yarnSim.resetMounting();
+    this.yarnSim.render();
+    this.notifications.success('Fabric reset to needle-bed mounting (cast-on + working edge).');
   }
 
   setYarnMaterial(material) {
-    if (!this.yarnSim) return;
+    if (!this.yarnSim?.topology) return;
+
     const materials = {
-      cotton: { main: '#f8fafc', contrast: '#38bdf8', thickness: 4.2 },
-      wool: { main: '#fef3c7', contrast: '#f59e0b', thickness: 5.0 },
-      silk: { main: '#fef2f2', contrast: '#ec4899', thickness: 3.5 }
+      cotton: {
+        main: '#f8fafc',
+        contrast: '#38bdf8',
+        thickness: 4.0,
+        stiffness: 0.98,
+        restMultiplier: 0.95,
+        damping: 0.82
+      },
+      wool: {
+        main: '#fef3c7',
+        contrast: '#f59e0b',
+        thickness: 5.2,
+        stiffness: 0.65,
+        restMultiplier: 1.05,
+        damping: 0.94
+      },
+      silk: {
+        main: '#fef2f2',
+        contrast: '#ec4899',
+        thickness: 3.2,
+        stiffness: 0.88,
+        restMultiplier: 0.98,
+        damping: 0.90
+      }
     };
-    
-    if (materials[material]) {
-      this.yarnSim.yarnColorMain = materials[material].main;
-      this.yarnSim.yarnColorContrast = materials[material].contrast;
-      this.yarnSim.yarnThickness = materials[material].thickness;
-      this.yarnSim.render();
-      
-      // Update button states
-      ['btn-yarn-cotton', 'btn-yarn-wool', 'btn-yarn-silk'].forEach(id => {
-        const btn = document.getElementById(id);
-        if (btn) btn.classList.toggle('active', id === `btn-yarn-${material}`);
-      });
-    }
+
+    const mat = materials[material];
+    if (!mat) return;
+
+    this.yarnSim.yarnColorMain = mat.main;
+    this.yarnSim.yarnColorContrast = mat.contrast;
+    this.yarnSim.yarnThickness = mat.thickness;
+    this.yarnSim.applyMaterialProfile({
+      name: material,
+      stiffness: mat.stiffness,
+      restMultiplier: mat.restMultiplier,
+      damping: mat.damping
+    });
+    this.yarnSim.animating = true;
+    this.yarnSim.render();
+
+    ['btn-yarn-cotton', 'btn-yarn-wool', 'btn-yarn-silk'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.classList.toggle('active', id === `btn-yarn-${material}`);
+    });
+
+    this.notifications.info(`${material.charAt(0).toUpperCase() + material.slice(1)} yarn — stiffness ${mat.stiffness}, damping ${mat.damping}.`);
   }
 
   setYarnViewMode(mode) {
     if (!this.yarnSim) return;
     this.yarnSim.viewMode = mode;
     this.yarnSim.render();
-    
+
     const buttons = ['btn-yarn-wireframe', 'btn-yarn-shaded', 'btn-yarn-stress'];
     buttons.forEach(id => {
       const btn = document.getElementById(id);
       if (btn) btn.classList.toggle('active', id === `btn-yarn-${mode}`);
     });
+
+    const labels = { wireframe: 'Wireframe', shaded: 'Shaded', stress: 'Stress heatmap' };
+    this.notifications.info(`View mode: ${labels[mode] || mode}.`, { duration: 2500, log: false });
   }
 
   takeYarnScreenshot() {
-    if (!this.yarnSim || !this.yarnSim.canvas) return;
+    if (!this.yarnSim?.canvas) {
+      this.notifications.warn('Yarn canvas is not available.');
+      return;
+    }
     const link = document.createElement('a');
     link.download = 'yarn_simulation.png';
     link.href = this.yarnSim.canvas.toDataURL('image/png');
     link.click();
+    this.notifications.success('Yarn simulation screenshot saved.');
   }
 
   exportYarn3D() {
-    if (!this.yarnSim || !this.yarnSim.topology) return;
-    alert('3D export feature - OBJ file generation would be implemented here with full geometry data.');
+    if (!this.yarnSim?.topology) {
+      this.notifications.warn('No yarn simulation data to export.');
+      return;
+    }
+    const obj = this.yarnSim.exportObj();
+    this.downloadFile(obj, 'yarn_fabric.obj', 'text/plain');
+    this.notifications.success('3D yarn model exported as OBJ.');
   }
 
   // Punchcard Toolbar Functions
   verifyPunchcard() {
     if (!this.compilationResult || !this.compilationResult.cardMatrix) {
-      alert('No punchcard data to verify.');
+      this.notifications.warn('No punchcard data to verify.');
       return;
     }
     
@@ -1323,7 +1468,14 @@ class KnitApp {
     const total = holeCount + blankCount;
     const density = total > 0 ? ((holeCount / total) * 100).toFixed(1) : 0;
     
-    alert(`✓ Punchcard Verification:\nTotal cells: ${total}\nHoles: ${holeCount}\nBlanks: ${blankCount}\nDensity: ${density}%`);
+    this.notifications.success('Punchcard verification complete.', {
+      details: [
+        `Total cells: ${total}`,
+        `Holes: ${holeCount}`,
+        `Blanks: ${blankCount}`,
+        `Density: ${density}%`
+      ]
+    });
   }
 
   invertPunchcard() {
@@ -1337,6 +1489,7 @@ class KnitApp {
     
     this.renderPunchcardRibbon();
     this.updateStatusStats();
+    this.notifications.info('Punchcard inverted — holes and blanks swapped.');
   }
 
   clearPunchcard() {
@@ -1348,6 +1501,7 @@ class KnitApp {
     
     this.renderPunchcardRibbon();
     this.updateStatusStats();
+    this.notifications.info('Punchcard cleared — all holes removed.');
   }
 
   setPunchcardView(view) {
@@ -1377,7 +1531,7 @@ class KnitApp {
 
   showPunchcardStats() {
     if (!this.compilationResult || !this.compilationResult.cardMatrix) {
-      alert('No punchcard data available.');
+      this.notifications.warn('No punchcard data available.');
       return;
     }
     
@@ -1387,14 +1541,12 @@ class KnitApp {
     
     let totalHoles = 0;
     let rowHoles = new Array(rows).fill(0);
-    let colHoles = new Array(cols).fill(0);
     
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         if (cardMatrix[r][c]) {
           totalHoles++;
           rowHoles[r]++;
-          colHoles[c]++;
         }
       }
     }
@@ -1403,12 +1555,21 @@ class KnitApp {
     const maxRowHoles = Math.max(...rowHoles);
     const minRowHoles = Math.min(...rowHoles);
     
-    alert(`Punchcard Statistics:\n\nDimensions: ${rows} rows × ${cols} cols\nTotal holes: ${totalHoles}\nAvg holes/row: ${avgHolesPerRow}\nMax holes/row: ${maxRowHoles}\nMin holes/row: ${minRowHoles}`);
+    this.notifications.info('Punchcard statistics', {
+      details: [
+        `Dimensions: ${rows} rows × ${cols} cols`,
+        `Total holes: ${totalHoles}`,
+        `Avg holes/row: ${avgHolesPerRow}`,
+        `Max holes/row: ${maxRowHoles}`,
+        `Min holes/row: ${minRowHoles}`
+      ],
+      duration: 8000
+    });
   }
 
   analyzePunchcardDensity() {
     if (!this.compilationResult || !this.compilationResult.cardMatrix) {
-      alert('No punchcard data available.');
+      this.notifications.warn('No punchcard data available.');
       return;
     }
     
@@ -1423,8 +1584,7 @@ class KnitApp {
       { name: 'Bottom third', startRow: Math.floor(2 * rows / 3), endRow: rows }
     ];
     
-    let densityReport = 'Punchcard Density Analysis:\n\n';
-    
+    const densityLines = [];
     for (const region of regions) {
       let regionHoles = 0;
       let regionTotal = 0;
@@ -1437,34 +1597,39 @@ class KnitApp {
       }
       
       const density = regionTotal > 0 ? ((regionHoles / regionTotal) * 100).toFixed(1) : 0;
-      densityReport += `${region.name}: ${density}% (${regionHoles}/${regionTotal} holes)\n`;
+      densityLines.push(`${region.name}: ${density}% (${regionHoles}/${regionTotal} holes)`);
     }
     
-    alert(densityReport);
+    this.notifications.info('Punchcard density analysis', { details: densityLines, duration: 8000 });
   }
 
   // Enhanced CNC Toolbar Functions
   toggleCncPanMode() {
     if (!this.toolpathViewer) return;
     this.toolpathViewer.panMode = !this.toolpathViewer.panMode;
-    alert(`Pan mode ${this.toolpathViewer.panMode ? 'enabled' : 'disabled'}`);
+    const panBtn = document.getElementById('btn-cnc-pan');
+    if (panBtn) panBtn.classList.toggle('active', this.toolpathViewer.panMode);
+    this.notifications.info(`Pan mode ${this.toolpathViewer.panMode ? 'enabled' : 'disabled'}.`, { duration: 2500 });
   }
 
   optimizeCncToolpath() {
     if (!this.toolpathViewer) return;
-    alert('Toolpath optimization applied - reducing rapid travel distance between holes.');
+    this.toolpathViewer.optimize?.();
+    this.notifications.success('Toolpath optimized — rapid travel between holes reduced.');
   }
 
   reverseCncToolpath() {
     if (!this.toolpathViewer) return;
     this.toolpathViewer.reverse();
-    alert('Toolpath direction reversed.');
+    this.notifications.info('Toolpath direction reversed.');
   }
 
   showAllCncToolpaths() {
     if (!this.toolpathViewer) return;
     this.toolpathViewer.showAllLayers = !this.toolpathViewer.showAllLayers;
-    alert(`Showing ${this.toolpathViewer.showAllLayers ? 'all' : 'active'} toolpath layers.`);
+    const btn = document.getElementById('btn-cnc-show-all');
+    if (btn) btn.classList.toggle('active', this.toolpathViewer.showAllLayers);
+    this.notifications.info(`Showing ${this.toolpathViewer.showAllLayers ? 'all' : 'active'} toolpath layers.`, { duration: 2500 });
   }
 
   takeCncScreenshot() {
@@ -1491,14 +1656,16 @@ class KnitApp {
     });
     this.updateTankTopSliders();
     this.updateTankTopInstructions();
-    alert('Auto-fit applied!');
+    this.notifications.success('Tank top auto-fit applied to standard proportions.');
   }
 
   toggleTankSymmetry() {
     if (!this.tankTopCanvas) return;
     this.tankTopCanvas.symmetric = !this.tankTopCanvas.symmetric;
     this.tankTopCanvas.render();
-    alert(`Symmetry ${this.tankTopCanvas.symmetric ? 'enabled' : 'disabled'}`);
+    const symBtn = document.getElementById('btn-tank-symmetry');
+    if (symBtn) symBtn.classList.toggle('active', this.tankTopCanvas.symmetric);
+    this.notifications.info(`Pattern symmetry ${this.tankTopCanvas.symmetric ? 'enabled' : 'disabled'}.`, { duration: 2500 });
   }
 
   resetTankTop() {
@@ -1515,6 +1682,7 @@ class KnitApp {
     });
     this.updateTankTopSliders();
     this.updateTankTopInstructions();
+    this.notifications.info('Tank top measurements reset to defaults.');
   }
 
   setTankStyle(style) {
@@ -1535,7 +1703,11 @@ class KnitApp {
       });
       this.updateTankTopSliders();
       this.updateTankTopInstructions();
-      alert(`Style set to ${style.charAt(0).toUpperCase() + style.slice(1)}`);
+      ['btn-tank-classic', 'btn-tank-cropped', 'btn-tank-oversized'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.classList.toggle('active', id === `btn-tank-${style}`);
+      });
+      this.notifications.info(`Tank style: ${style.charAt(0).toUpperCase() + style.slice(1)}.`, { duration: 2500 });
     }
   }
 
@@ -1683,9 +1855,8 @@ class KnitApp {
    * Enhanced romantic effects with smooth animations and less DOM overhead.
    */
   _showLovePopup() {
-    // Ensure DOM is fully loaded
-    if (document.readyState !== 'complete') {
-      document.addEventListener('DOMContentLoaded', () => this._showLovePopup());
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => this._showLovePopup(), { once: true });
       return;
     }
 
@@ -1698,20 +1869,16 @@ class KnitApp {
       return;
     }
 
-    // Make sure popup is visible
     popup.style.display = 'flex';
     popup.classList.remove('hidden');
 
-    // Performance-optimized: Use CSS with minimal DOM elements
     const HEARTS = ['💗', '💖', '💓', '💕', '♥'];
-    const OPTIMIZED_COUNT = 6; // Minimized for instant startup
+    const OPTIMIZED_COUNT = 6;
     
-    // Clear existing particles
     if (heartsRain) {
       heartsRain.innerHTML = '';
     }
     
-    // Create optimized heart particles with CSS transforms (using DocumentFragment for performance)
     const fragment = document.createDocumentFragment();
     for (let i = 0; i < OPTIMIZED_COUNT; i++) {
       const h = document.createElement('span');
@@ -1722,40 +1889,35 @@ class KnitApp {
       h.style.animationDuration = `${2 + Math.random() * 2}s`;
       h.style.animationDelay = `${Math.random() * 1}s`;
       h.style.opacity = `${0.4 + Math.random() * 0.2}`;
-      h.style.willChange = 'transform, opacity'; // Performance hint
+      h.style.willChange = 'transform, opacity';
       fragment.appendChild(h);
     }
     if (heartsRain) heartsRain.appendChild(fragment);
 
     const dismiss = () => {
       popup.classList.add('hidden');
-      // Clean up DOM elements after animation
       setTimeout(() => {
         popup.style.display = 'none';
         if (heartsRain) {
-          heartsRain.innerHTML = ''; // Remove all particles
+          heartsRain.innerHTML = '';
         }
       }, 300);
     };
 
-    // Close button with enhanced romantic feedback
     if (closeBtn) {
-      closeBtn.addEventListener('click', (e) => {
+      closeBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        closeBtn.style.transform = 'scale(0.95)';
-        setTimeout(dismiss, 100);
-      });
+        dismiss();
+      };
     }
 
-    // Also close if user clicks the backdrop (outside the card)
-    popup.addEventListener('click', (e) => {
+    popup.onclick = (e) => {
       if (e.target === popup || (e.target && e.target.classList.contains('love-popup-content'))) {
         dismiss();
       }
-    });
+    };
 
-    // Keyboard support for accessibility
     const keyHandler = (e) => {
       if (e.key === 'Escape' || e.key === 'Enter') {
         dismiss();

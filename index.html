@@ -7,6 +7,7 @@
   <title>I LOVE YOU BENJI!!!!!!!</title>
   <meta name="description"
     content="Industrial knitting machine CAD/CAM, lace decompiler, CNC toolpath generator & pattern design studio — made with love for Benji.">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -25,7 +26,7 @@
         <h2 class="love-popup-title">I LOVE YOU BENJI!!!!!</h2>
         <p class="love-popup-subtitle">You are the best boyfriend ever!!!&nbsp;💖</p>
         <p class="love-popup-msg">4 my cute boy<br></p>
-        <button class="love-popup-close" id="love-popup-close">i love u sm to da moon & back!!! ♥ click here</button>
+        <button class="love-popup-close" id="love-popup-close" onclick="document.getElementById('benji-love-popup').style.display='none'">i love u sm to da moon &amp; back!!! ♥ click here</button>
       </div>
     </div>
   </div>
@@ -463,6 +464,13 @@
                     <path d="m16 17-4 4-4-4" />
                   </svg>
                   Gravity
+                </button>
+                <button class="toolbar-btn" id="btn-yarn-reset" title="Reset to needle bed mount" aria-label="Reset fabric to needle bed mount">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                    <path d="M3 3v5h5"/>
+                  </svg>
+                  Reset Mount
                 </button>
               </div>
               <div class="toolbar-divider"></div>
@@ -1100,6 +1108,8 @@
       </div>
     </footer>
   </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-relevant="additions"></div>
 
   <!-- MODAL: Math Pattern Studio -->
   <div class="modal-backdrop" id="math-modal">

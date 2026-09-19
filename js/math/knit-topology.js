@@ -202,6 +202,7 @@ export class YarnSegmentConstraint {
     this.nodeA = nodeA;
     this.nodeB = nodeB;
     this.restLength = restLength;
+    this.baseRestLength = restLength;
     this.stiffness = stiffness;
     this.isBending = isBending;
   }
@@ -250,6 +251,8 @@ export class KnitTopologyNetwork {
     this.windForce = new Vec3(0, 0, 0);
     this.collisionEnabled = true;
     this.subSteps = 4;
+    this.adjacentPairSet = new Set();
+    this.damping = 0.92;
 
     // Automatically initialize default plain knit matrix so the network is never in an invalid state
     this.initDefaultMatrix();
@@ -297,8 +300,8 @@ export class KnitTopologyNetwork {
           node.colorIndex = yarnColors[r][c];
         }
 
-        // Fix bottom edge nodes to anchor fabric
-        if (r === 0) {
+        // Fix cast-on row and needle-bed hooks at working edge
+        if (r === 0 || r === this.rows - 1) {
           node.isFixed = true;
         }
 
@@ -400,6 +403,18 @@ export class KnitTopologyNetwork {
         }
       }
     }
+
+    this._rebuildAdjacentPairSet();
+  }
+
+  _rebuildAdjacentPairSet() {
+    this.adjacentPairSet = new Set();
+    for (const c of this.constraints) {
+      const key = c.nodeA.id < c.nodeB.id
+        ? `${c.nodeA.id}:${c.nodeB.id}`
+        : `${c.nodeB.id}:${c.nodeA.id}`;
+      this.adjacentPairSet.add(key);
+    }
   }
 
   /**
@@ -407,7 +422,8 @@ export class KnitTopologyNetwork {
    * Performs Verlet integration & Jacobi constraint projection iterations.
    * Enhanced with gravity, wind forces, and sub-stepping for stability.
    */
-  stepPhysics(iterations = 8, dt = 0.016, damping = 0.92) {
+  stepPhysics(iterations = 8, dt = 0.016, damping = null) {
+    const damp = damping ?? this.damping ?? 0.92;
     const subDt = dt / this.subSteps;
     
     // Sub-stepping for stability
@@ -429,7 +445,7 @@ export class KnitTopologyNetwork {
       
       // 2. Verlet position update
       for (let i = 0; i < this.nodes.length; i++) {
-        this.nodes[i].verletStep(subDt, damping);
+        this.nodes[i].verletStep(subDt, damp);
       }
       
       // 3. Solve distance constraints iteratively
@@ -460,27 +476,30 @@ export class KnitTopologyNetwork {
    */
   resolveCollisions() {
     const minDistance = this.spacingX * 0.3;
-    
+    const minDistanceSq = minDistance * minDistance;
+
     for (let i = 0; i < this.nodes.length; i++) {
+      const nodeA = this.nodes[i];
       for (let j = i + 1; j < this.nodes.length; j++) {
-        const nodeA = this.nodes[i];
         const nodeB = this.nodes[j];
-        
-        // Skip if nodes are connected by constraints
-        const isConnected = this.constraints.some(c => 
-          (c.nodeA === nodeA && c.nodeB === nodeB) || 
-          (c.nodeA === nodeB && c.nodeB === nodeA)
-        );
-        
-        if (isConnected) continue;
-        
-        const dist = nodeA.pos.distanceTo(nodeB.pos);
-        if (dist < minDistance && dist > 1e-6) {
-          const pushFactor = (minDistance - dist) / dist * 0.5;
-          const pushX = (nodeA.pos.x - nodeB.pos.x) * pushFactor;
-          const pushY = (nodeA.pos.y - nodeB.pos.y) * pushFactor;
-          const pushZ = (nodeA.pos.z - nodeB.pos.z) * pushFactor;
-          
+
+        const key = nodeA.id < nodeB.id
+          ? `${nodeA.id}:${nodeB.id}`
+          : `${nodeB.id}:${nodeA.id}`;
+        if (this.adjacentPairSet.has(key)) continue;
+
+        const dx = nodeA.pos.x - nodeB.pos.x;
+        const dy = nodeA.pos.y - nodeB.pos.y;
+        const dz = nodeA.pos.z - nodeB.pos.z;
+        const distSq = dx * dx + dy * dy + dz * dz;
+
+        if (distSq < minDistanceSq && distSq > 1e-8) {
+          const dist = Math.sqrt(distSq);
+          const pushFactor = ((minDistance - dist) / dist) * 0.5;
+          const pushX = dx * pushFactor;
+          const pushY = dy * pushFactor;
+          const pushZ = dz * pushFactor;
+
           if (!nodeA.isFixed) {
             nodeA.pos.x += pushX;
             nodeA.pos.y += pushY;
@@ -530,6 +549,14 @@ export class KnitTopologyNetwork {
     const loopGeometries = [];
     if (!this.matrix || this.matrix.length === 0) return loopGeometries;
 
+    const pushLoop = (data, node) => {
+      const strain = this.calculateNodeStrain(node);
+      loopGeometries.push({
+        ...data,
+        tension: Math.max(0.5, Math.min(2.5, strain * 4 + (node.tension || 1) * 0.5))
+      });
+    };
+
     for (let r = 0; r < this.rows; r++) {
       if (!this.matrix[r]) continue;
       for (let c = 0; c < this.cols; c++) {
@@ -546,7 +573,7 @@ export class KnitTopologyNetwork {
         if (node.type === STITCH_TYPE.TRANSFER_LEFT) {
           // Lean left towards col - 1
           const leftTarget = this.matrix[r + 1]?.[Math.max(0, c - 1)]?.pos || p;
-          loopGeometries.push({
+          pushLoop({
             type: 'loop_transfer_left',
             colorIndex: node.colorIndex,
             points: [
@@ -556,11 +583,11 @@ export class KnitTopologyNetwork {
               new Vec3(leftTarget.x + w * 0.4, leftTarget.y - h * 0.2, z + 2),
               new Vec3(leftTarget.x, leftTarget.y, z)
             ]
-          });
+          }, node);
         } else if (node.type === STITCH_TYPE.TRANSFER_RIGHT) {
           // Lean right towards col + 1
           const rightTarget = this.matrix[r + 1]?.[Math.min(this.cols - 1, c + 1)]?.pos || p;
-          loopGeometries.push({
+          pushLoop({
             type: 'loop_transfer_right',
             colorIndex: node.colorIndex,
             points: [
@@ -570,7 +597,7 @@ export class KnitTopologyNetwork {
               new Vec3(rightTarget.x - w * 0.4, rightTarget.y - h * 0.2, z + 2),
               new Vec3(rightTarget.x, rightTarget.y, z)
             ]
-          });
+          }, node);
         } else if (node.type === STITCH_TYPE.EYELET) {
           // Expanded annular ring around the eyelet hole
           const radius = this.spacingX * 0.38;
@@ -584,15 +611,15 @@ export class KnitTopologyNetwork {
               z + Math.sin(theta * 2) * 0.8
             ));
           }
-          loopGeometries.push({
+          pushLoop({
             type: 'eyelet_ring',
             colorIndex: node.colorIndex,
             points: eyeletRing
-          });
+          }, node);
         } else if (node.type === STITCH_TYPE.SLIP) {
           // Horizontal float behind the needles
           const nextNode = this.matrix[r][c + 1] || node;
-          loopGeometries.push({
+          pushLoop({
             type: 'float_slip',
             colorIndex: node.colorIndex,
             points: [
@@ -600,10 +627,10 @@ export class KnitTopologyNetwork {
               new Vec3(p.x, p.y, z - 4.0),
               new Vec3(nextNode.pos.x, nextNode.pos.y, z - 3.5)
             ]
-          });
+          }, node);
         } else {
           // Standard Face Knit Loop (horseshoe shaped curve)
-          loopGeometries.push({
+          pushLoop({
             type: 'knit_loop',
             colorIndex: node.colorIndex,
             points: [
@@ -615,7 +642,7 @@ export class KnitTopologyNetwork {
               new Vec3(p.x + w, p.y - h * 0.15, z + 1.8), // Right leg
               new Vec3(p.x + w * 0.85, p.y - h, z - 1.2)  // Right foot
             ]
-          });
+          }, node);
         }
       }
     }

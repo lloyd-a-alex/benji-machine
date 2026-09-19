@@ -1,14 +1,8 @@
 /**
  * Realistic Physical Yarn & Knitted Fabric Simulator
- * 
- * Renders relaxed 3D yarn loops using the KnitTopologyNetwork physics engine:
- * - Real-time elastica curve spline generation
- * - Fiber sheen, loop shadows, and specular highlights
- * - Interactive tension relaxation
- * - Authentic eyelet aperture opening and directional transfer leaning
  */
 
-import { KnitTopologyNetwork, catmullRomSpline, Vec3 } from '../math/knit-topology.js';
+import { KnitTopologyNetwork, STITCH_TYPE } from '../math/knit-topology.js';
 
 export class YarnSimulator {
   constructor(canvasElement, options = {}) {
@@ -18,14 +12,20 @@ export class YarnSimulator {
     this.rows = options.rows || 24;
     this.cols = options.cols || 24;
     this.topology = new KnitTopologyNetwork(this.rows, this.cols, 22, 18);
+    this.topology.collisionEnabled = false;
 
-    this.yarnColorMain = options.yarnColorMain || '#f8fafc';    // Soft off-white / pink
-    this.yarnColorContrast = options.yarnColorContrast || '#38bdf8'; // Electric blue / rose
-    this.yarnThickness = 4.2; // pixels
+    this.yarnColorMain = options.yarnColorMain || '#f8fafc';
+    this.yarnColorContrast = options.yarnColorContrast || '#38bdf8';
+    this.yarnThickness = 4.2;
     this.yarnTension = 1.0;
-    this.viewMode = 'shaded'; // wireframe, shaded, stress
+    this.viewMode = 'shaded';
+    this.materialProfile = {
+      name: 'cotton',
+      stiffness: 0.98,
+      restMultiplier: 0.95,
+      damping: 0.82
+    };
 
-    // Viewport
     this.panX = 0;
     this.panY = 0;
     this.zoom = 1.0;
@@ -34,28 +34,47 @@ export class YarnSimulator {
 
     this.animating = true;
     this.animFrameId = null;
+    this.prevStrainEnergy = Infinity;
+    this.energySleepThreshold = 1e-4;
 
     this.setupEvents();
     this.resize();
-    this.startAnimationLoop();
   }
 
   updateFabric(stitchMatrix, colorMatrix = null) {
     if (!stitchMatrix || stitchMatrix.length === 0) return;
+    const t0 = performance.now();
     try {
       this.rows = stitchMatrix.length;
       this.cols = stitchMatrix[0]?.length || 24;
       this.topology = new KnitTopologyNetwork(this.rows, this.cols, 22, 18);
       this.topology.buildFromStitchMatrix(stitchMatrix, colorMatrix);
+      this.applyMaterialProfile(this.materialProfile);
 
-      // Warm-up relaxation physics (run 25 initial integration steps)
-      for (let i = 0; i < 25; i++) {
-        this.topology.stepPhysics(6, 0.016, 0.90);
+      // Fast Jacobi warm-up without quadratic collision passes
+      this.topology.collisionEnabled = false;
+      for (let i = 0; i < 15; i++) {
+        this.topology.stepPhysics(4, 0.016, this.topology.damping);
       }
 
+      this.prevStrainEnergy = this.topology.totalStrainEnergy;
+      this.animating = true;
       this.centerFabric();
+      this.render();
+      console.log(`[KnitCAD][Yarn] updateFabric completed in ${Math.round(performance.now() - t0)}ms (${this.rows}×${this.cols})`);
     } catch (err) {
-      console.warn('[YarnSimulator] updateFabric caught error:', err);
+      console.error('[KnitCAD][Yarn] updateFabric error:', err);
+    }
+  }
+
+  applyMaterialProfile(profile) {
+    if (!profile || !this.topology?.constraints) return;
+    this.materialProfile = { ...this.materialProfile, ...profile };
+    this.topology.damping = this.materialProfile.damping;
+    for (const c of this.topology.constraints) {
+      if (c.baseRestLength == null) c.baseRestLength = c.restLength;
+      c.stiffness = this.materialProfile.stiffness * this.yarnTension;
+      c.restLength = c.baseRestLength * this.materialProfile.restMultiplier;
     }
   }
 
@@ -66,11 +85,35 @@ export class YarnSimulator {
 
   setTension(tensionFactor) {
     this.yarnTension = Math.max(0.2, Math.min(3.0, tensionFactor));
-    if (this.topology && this.topology.constraints) {
-      for (const c of this.topology.constraints) {
-        c.stiffness = 0.85 * this.yarnTension;
+    this.applyMaterialProfile(this.materialProfile);
+    this.animating = true;
+  }
+
+  resetMounting() {
+    if (!this.topology?.matrix) return;
+    const topo = this.topology;
+
+    for (let r = 0; r < topo.rows; r++) {
+      for (let c = 0; c < topo.cols; c++) {
+        const node = topo.matrix[r][c];
+        if (!node) continue;
+        const zOffset = (node.type === STITCH_TYPE.PURL) ? -2.5 : 2.0;
+        node.pos.set(
+          (c - topo.cols / 2) * topo.spacingX,
+          (r - topo.rows / 2) * topo.spacingY,
+          zOffset
+        );
+        node.prevPos = node.pos.clone();
+        node.acc.set(0, 0, 0);
+        node.isFixed = (r === 0 || r === topo.rows - 1);
       }
     }
+
+    topo.totalStrainEnergy = 0;
+    this.prevStrainEnergy = 0;
+    this.animating = true;
+    this.centerFabric();
+    console.log('[KnitCAD][Yarn] Fabric mounting reset to needle-bed anchors');
   }
 
   centerFabric() {
@@ -91,6 +134,7 @@ export class YarnSimulator {
 
   setupEvents() {
     this.canvas.addEventListener('mousedown', e => {
+      this.animating = true;
       this.isMouseDown = true;
       this.lastMouse = { x: e.clientX, y: e.clientY };
     });
@@ -119,20 +163,27 @@ export class YarnSimulator {
   }
 
   startAnimationLoop() {
+    if (this.animFrameId) return;
+    this.animating = true;
     const loop = () => {
       if (this.animating) {
-        // Continuous micro-relaxation step
-        this.topology.stepPhysics(2, 0.016, 0.94);
+        this.topology.stepPhysics(2, 0.016, this.topology.damping);
+        const energy = this.topology.totalStrainEnergy;
+        if (Math.abs(this.prevStrainEnergy - energy) < this.energySleepThreshold) {
+          this.animating = false;
+        }
+        this.prevStrainEnergy = energy;
         this.render();
       }
       this.animFrameId = requestAnimationFrame(loop);
     };
-    loop();
+    this.animFrameId = requestAnimationFrame(loop);
   }
 
   stop() {
     if (this.animFrameId) {
       cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
     }
   }
 
@@ -141,12 +192,10 @@ export class YarnSimulator {
     const w = this.canvas.width;
     const h = this.canvas.height;
 
-    // Background
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, w, h);
 
     try {
-      // Subtle background woven texture grid
       ctx.strokeStyle = '#1e293b';
       ctx.lineWidth = 0.5;
       const bgSpacing = 30;
@@ -164,11 +213,9 @@ export class YarnSimulator {
       ctx.scale(this.zoom, this.zoom);
 
       if (this.topology) {
-        // Generate 3D loop curves from topology
         const geometries = this.topology.generateDetailedYarnGeometry();
 
         if (geometries && geometries.length > 0) {
-          // Sort loops by depth (Z-buffer painter's algorithm)
           geometries.sort((a, b) => {
             const midA = Math.floor(a.points.length / 2);
             const midB = Math.floor(b.points.length / 2);
@@ -177,29 +224,22 @@ export class YarnSimulator {
             return zA - zB;
           });
 
-          // Render each yarn loop with shaded strand rendering
           for (const geom of geometries) {
             this.renderYarnStrand(ctx, geom);
           }
         }
       }
     } catch (err) {
-      console.warn('[YarnSimulator] render error:', err);
+      console.warn('[KnitCAD][Yarn] render error:', err);
     } finally {
       ctx.restore();
     }
   }
 
-  renderYarnStrand(ctx, geom) {
-    const pts = geom.points;
-    if (!pts || pts.length < 2) return;
-
-    const baseColor = (geom.colorIndex === 1) ? this.yarnColorContrast : this.yarnColorMain;
-    const strokeWidth = this.yarnThickness;
-
-    // Evaluate smooth Catmull-Rom spline points
-    const smoothPoints = [];
+  _strokeCatmullRomPath(ctx, pts, yOffset, xOffset = 0) {
     const numSubdivisions = 8;
+    ctx.beginPath();
+    let started = false;
 
     for (let i = 0; i < pts.length - 1; i++) {
       const p0 = pts[Math.max(0, i - 1)];
@@ -209,51 +249,93 @@ export class YarnSimulator {
 
       for (let s = 0; s < numSubdivisions; s++) {
         const t = s / numSubdivisions;
-        smoothPoints.push(catmullRomSpline(p0, p1, p2, p3, t));
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const f0 = -0.5 * t3 + t2 - 0.5 * t;
+        const f1 = 1.5 * t3 - 2.5 * t2 + 1.0;
+        const f2 = -1.5 * t3 + 2.0 * t2 + 0.5 * t;
+        const f3 = 0.5 * t3 - 0.5 * t2;
+        const sx = (p0.x * f0 + p1.x * f1 + p2.x * f2 + p3.x * f3) + xOffset;
+        const sy = -(p0.y * f0 + p1.y * f1 + p2.y * f2 + p3.y * f3) + yOffset;
+        if (!started) {
+          ctx.moveTo(sx, sy);
+          started = true;
+        } else {
+          ctx.lineTo(sx, sy);
+        }
       }
     }
-    smoothPoints.push(pts[pts.length - 1]);
 
-    // 1. Cast drop-shadow for 3D depth
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
-    ctx.lineWidth = strokeWidth + 2.5;
+    const last = pts[pts.length - 1];
+    ctx.lineTo(last.x + xOffset, -last.y + yOffset);
+    ctx.stroke();
+  }
+
+  renderYarnStrand(ctx, geom) {
+    const pts = geom.points;
+    if (!pts || pts.length < 2) return;
+
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.beginPath();
-    for (let i = 0; i < smoothPoints.length; i++) {
-      const p = smoothPoints[i];
-      // Invert Y because canvas Y increases downwards
-      const sx = p.x;
-      const sy = -p.y + 2.5;
-      if (i === 0) ctx.moveTo(sx, sy);
-      else ctx.lineTo(sx, sy);
-    }
-    ctx.stroke();
 
-    // 2. Base yarn strand body
+    if (this.viewMode === 'wireframe') {
+      ctx.strokeStyle = (geom.colorIndex === 1) ? this.yarnColorContrast : '#94a3b8';
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      for (let i = 0; i < pts.length; i++) {
+        const sx = pts[i].x;
+        const sy = -pts[i].y;
+        if (i === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+      return;
+    }
+
+    if (this.viewMode === 'stress') {
+      const tension = geom.tension || 1.0;
+      const hue = Math.max(0, Math.min(240, 240 - (tension - 0.5) * 160));
+      ctx.strokeStyle = `hsl(${hue}, 90%, 55%)`;
+      ctx.lineWidth = this.yarnThickness;
+      this._strokeCatmullRomPath(ctx, pts, 0);
+      return;
+    }
+
+    const baseColor = (geom.colorIndex === 1) ? this.yarnColorContrast : this.yarnColorMain;
+    const strokeWidth = this.yarnThickness;
+
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.lineWidth = strokeWidth + 2.5;
+    this._strokeCatmullRomPath(ctx, pts, 2.5);
+
     ctx.strokeStyle = baseColor;
     ctx.lineWidth = strokeWidth;
-    ctx.beginPath();
-    for (let i = 0; i < smoothPoints.length; i++) {
-      const p = smoothPoints[i];
-      const sx = p.x;
-      const sy = -p.y;
-      if (i === 0) ctx.moveTo(sx, sy);
-      else ctx.lineTo(sx, sy);
-    }
-    ctx.stroke();
+    this._strokeCatmullRomPath(ctx, pts, 0);
 
-    // 3. Specular yarn fiber luster / highlight
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
     ctx.lineWidth = strokeWidth * 0.35;
-    ctx.beginPath();
-    for (let i = 0; i < smoothPoints.length; i++) {
-      const p = smoothPoints[i];
-      const sx = p.x - 0.6;
-      const sy = -p.y - 0.8;
-      if (i === 0) ctx.moveTo(sx, sy);
-      else ctx.lineTo(sx, sy);
+    this._strokeCatmullRomPath(ctx, pts, -0.8, -0.6);
+  }
+
+  exportObj() {
+    const geoms = this.topology?.generateDetailedYarnGeometry?.() || [];
+    let obj = '# Benji KnitCAD Yarn Fabric Export\n';
+    obj += `# Loops: ${geoms.length}\n`;
+    let vertexIndex = 1;
+
+    for (let g = 0; g < geoms.length; g++) {
+      const geom = geoms[g];
+      const start = vertexIndex;
+      for (const p of geom.points) {
+        obj += `v ${p.x.toFixed(4)} ${p.y.toFixed(4)} ${p.z.toFixed(4)}\n`;
+        vertexIndex++;
+      }
+      obj += `g loop_${g}_${geom.type || 'strand'}\n`;
+      for (let i = 0; i < geom.points.length - 1; i++) {
+        obj += `l ${start + i} ${start + i + 1}\n`;
+      }
     }
-    ctx.stroke();
+
+    return obj;
   }
 }

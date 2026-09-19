@@ -21,10 +21,10 @@ export class BrotherSimCanvas {
     this.animating = true;
     this.autoSweep = true;
     this.sweepSpeed = 0.4;
+    this.animFrameId = null;
 
     this.setupEvents();
     this.resize();
-    this.startLoop();
   }
 
   setCardPattern(cardRow24) {
@@ -36,10 +36,15 @@ export class BrotherSimCanvas {
   play() {
     this.autoSweep = true;
     this.animating = true;
+    this.startLoop();
   }
 
   pause() {
     this.autoSweep = false;
+    if (this.animFrameId) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+    }
   }
 
   reset() {
@@ -121,6 +126,7 @@ export class BrotherSimCanvas {
   }
 
   startLoop() {
+    if (this.animFrameId) return;
     let lastTime = performance.now();
     const loop = (now) => {
       const dt = (now - lastTime) / 1000;
@@ -139,9 +145,9 @@ export class BrotherSimCanvas {
       }
 
       this.render();
-      requestAnimationFrame(loop);
+      this.animFrameId = requestAnimationFrame(loop);
     };
-    requestAnimationFrame(loop);
+    this.animFrameId = requestAnimationFrame(loop);
   }
 
   render() {

@@ -694,21 +694,6 @@ canvas {
   flex-shrink: 0;
 }
 
-#panel-tanktop {
-  flex-direction: column;
-  overflow: hidden;
-}
-
-#panel-tanktop .tanktop-sidebar {
-  border-top: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-
-#panel-tanktop .tanktop-viewport {
-  flex: 1;
-  overflow: hidden;
-}
-
 /* Brother Kinematics Toolbar */
 .brother-toolbar {
   display: flex;
@@ -1122,6 +1107,92 @@ footer#status-bar {
   margin-right: 6px;
   box-shadow: 0 0 6px var(--accent-emerald);
 }
+
+/* --- Toast Notifications --- */
+.toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10050;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.app-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: rgba(15, 23, 42, 0.96);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  color: var(--text-primary);
+  opacity: 0;
+  transform: translateX(12px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  pointer-events: auto;
+}
+
+.app-toast--visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.app-toast--dismiss {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+.app-toast-icon {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.app-toast--success .app-toast-icon { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.app-toast--error .app-toast-icon { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+.app-toast--warning .app-toast-icon { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.app-toast--info .app-toast-icon { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+
+.app-toast-body { flex: 1; min-width: 0; }
+.app-toast-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+.app-toast-message { font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
+.app-toast-details {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.app-toast-close {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.app-toast-close:hover { color: var(--text-primary); }
+
+.app-toast--success { border-color: rgba(16, 185, 129, 0.35); }
+.app-toast--error { border-color: rgba(239, 68, 68, 0.35); }
+.app-toast--warning { border-color: rgba(245, 158, 11, 0.35); }
+.app-toast--info { border-color: rgba(56, 189, 248, 0.35); }
 
 /* --- Modals & Dialogs --- */
 .modal-backdrop {
@@ -1544,21 +1615,6 @@ body.theme-romance .brand-title::after {
   background: linear-gradient(135deg, #db2777, #be185d);
 }
 
-/* --- Tank Top Tailor Atelier Tab Layout --- */
-#panel-tanktop {
-  display: none;
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  top: 0;
-  left: 0;
-  flex-direction: row;
-}
-
-#panel-tanktop.active {
-  display: flex;
-}
-
 .tanktop-sidebar {
   width: 340px;
   background-color: var(--bg-surface);
@@ -1653,3 +1709,75 @@ body.theme-romance .brand-title::after {
   display: flex;
 }
 
+/* =========================================================
+   LAYOUT FIX — stack toolbars above canvases properly
+   ========================================================= */
+
+/* Every tab panel stacks its children vertically by default */
+.tab-panel.active {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Canvas wrappers must be allowed to shrink + fill remaining space */
+#panel-editor  .canvas-wrapper,
+#panel-yarn    .canvas-wrapper,
+#panel-punchcard .canvas-wrapper,
+#panel-cnc     .canvas-wrapper,
+#panel-brother .canvas-wrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Toolbars should size to their content, never stretch */
+#panel-yarn      .yarn-toolbar,
+#panel-punchcard .punchcard-toolbar,
+#panel-cnc       .cnc-toolbar,
+#panel-brother   .brother-toolbar {
+  flex: 0 0 auto;
+}
+
+/* Punchcard canvas is tall — allow it to scroll inside its wrapper */
+#panel-punchcard .canvas-wrapper {
+  overflow-y: auto;
+}
+
+/* ---------- TANK TOP: 2×2 grid so toolbar spans full width ---------- */
+#panel-tanktop.active {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#panel-tanktop .tanktop-toolbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-height: 48px;
+}
+
+#panel-tanktop .tanktop-sidebar {
+  grid-column: 1;
+  grid-row: 2;
+  overflow-y: auto;
+  min-height: 0;
+  border-right: 1px solid var(--border-subtle);
+  border-top: none;
+}
+
+#panel-tanktop .tanktop-viewport {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+#panel-tanktop { flex-direction: unset; }
