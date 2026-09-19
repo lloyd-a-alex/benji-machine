@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>I LOVE YOU BENJI!!!!!!!</title>
+  <meta name="description"
+    content="Industrial knitting machine CAD/CAM, lace decompiler, CNC toolpath generator & pattern design studio — made with love for Benji.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body class="theme-romance">
+  <!-- Benji Love Popup -->
+  <div id="benji-love-popup" class="benji-love-popup">
+    <div class="love-popup-content">
+      <div class="love-hearts-rain" id="love-hearts-rain"></div>
+      <div class="love-popup-inner">
+        <div class="love-popup-big-heart">💗</div>
+        <h2 class="love-popup-title">I LOVE YOU BENJI!!!!!</h2>
+        <p class="love-popup-subtitle">You are the best boyfriend ever!!!&nbsp;💖</p>
+        <p class="love-popup-msg">4 my cute boy<br></p>
+        <button class="love-popup-close" id="love-popup-close">i love u sm ♥ click here</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="app-container">
+    <!-- Top Engineering Header Navigation -->
+    <header id="main-header">
+      <div class="brand-section">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="6" cy="6" r="3" />
+          <circle cx="18" cy="6" r="3" />
+          <circle cx="6" cy="18" r="3" />
+          <circle cx="18" cy="18" r="3" />
+          <path d="M6 9v6M18 9v6M9 6h6M9 18h6" />
+        </svg>
+        <span class="brand-title">KnitCAD&nbsp;♥</span>
+        <span class="brand-version">v3</span>
+      </div>
+
+      <div class="header-center">
+        <!-- Machine Profile Selector -->
+        <div class="profile-picker">
+          <label for="profile-select">Machine Profile:</label>
+          <select id="profile-select" class="select-control"></select>
+        </div>
+
+        <!-- Pattern Mode Selector -->
+        <div class="mode-selector">
+          <button class="mode-btn active" data-mode="lace" id="mode-btn-lace"
+            title="Lace Pattern with directional carriage pass compiler">Lace Compiler</button>
+          <button class="mode-btn" data-mode="fair_isle" id="mode-btn-fair-isle"
+            title="Two-color Stranded Jacquard">Fair Isle</button>
+          <button class="mode-btn" data-mode="tuck" id="mode-btn-tuck" title="Dimensional Tuck Texture">Tuck</button>
+          <button class="mode-btn" data-mode="slip" id="mode-btn-slip" title="Skip / Float Stitch">Slip</button>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button class="btn-action" id="btn-open-presets" title="Browse authentic historical &amp; algorithmic patterns">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+          </svg>
+          Presets
+        </button>
+        <button class="btn-action" id="btn-open-math"
+          title="Generate procedural patterns via reaction-diffusion PDEs, waves, or cellular automata">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <path d="m4.93 4.93 4.24 4.24M14.83 9.17l4.24-4.24M14.83 14.83l4.24 4.24M9.17 14.83l-4.24 4.24" />
+          </svg>
+          Math Studio
+        </button>
+        <button class="btn-action" id="btn-open-image" title="Import image with Atkinson / Floyd-Steinberg dithering">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+            <circle cx="9" cy="9" r="2" />
+            <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+          </svg>
+          Image Dither
+        </button>
+        <button class="btn-action btn-primary" id="btn-open-export"
+          title="Export Laser DXF, CNC G-Code, or 1:1 Printable PDF Sheets">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" x2="12" y1="15" y2="3" />
+          </svg>
+          Export / CNC
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workbench Area -->
+    <div id="workbench">
+      <!-- Left Toolbar (Tool Palette) -->
+      <aside id="left-toolbar">
+        <div class="tool-group">
+          <span class="tool-group-title">Draw</span>
+          <button class="tool-btn active" data-tool="pencil" id="tool-pencil" title="Pencil (P / B)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+              <path d="m15 5 4 4" />
+            </svg>
+          </button>
+          <button class="tool-btn" data-tool="eraser" id="tool-eraser" title="Eraser (E)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+              <path d="M22 21H7" />
+              <path d="m5 11 9 9" />
+            </svg>
+          </button>
+          <button class="tool-btn" data-tool="line" id="tool-line" title="Line Tool (L)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="5" y1="19" x2="19" y2="5" />
+            </svg>
+          </button>
+          <button class="tool-btn" data-tool="rect" id="tool-rect" title="Rectangle (R)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect width="18" height="18" x="3" y="3" rx="2" />
+            </svg>
+          </button>
+          <button class="tool-btn" data-tool="circle" id="tool-circle" title="Ellipse / Circle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="9" />
+            </svg>
+          </button>
+          <button class="tool-btn" data-tool="fill" id="tool-fill" title="Flood Fill (G)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z" />
+              <path d="m5 2 5 5" />
+              <path d="M2 13h15" />
+              <path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z" />
+            </svg>
+          </button>
+          <button class="tool-btn" data-tool="select" id="tool-select" title="Marquee Selection">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3">
+              <rect width="18" height="18" x="3" y="3" rx="1" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="tool-group">
+          <span class="tool-group-title">History</span>
+          <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 7v6h6" />
+              <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+            </svg>
+          </button>
+          <button class="tool-btn" id="btn-redo" title="Redo (Ctrl+Y)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 7v6h-6" />
+              <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="tool-group">
+          <span class="tool-group-title">Transform</span>
+          <button class="tool-btn" id="btn-flip-h" title="Flip Horizontal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="2" x2="12" y2="22" />
+              <path d="m18 16 4-4-4-4" />
+              <path d="m6 8-4 4 4 4" />
+            </svg>
+          </button>
+          <button class="tool-btn" id="btn-flip-v" title="Flip Vertical">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="m8 6 4-4 4 4" />
+              <path d="m16 18-4 4-4-4" />
+            </svg>
+          </button>
+          <button class="tool-btn" id="btn-invert" title="Invert Grid Cells">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 2a10 10 0 0 1 0 20Z" />
+            </svg>
+          </button>
+          <button class="tool-btn" id="btn-clear" title="Clear Grid">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18" />
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+            </svg>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Center Viewport Workspace -->
+      <main id="viewport-workspace">
+        <!-- Viewport Tabs Bar -->
+        <nav class="tab-bar">
+          <button class="tab-btn active" data-tab="editor">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect width="18" height="18" x="3" y="3" rx="2" />
+              <path d="M3 9h18M9 21V9" />
+            </svg>
+            Pattern CAD Editor
+          </button>
+          <button class="tab-btn" data-tab="schedule">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <polyline points="10 9 9 9 8 9" />
+            </svg>
+            Carriage Pass Schedule
+          </button>
+          <button class="tab-btn" data-tab="yarn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path
+                d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            </svg>
+            3D Physical Fabric Simulation
+          </button>
+          <button class="tab-btn" data-tab="punchcard">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect width="14" height="20" x="5" y="2" rx="2" />
+              <circle cx="9" cy="8" r="1.5" />
+              <circle cx="15" cy="8" r="1.5" />
+              <circle cx="9" cy="14" r="1.5" />
+              <circle cx="15" cy="14" r="1.5" />
+            </svg>
+            Punchcard Ribbon & 1:1 Scale
+          </button>
+          <button class="tab-btn" data-tab="cnc">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            CNC Toolpath Visualizer
+          </button>
+          <button class="tab-btn" data-tab="tanktop" id="tab-btn-tanktop">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
+              <path d="M3 6h18" />
+              <path d="M16 10a4 4 0 0 1-8 0" />
+            </svg>
+            Tank Top Tailor CAD
+          </button>
+          <button class="tab-btn" data-tab="brother" id="tab-btn-brother">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="m14 15-4-6M10 15l4-6" />
+            </svg>
+            Brother KH-830 Kinematics
+          </button>
+        </nav>
+
+        <!-- Tab Contents -->
+        <div class="tab-content">
+          <!-- Tab 1: Pattern Editor -->
+          <div class="tab-panel active" id="panel-editor">
+            <div class="canvas-subbar">
+              <!-- Lace Stitch Palette -->
+              <div class="stitch-selector" id="lace-palette">
+                <button class="stitch-btn active" data-stitch="O" title="Yarnover / Eyelet Hole">○ Eyelet</button>
+                <button class="stitch-btn" data-stitch="TL" title="Transfer loop left into needle i-1">↖ Transfer
+                  L</button>
+                <button class="stitch-btn" data-stitch="TR" title="Transfer loop right into needle i+1">↗ Transfer
+                  R</button>
+                <button class="stitch-btn" data-stitch="CDD" title="Centered Double Decrease">∧ Double Dec</button>
+                <button class="stitch-btn" data-stitch="K" title="Plain Face Knit Loop">| Plain Knit</button>
+              </div>
+
+              <!-- Color Palette for Jacquard -->
+              <div class="stitch-selector" id="color-palette" style="display: none;">
+                <button class="stitch-btn active" data-color="1" style="color: #38bdf8;">■ Contrast Yarn B (Punch
+                  Hole)</button>
+                <button class="stitch-btn" data-color="0" style="color: #94a3b8;">□ Main Yarn A (Blank)</button>
+              </div>
+
+              <div class="subbar-divider"></div>
+
+              <!-- Symmetries -->
+              <div class="symmetry-controls">
+                <label class="checkbox-label" title="Mirror horizontally along center axis">
+                  <input type="checkbox" id="chk-sym-h"> H-Mirror
+                </label>
+                <label class="checkbox-label" title="Mirror vertically along center axis">
+                  <input type="checkbox" id="chk-sym-v"> V-Mirror
+                </label>
+              </div>
+
+              <div class="subbar-divider"></div>
+
+              <!-- Rows Dimension -->
+              <div class="dimension-control">
+                <label for="input-rows">Rows:</label>
+                <input type="number" id="input-rows" class="num-input" value="24" min="8" max="240" step="2">
+              </div>
+            </div>
+
+            <div class="canvas-wrapper">
+              <canvas id="editor-canvas"></canvas>
+            </div>
+          </div>
+
+          <!-- Tab 2: Carriage Pass Schedule -->
+          <div class="tab-panel" id="panel-schedule">
+            <div class="schedule-header-card">
+              <div class="schedule-title">Industrial Carriage Action Sequence Decompiler</div>
+              <div class="schedule-desc">
+                Converts your high-level lace pattern into physical carriage passes.
+                Brother and Silver Reed machines require separate directional passes because transfer cams can only
+                transfer stitches in the direction of carriage travel.
+              </div>
+            </div>
+            <div class="schedule-list" id="schedule-list"></div>
+          </div>
+
+          <!-- Tab 3: 3D Physical Yarn Simulation -->
+          <div class="tab-panel" id="panel-yarn">
+            <div class="canvas-wrapper">
+              <canvas id="yarn-canvas"></canvas>
+            </div>
+          </div>
+
+          <!-- Tab 4: Punchcard Ribbon View -->
+          <div class="tab-panel" id="panel-punchcard">
+            <div class="canvas-wrapper" style="overflow-y: auto;">
+              <canvas id="punchcard-canvas"></canvas>
+            </div>
+          </div>
+
+          <!-- Tab 5: CNC Toolpath Simulation -->
+          <div class="tab-panel" id="panel-cnc">
+            <div class="cnc-controls-floating">
+              <button class="btn-action" id="btn-cnc-play" title="Play CNC simulation (Spacebar)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+                Play
+              </button>
+              <button class="btn-action" id="btn-cnc-pause" title="Pause simulation">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <rect width="4" height="16" x="6" y="4" />
+                  <rect width="4" height="16" x="14" y="4" />
+                </svg>
+                Pause
+              </button>
+              <button class="btn-action" id="btn-cnc-reset" title="Reset to beginning">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                </svg>
+                Reset
+              </button>
+              <div class="cnc-divider-v"></div>
+              <button class="btn-action" id="btn-cnc-zoom-in" title="Zoom In (scroll up / +)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  <line x1="11" y1="8" x2="11" y2="14" />
+                  <line x1="8" y1="11" x2="14" y2="11" />
+                </svg>
+                Zoom +
+              </button>
+              <button class="btn-action" id="btn-cnc-zoom-out" title="Zoom Out (scroll down / -)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  <line x1="8" y1="11" x2="14" y2="11" />
+                </svg>
+                Zoom −
+              </button>
+              <button class="btn-action" id="btn-cnc-fit" title="Fit entire card to viewport (F)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path
+                    d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                </svg>
+                Fit
+              </button>
+              <div class="cnc-divider-v"></div>
+              <label class="cnc-speed-label" for="cnc-sim-speed">Speed:</label>
+              <input type="range" id="cnc-sim-speed" class="cnc-speed-slider" min="0.5" max="20" step="0.5" value="4"
+                title="Simulation playback speed multiplier">
+              <span id="cnc-speed-val" class="cnc-speed-val">4×</span>
+            </div>
+            <div class="canvas-wrapper">
+              <canvas id="toolpath-canvas"></canvas>
+            </div>
+          </div>
+
+          <!-- Tab 6: Benji's Tank Top Tailor CAD -->
+          <div class="tab-panel" id="panel-tanktop">
+            <div class="tanktop-sidebar">
+              <div class="tanktop-section-title">Anatomic Body Parameters</div>
+
+              <div class="param-slider-row">
+                <div class="param-slider-header">
+                  <span>Chest Circumference:</span>
+                  <span class="param-slider-val" id="val-tanktop-chest">92 cm</span>
+                </div>
+                <input type="range" id="tanktop-chest" min="70" max="130" step="1" value="92">
+              </div>
+
+              <div class="param-slider-row">
+                <div class="param-slider-header">
+                  <span>Garment Ease:</span>
+                  <span class="param-slider-val" id="val-tanktop-ease">+4 cm</span>
+                </div>
+                <input type="range" id="tanktop-ease" min="-4" max="12" step="1" value="4">
+              </div>
+
+              <div class="param-slider-row">
+                <div class="param-slider-header">
+                  <span>Body Length (Hem to Scye):</span>
+                  <span class="param-slider-val" id="val-tanktop-length">38 cm</span>
+                </div>
+                <input type="range" id="tanktop-length" min="26" max="60" step="1" value="38">
+              </div>
+
+              <div class="param-slider-row">
+                <div class="param-slider-header">
+                  <span>Armhole Scye Depth:</span>
+                  <span class="param-slider-val" id="val-tanktop-armhole">21 cm</span>
+                </div>
+                <input type="range" id="tanktop-armhole" min="16" max="30" step="0.5" value="21">
+              </div>
+
+              <div class="param-slider-row">
+                <div class="param-slider-header">
+                  <span>Shoulder Width:</span>
+                  <span class="param-slider-val" id="val-tanktop-shoulder">35 cm</span>
+                </div>
+                <input type="range" id="tanktop-shoulder" min="28" max="46" step="1" value="35">
+              </div>
+
+              <div class="param-slider-row">
+                <div class="param-slider-header">
+                  <span>Neck Opening Width:</span>
+                  <span class="param-slider-val" id="val-tanktop-neck-w">18 cm</span>
+                </div>
+                <input type="range" id="tanktop-neck-w" min="12" max="26" step="1" value="18">
+              </div>
+
+              <div class="param-slider-row">
+                <div class="param-slider-header">
+                  <span>Front Scoop Drop:</span>
+                  <span class="param-slider-val" id="val-tanktop-neck-drop">13 cm</span>
+                </div>
+                <input type="range" id="tanktop-neck-drop" min="6" max="22" step="0.5" value="13">
+              </div>
+
+              <div class="param-slider-row">
+                <div class="param-slider-header">
+                  <span>Strap Width:</span>
+                  <span class="param-slider-val" id="val-tanktop-strap-w">5 cm</span>
+                </div>
+                <input type="range" id="tanktop-strap-w" min="2.5" max="9" step="0.5" value="5">
+              </div>
+
+              <div style="display: flex; gap: 8px; margin-top: 6px;">
+                <button class="btn-action btn-primary" id="btn-tanktop-svg"
+                  style="flex: 1; justify-content: center;">Print 1:1 SVG</button>
+                <button class="btn-action" id="btn-tanktop-dxf" style="flex: 1; justify-content: center;">Laser
+                  DXF</button>
+              </div>
+
+              <div class="tanktop-section-title" style="margin-top: 14px;">Row-by-Row Knitting Steps</div>
+              <div id="tanktop-instructions-list"></div>
+            </div>
+
+            <div class="tanktop-viewport">
+              <canvas id="tanktop-canvas"></canvas>
+            </div>
+          </div>
+
+          <!-- Tab 7: Brother KH-830 Kinematics Mechanism -->
+          <div class="tab-panel" id="panel-brother">
+            <div class="canvas-wrapper">
+              <canvas id="brother-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Right Sidebar: Diagnostics, Specs & Quick Actions -->
+      <aside id="right-sidebar">
+        <!-- Physical Machine Diagnostics -->
+        <div class="sidebar-panel">
+          <div class="sidebar-title">
+            <span>Machine Feasibility Check</span>
+          </div>
+          <div class="diagnostics-list" id="diagnostics-list">
+            <div class="diag-ok">✓ No carriage conflicts detected.</div>
+          </div>
+        </div>
+
+        <!-- Machine Dimensions & Pitch -->
+        <div class="sidebar-panel">
+          <div class="sidebar-title">Gauge & Metrics</div>
+          <div class="property-row">
+            <span class="property-label">Needle Pitch (X):</span>
+            <span class="property-value" id="spec-pitch-x">4.50 mm</span>
+          </div>
+          <div class="property-row">
+            <span class="property-label">Row Pitch (Y):</span>
+            <span class="property-value" id="spec-pitch-y">5.08 mm</span>
+          </div>
+          <div class="property-row">
+            <span class="property-label">Hole Diameter:</span>
+            <span class="property-value" id="spec-hole-dia">3.20 mm</span>
+          </div>
+          <div class="property-row">
+            <span class="property-label">Tractor Sprocket:</span>
+            <span class="property-value" id="spec-sprock-dia">3.50 mm</span>
+          </div>
+          <div class="property-row">
+            <span class="property-label">Carriage Rules:</span>
+            <span class="property-value" id="spec-carriage-rule">Brother Separated (L/K)</span>
+          </div>
+        </div>
+
+        <!-- Quick Exports -->
+        <div class="sidebar-panel">
+          <div class="sidebar-title">Quick Export Hub</div>
+          <div class="quick-exports">
+            <button class="btn-action" id="btn-export-dxf" title="AutoCAD DXF R12 for Laser Cutters">Laser DXF</button>
+            <button class="btn-action" id="btn-export-gcode" title="G-Code for CNC Punch / Laser">CNC G-Code</button>
+            <button class="btn-action" id="btn-export-print" title="1:1 Scale Printable Multi-Page Sheets">Print
+              Sheets</button>
+            <button class="btn-action" id="btn-export-svg" title="Vector SVG for LightBurn / Glowforge">Laser
+              SVG</button>
+            <button class="btn-action" id="btn-export-dak" title="DesignaKnit Pattern File">DAK File</button>
+            <button class="btn-action" id="btn-export-bin" title="Raw Binary Bitstream for Arduino / AYAB">Binary
+              .bin</button>
+            <button class="btn-action" id="btn-export-csv" title="CSV Punch Matrix">CSV Table</button>
+            <button class="btn-action" id="btn-export-json" title="Save Complete Project Bundle">Save Project</button>
+          </div>
+          <div style="margin-top: 10px;">
+            <label class="btn-action" style="width: 100%; justify-content: center; cursor: pointer;">
+              <input type="file" id="btn-load-json" accept=".kcard,.json" style="display: none;">
+              Open Project (.kcard)
+            </label>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Bottom Status Bar -->
+    <footer id="status-bar">
+      <div class="status-left">
+        <span><span class="status-indicator"></span>READY</span>
+        <span id="status-coords">Needle: -- | Row: --</span>
+        <span id="status-stats">Initialising CAD engine...</span>
+      </div>
+      <div class="status-right">
+        <span id="status-profile">KnitCAD Pro</span>
+        <span>Made with love for my beautiful cute boyfriend Benji 💗</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- MODAL: Math Pattern Studio -->
+  <div class="modal-backdrop" id="math-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Mathematical Pattern Generator Studio</div>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="math-gen-type">Mathematical System:</label>
+          <select id="math-gen-type" class="form-control">
+            <option value="turing">Gray-Scott Reaction-Diffusion PDEs (Turing Morphogenesis)</option>
+            <option value="wave">Multi-Harmonic Fourier Wave Superposition</option>
+            <option value="voronoi">Toroidal Lloyd-Relaxed Voronoi Tessellation</option>
+            <option value="celtic">Planar Ribbon Celtic Knotwork (Gauss Crossing Parity)</option>
+            <option value="wolfram">Wolfram 1D Cellular Automata (Rule 110, 30, 90)</option>
+            <option value="fractal">Complex Analytic Fractal Slicing (Julia / Mandelbrot)</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="group-turing-preset">
+          <label class="form-label" for="math-turing-preset">Reaction-Diffusion Preset:</label>
+          <select id="math-turing-preset" class="form-control">
+            <option value="labyrinth">Labyrinthine Solitary Waves</option>
+            <option value="spots">Turing Morphogen Leopard Spots</option>
+            <option value="waves">Spiral Waves</option>
+            <option value="mitosis">Self-Replicating Mitosis</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="group-wolfram-rule">
+          <label class="form-label" for="math-rule-input">Wolfram Rule Number (0-255):</label>
+          <input type="number" id="math-rule-input" class="form-control" value="110" min="0" max="255">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action modal-close">Cancel</button>
+        <button class="btn-action btn-primary" id="btn-generate-math">Synthesize Pattern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Bitmap Image Importer & Dither Studio -->
+  <div class="modal-backdrop" id="image-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Image Import & Punchcard Dithering Studio</div>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="image-file-input">Select Image File (PNG, JPG, SVG, WebP):</label>
+          <input type="file" id="image-file-input" class="form-control" accept="image/*">
+        </div>
+
+        <div style="display: flex; gap: 16px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 12px;">
+            <div class="form-group">
+              <label class="form-label" for="image-dither-method">Dithering Algorithm:</label>
+              <select id="image-dither-method" class="form-control">
+                <option value="atkinson">Atkinson Dithering (Best for fine punch holes)</option>
+                <option value="floyd_steinberg">Floyd-Steinberg Error Diffusion</option>
+                <option value="bayer">8x8 Ordered Bayer Dithering</option>
+                <option value="threshold">Direct Otsu Threshold</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="image-contrast">Contrast Adjustment:</label>
+              <input type="range" id="image-contrast" min="0.5" max="2.5" step="0.1" value="1.2">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="image-gamma">Gamma Curve:</label>
+              <input type="range" id="image-gamma" min="0.4" max="2.2" step="0.1" value="1.0">
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="image-invert"> Invert Image Colors
+              </label>
+              <label class="checkbox-label" style="margin-top: 6px;">
+                <input type="checkbox" id="image-bridges" checked> Enforce Paper Bridge Protection (Prevent Tearing)
+              </label>
+            </div>
+          </div>
+
+          <div
+            style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #080c14; border: 1px solid #1e293b; border-radius: 6px; padding: 10px;">
+            <canvas id="image-preview-canvas" style="max-width: 100%; max-height: 200px;"></canvas>
+            <span style="font-size: 10px; color: #64748b; margin-top: 6px;">1-Bit Punch Preview</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action modal-close">Cancel</button>
+        <button class="btn-action btn-primary" id="btn-apply-image">Import to Grid</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Presets Library -->
+  <div class="modal-backdrop" id="presets-modal">
+    <div class="modal-card" style="width: 680px;">
+      <div class="modal-header">
+        <div class="modal-title">Historic & Algorithmic Pattern Library</div>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="presets-grid" id="presets-list"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Export Configuration Hub -->
+  <div class="modal-backdrop" id="export-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Export & CNC Post-Processor Hub</div>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="gcode-tool-mode">CNC / Machine Post-Processor Target:</label>
+          <select id="gcode-tool-mode" class="form-control">
+            <option value="laser">Laser Cutter (M03 / M05 Power Pulse & Vector Circles)</option>
+            <option value="solenoid">Solenoid Mechanical Puncher (M64 / M65 Dwell Pin)</option>
+            <option value="cnc_drill">CNC Router / Drill Press (G81 Peck Drill Cycle)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="gcode-rapid-feed">Rapid Traverse Speed (G00 mm/min):</label>
+          <input type="number" id="gcode-rapid-feed" class="form-control" value="3000" step="500">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Available Industrial Formats:</label>
+          <div style="font-size: 11px; color: #94a3b8; line-height: 1.6;">
+            • <b>AutoCAD DXF (R12 ASCII)</b>: Fully layered for LightBurn, Glowforge, and laser CAM.<br>
+            • <b>1:1 Scale Vector PDF / Printable Sheets</b>: Multi-page tiled printing for A4 / Letter with 50mm
+            ruler.<br>
+            • <b>CNC G-Code (.gcode / .nc)</b>: 2-Opt TSP optimized toolpaths with rapid travel minimization.<br>
+            • <b>DesignaKnit (.pat) & AYAB (.bin)</b>: Direct compatibility with modern electronic consoles.
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action modal-close">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main ES6 Application Script -->
+  <script type="module" src="js/app.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,1211 @@
+/* =========================================================
+   KnitCAD Industrial — Knitting Machine CAD/CAM & Lace Decompiler
+   Design System: Deep Dark Precision Engineering + Romance Theme
+   Made with infinite love for Benji 💗
+   ========================================================= */
+
+:root {
+  --bg-main: #070a12;
+  --bg-surface: #0f172a;
+  --bg-surface-elevated: #1e293b;
+  --bg-panel: #131d33;
+  --border-subtle: #1e293b;
+  --border-active: #38bdf8;
+  --border-focus: #0ea5e9;
+
+  --accent-cyan: #38bdf8;
+  --accent-amber: #fbbf24;
+  --accent-rose: #f43f5e;
+  --accent-emerald: #34d399;
+  --accent-indigo: #6366f1;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-panel: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* App Layout Grid */
+#app-container {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* --- Top Header Navigation --- */
+header#main-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  padding: 0 16px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  z-index: 20;
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--accent-cyan);
+}
+
+.brand-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+.brand-version {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  background-color: #1e3a8a;
+  color: var(--accent-cyan);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--bg-surface-elevated);
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.profile-picker label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.select-control {
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  outline: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.select-control option {
+  background-color: var(--bg-surface-elevated);
+  color: var(--text-primary);
+}
+
+.mode-selector {
+  display: flex;
+  background-color: #0b0f19;
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.mode-btn {
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  padding: 5px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-transform: uppercase;
+}
+
+.mode-btn:hover {
+  color: var(--text-primary);
+}
+
+.mode-btn.active {
+  background-color: var(--accent-cyan);
+  color: #04101e;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn-action:hover {
+  background-color: #2e3e5c;
+  border-color: var(--accent-cyan);
+}
+
+.btn-action.btn-primary {
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.btn-action.btn-primary:hover {
+  background: linear-gradient(135deg, #0369a1, #075985);
+  box-shadow: 0 0 12px rgba(14, 165, 233, 0.5);
+}
+
+/* --- Main Workbench Area --- */
+#workbench {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* --- Left Toolbar Palette --- */
+#left-toolbar {
+  width: 54px;
+  background-color: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 16px;
+  z-index: 10;
+}
+
+.tool-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.tool-group-title {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.tool-btn {
+  width: 38px;
+  height: 38px;
+  background-color: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.tool-btn:hover {
+  background-color: var(--bg-surface-elevated);
+  color: var(--text-primary);
+}
+
+.tool-btn.active {
+  background-color: rgba(56, 189, 248, 0.15);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.tool-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* --- Center Viewport Workspace --- */
+#viewport-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: #080c14;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Viewport Tabs */
+.tab-bar {
+  display: flex;
+  align-items: center;
+  background-color: #0b0f19;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 12px;
+  height: 36px;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 0 16px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  color: var(--accent-cyan);
+  border-bottom-color: var(--accent-cyan);
+  background-color: rgba(56, 189, 248, 0.04);
+}
+
+.tab-content {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.tab-panel {
+  display: none;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.tab-panel.active {
+  display: flex;
+}
+
+/* Secondary contextual sub-bar */
+.canvas-subbar {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background-color: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.stitch-selector {
+  display: flex;
+  gap: 4px;
+}
+
+.stitch-btn {
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.stitch-btn:hover {
+  border-color: var(--accent-cyan);
+  color: var(--text-primary);
+}
+
+.stitch-btn.active {
+  background-color: #0284c7;
+  border-color: var(--accent-cyan);
+  color: #ffffff;
+}
+
+.subbar-divider {
+  width: 1px;
+  height: 20px;
+  background-color: var(--border-subtle);
+}
+
+.symmetry-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.dimension-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.num-input {
+  width: 48px;
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* Canvas Viewport Containers */
+.canvas-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Schedule Tab View */
+#panel-schedule {
+  flex-direction: column;
+  padding: 20px 30px;
+  overflow-y: auto;
+  background-color: #080c14;
+}
+
+.schedule-header-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.schedule-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  margin-bottom: 4px;
+}
+
+.schedule-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.schedule-item {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--accent-cyan);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+}
+
+.schedule-item.item-knit {
+  border-left-color: #3b82f6;
+}
+
+.schedule-item.item-lace {
+  border-left-color: var(--accent-amber);
+}
+
+.stroke-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.stroke-num {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+}
+
+.badge-lace {
+  background-color: rgba(251, 191, 36, 0.15);
+  color: var(--accent-amber);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
+.badge-knit {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.badge-comb {
+  background-color: rgba(52, 211, 153, 0.15);
+  color: var(--accent-emerald);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+}
+
+.stroke-dir {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.stroke-card-row {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.stroke-notes {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.stroke-transfers {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-cyan);
+}
+
+/* CNC Tab View */
+.cnc-controls-floating {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  z-index: 10;
+}
+
+/* --- Right Sidebar Diagnostics & Properties --- */
+#right-sidebar {
+  width: 320px;
+  background-color: var(--bg-surface);
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.sidebar-panel {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sidebar-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--accent-cyan);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.diagnostics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diag-ok {
+  background-color: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  color: var(--accent-emerald);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.diag-item {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.diag-warning {
+  background-color: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: var(--accent-amber);
+}
+
+.diag-error {
+  background-color: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  color: var(--accent-rose);
+}
+
+.diag-loc {
+  font-family: var(--font-mono);
+  font-weight: bold;
+}
+
+.property-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.property-label {
+  color: var(--text-secondary);
+}
+
+.property-value {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Quick Export Buttons */
+.quick-exports {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.quick-exports .btn-action {
+  justify-content: center;
+  text-align: center;
+}
+
+/* --- Bottom Status Bar --- */
+footer#status-bar {
+  height: 26px;
+  background-color: #0b0f19;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  z-index: 20;
+}
+
+.status-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-indicator {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background-color: var(--accent-emerald);
+  border-radius: 50%;
+  margin-right: 6px;
+  box-shadow: 0 0 6px var(--accent-emerald);
+}
+
+/* --- Modals & Dialogs --- */
+.modal-backdrop {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(3, 7, 18, 0.75);
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal-backdrop.active {
+  display: flex;
+}
+
+.modal-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  width: 580px;
+  max-width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--accent-rose);
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-subtle);
+  background-color: #0b0f19;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.form-control {
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  outline: none;
+}
+
+.form-control:focus {
+  border-color: var(--accent-cyan);
+}
+
+/* Presets Grid in Modal */
+.presets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.preset-card {
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preset-card:hover {
+  border-color: var(--accent-cyan);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.preset-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.preset-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--accent-cyan);
+  background-color: rgba(56, 189, 248, 0.1);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  align-self: flex-start;
+}
+
+.preset-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #080c14;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* =========================================================
+   Benji Romance Theme ("Made with Love for Benji")
+   ========================================================= */
+body.theme-romance {
+  --bg-main: #14041a;
+  --bg-surface: #22082e;
+  --bg-surface-elevated: #37114a;
+  --bg-panel: #2a0a38;
+  --border-subtle: #4c1d66;
+  --border-active: #f472b6;
+  --border-focus: #ec4899;
+
+  --accent-cyan: #f472b6;    /* Romantic Pink */
+  --accent-amber: #fde047;   /* Champagne Gold */
+  --accent-rose: #fb7185;    /* Strawberry Rose */
+  --accent-emerald: #f43f5e; /* Velvet Ruby */
+  --accent-indigo: #e879f9;
+
+  --text-primary: #fff1f2;
+  --text-secondary: #fbcfe8;
+  --text-muted: #c084fc;
+}
+
+body.theme-romance header#main-header {
+  border-bottom: 1px solid #701a75;
+  background: linear-gradient(90deg, #22082e, #3b0764);
+}
+
+body.theme-romance .brand-title::after {
+  content: ' ♥ BENJI';
+  color: #f472b6;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+/* Heart Tool Button */
+.tool-btn.tool-heart {
+  color: #f43f5e;
+}
+.tool-btn.tool-heart.active {
+  background-color: rgba(244, 63, 94, 0.2);
+  border-color: #f43f5e;
+  color: #f43f5e;
+  box-shadow: 0 0 10px rgba(244, 63, 94, 0.4);
+}
+
+/* --- CNC Toolpath Controls ---  */
+.cnc-divider-v {
+  width: 1px;
+  height: 22px;
+  background-color: var(--border-subtle);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.cnc-speed-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cnc-speed-slider {
+  width: 80px;
+  accent-color: var(--accent-cyan);
+  cursor: pointer;
+}
+
+.cnc-speed-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  min-width: 28px;
+  text-align: right;
+}
+
+/* --- Benji Love Popup & Heart Rain --- */
+.benji-love-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(48, 6, 72, 0.97) 0%, rgba(10, 2, 18, 0.99) 100%);
+  backdrop-filter: blur(20px);
+  animation: lovePopupFadeIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.benji-love-popup.hidden {
+  animation: lovePopupFadeOut 0.4s ease-in both;
+  pointer-events: none;
+}
+
+@keyframes lovePopupFadeIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes lovePopupFadeOut {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.95); }
+}
+
+.love-popup-content {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.love-hearts-rain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.love-hearts-rain .heart-particle {
+  position: absolute;
+  top: -60px;
+  font-size: 22px;
+  animation: heartFall linear infinite;
+  opacity: 0.7;
+  user-select: none;
+  pointer-events: none;
+}
+
+@keyframes heartFall {
+  0%   { transform: translateY(0) rotate(0deg) scale(1);   opacity: 0.8; }
+  50%  { opacity: 0.9; transform: translateY(45vh) rotate(15deg) scale(1.1); }
+  100% { transform: translateY(110vh) rotate(-10deg) scale(0.8); opacity: 0; }
+}
+
+.love-popup-inner {
+  position: relative;
+  z-index: 2;
+  background: linear-gradient(145deg, rgba(58, 10, 90, 0.95), rgba(30, 4, 54, 0.98));
+  border: 2px solid rgba(244, 114, 182, 0.5);
+  border-radius: 24px;
+  padding: 48px 56px;
+  text-align: center;
+  max-width: 560px;
+  box-shadow:
+    0 0 80px rgba(244, 114, 182, 0.25),
+    0 0 160px rgba(236, 72, 153, 0.12),
+    0 30px 60px rgba(0, 0, 0, 0.7);
+  animation: loveCardBounce 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
+}
+
+@keyframes loveCardBounce {
+  from { opacity: 0; transform: scale(0.7) translateY(40px); }
+  to   { opacity: 1; transform: scale(1) translateY(0);      }
+}
+
+.love-popup-big-heart {
+  font-size: 64px;
+  display: block;
+  margin-bottom: 16px;
+  animation: heartPulse 1.4s ease-in-out infinite;
+  line-height: 1;
+}
+
+@keyframes heartPulse {
+  0%, 100% { transform: scale(1);    }
+  30%      { transform: scale(1.15); }
+  60%      { transform: scale(0.95); }
+}
+
+.love-popup-title {
+  font-family: var(--font-ui);
+  font-size: 32px;
+  font-weight: 800;
+  color: #fff1f2;
+  letter-spacing: -0.5px;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, #fce7f3, #f9a8d4, #f472b6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.love-popup-subtitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fbcfe8;
+  margin-bottom: 14px;
+}
+
+.love-popup-msg {
+  font-size: 14px;
+  color: #e879f9;
+  line-height: 1.7;
+  margin-bottom: 30px;
+  opacity: 0.9;
+}
+
+.love-popup-close {
+  background: linear-gradient(135deg, #be185d, #9d174d);
+  border: 1px solid #f472b6;
+  color: #fff;
+  padding: 14px 32px;
+  border-radius: 50px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 4px 20px rgba(190, 24, 93, 0.4);
+  letter-spacing: 0.3px;
+}
+
+.love-popup-close:hover {
+  transform: scale(1.06) translateY(-2px);
+  box-shadow: 0 8px 30px rgba(244, 114, 182, 0.6);
+  background: linear-gradient(135deg, #db2777, #be185d);
+}
+
+/* --- Tank Top Tailor Atelier Tab Layout --- */
+#panel-tanktop {
+  display: none;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  flex-direction: row;
+}
+
+#panel-tanktop.active {
+  display: flex;
+}
+
+.tanktop-sidebar {
+  width: 340px;
+  background-color: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  overflow-y: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 10;
+}
+
+.tanktop-viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background-color: #070a12;
+}
+
+.tanktop-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--accent-cyan);
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.param-slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.param-slider-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.param-slider-header span:first-child {
+  color: var(--text-secondary);
+}
+
+.param-slider-val {
+  font-family: var(--font-mono);
+  color: var(--accent-cyan);
+  font-weight: 700;
+}
+
+.param-slider-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent-cyan);
+}
+
+/* Tank Top Knitting Instruction Card */
+.instruction-step-card {
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-cyan);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.instruction-step-num {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  margin-bottom: 3px;
+}
+
+.instruction-step-text {
+  font-size: 11px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+/* --- Brother KH-830 Kinematics Tab Layout --- */
+#panel-brother {
+  display: none;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  flex-direction: column;
+}
+
+#panel-brother.active {
+  display: flex;
+}
+
