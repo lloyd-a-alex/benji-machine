@@ -1,0 +1,203 @@
+/**
+ * KnitCAD — command palette ("do what I typed").
+ *
+ * Press  Ctrl/⌘+K  or  /  (or click the ⌘ Search button) and type ANY relevant
+ * word or phrase — "beanie", "shirt", "punchcard", "fair isle", "export svg",
+ * the name of a preset, a machine — and it jumps straight there. Zero menus to
+ * hunt through (Hick's Law: fewer visible choices, one fast search).
+ *
+ * Commands come from three places, all read live from the DOM so it can never
+ * drift out of sync with the app:
+ *   • viewport tabs, pattern modes and editor tools (buttons clicked)
+ *   • machine profiles (the <select> is driven)
+ *   • an action list handed in by the app via getActions()
+ *
+ * Fully contained: if anything throws it just won't open; the app is unaffected.
+ */
+
+// Synonyms so ordinary knitting words find the right destination.
+const SYNONYMS_TAB = {
+  editor: 'pattern cad editor draw grid design stitch paint canvas',
+  schedule: 'schedule carriage pass decompile plan sequence passes',
+  yarn: 'yarn 3d fabric simulation swatch drape feel physical',
+  punchcard: 'punchcard card ribbon holes punch fair isle jacquard',
+  cnc: 'cnc toolpath gcode laser mill router',
+  tanktop: 'shirt top tank tops camisole vest singlet sleeveless tailor garment',
+  beanie: 'beanie hat cap bob watch knit beanie tailor',
+  clothes: 'clothes clothing catalog wardrobe garment sweater jumper cardigan scarf cowl socks mittens shawl hat every',
+  brother: 'brother kinematics mechanism machine simulator selector kh-830'
+};
+const SYNONYMS_MODE = {
+  lace: 'lace openwork eyelet lacy',
+  fair_isle: 'fair isle fairisle jacquard stranded colourwork colorwork two colour',
+  tuck: 'tuck texture puff bump',
+  slip: 'slip float mosaic skip'
+};
+
+let opened = false;
+let els = null;      // { backdrop, input, list }
+let results = [];    // filtered command array
+let sel = 0;
+let allCommands = [];
+
+function norm(s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+
+// Score a command against a query; higher is better, 0 = no match.
+function score(cmd, q) {
+  if (!q) return 1;
+  const hay = norm(cmd.label + ' ' + (cmd.keywords || ''));
+  const tokens = q.split(' ').filter(Boolean);
+  let total = 0;
+  for (const t of tokens) {
+    if (!hay.includes(t)) return 0;              // every token must appear
+    total += cmd.label.toLowerCase().startsWith(t) ? 6 : 3;
+  }
+  // subsequence bonus so single words still rank well
+  if (hay.includes(q)) total += 4;
+  return total;
+}
+
+function gatherCommands(getActions) {
+  const cmds = [];
+  document.querySelectorAll('.tab-btn[data-tab]').forEach(b => {
+    const tab = b.dataset.tab;
+    cmds.push({ label: 'Go to: ' + norm(b.textContent).replace(/^\w/, c => c.toUpperCase()), group: 'Tabs', keywords: SYNONYMS_TAB[tab] || '', run: () => b.click() });
+  });
+  document.querySelectorAll('.mode-btn[data-mode]').forEach(b => {
+    const m = b.dataset.mode;
+    cmds.push({ label: 'Mode: ' + norm(b.textContent), group: 'Modes', keywords: 'mode ' + (SYNONYMS_MODE[m] || ''), run: () => b.click() });
+  });
+  const selEl = document.getElementById('profile-select');
+  if (selEl) Array.from(selEl.options).forEach(o => {
+    cmds.push({ label: 'Machine: ' + o.textContent, group: 'Machine', keywords: 'machine profile ' + o.textContent, run: () => { selEl.value = o.value; selEl.dispatchEvent(new Event('change', { bubbles: true })); } });
+  });
+  try { (getActions ? getActions() : []).forEach(a => cmds.push(a)); } catch (_) { /* ignore */ }
+  return cmds;
+}
+
+function render(q) {
+  const scored = allCommands
+    .map(c => ({ c, s: score(c, norm(q)) }))
+    .filter(x => x.s > 0)
+    .sort((a, b) => b.s - a.s || a.c.label.localeCompare(b.c.label))
+    .slice(0, 40)
+    .map(x => x.c);
+  results = scored;
+  sel = 0;
+  els.list.innerHTML = scored.map((c, i) =>
+    `<div class="kx-cmd-item${i === 0 ? ' sel' : ''}" data-i="${i}"><span class="kx-cmd-label">${esc(c.label)}</span><span class="kx-cmd-group">${esc(c.group || '')}</span></div>`
+  ).join('') || '<div class="kx-cmd-empty">Nothing matches — try another word ♥</div>';
+}
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function moveSel(d) {
+  const items = els.list.querySelectorAll('.kx-cmd-item');
+  if (!items.length) return;
+  items[sel] && items[sel].classList.remove('sel');
+  sel = (sel + d + items.length) % items.length;
+  items[sel].classList.add('sel');
+  items[sel].scrollIntoView({ block: 'nearest' });
+}
+
+function runSel() {
+  const cmd = results[sel];
+  close();
+  if (cmd && typeof cmd.run === 'function') { try { cmd.run(); } catch (_) { /* contained */ } }
+}
+
+function open(prefill = '') {
+  if (opened) return;
+  ensureStyles();
+  opened = true;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'kx-cmd-backdrop';
+  backdrop.innerHTML = `<div class="kx-cmd" role="dialog" aria-modal="true" aria-label="Search commands">
+    <input class="kx-cmd-input" type="text" placeholder="Type a word — beanie, shirt, punchcard, export…" autocomplete="off" spellcheck="false">
+    <div class="kx-cmd-list"></div>
+    <div class="kx-cmd-foot"><span>↑↓ move</span><span>↵ run</span><span>esc close</span></div>
+  </div>`;
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('.kx-cmd-input');
+  const list = backdrop.querySelector('.kx-cmd-list');
+  els = { backdrop, input, list };
+  if (prefill) input.value = prefill;
+  render(input.value);
+  setTimeout(() => input.focus(), 0);
+
+  input.addEventListener('input', () => render(input.value));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSel(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSel(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); runSel(); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  });
+  list.addEventListener('click', e => {
+    const it = e.target.closest('.kx-cmd-item');
+    if (it) { sel = parseInt(it.dataset.i, 10); runSel(); }
+  });
+  backdrop.addEventListener('mousedown', e => { if (e.target === backdrop) close(); });
+}
+
+function close() {
+  if (!opened) return;
+  opened = false;
+  if (els && els.backdrop) els.backdrop.remove();
+  els = null;
+  results = [];
+}
+
+let _getActions = null;
+function refresh() { if (opened && _getActions) { allCommands = gatherCommands(_getActions); render(els.input.value); } }
+
+function ensureStyles() {
+  if (document.getElementById('kx-cmd-style')) return;
+  const css = `
+  .kx-cmd-backdrop{position:fixed;inset:0;z-index:1600;background:rgba(5,8,16,.55);backdrop-filter:blur(2px);
+    display:flex;align-items:flex-start;justify-content:center;padding-top:14vh}
+  .kx-cmd{width:min(620px,94vw);background:#0f1a2e;border:1px solid #24406e;border-radius:14px;overflow:hidden;
+    box-shadow:0 30px 70px rgba(0,0,0,.6);color:#e2e8f0;font-family:inherit}
+  .kx-cmd-input{width:100%;box-sizing:border-box;background:transparent;border:0;outline:none;color:#fff;
+    font-size:18px;padding:16px 18px;border-bottom:1px solid #1c2f4d}
+  .kx-cmd-list{max-height:52vh;overflow:auto;padding:6px}
+  .kx-cmd-item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:9px 12px;border-radius:9px;cursor:pointer}
+  .kx-cmd-item.sel,.kx-cmd-item:hover{background:rgba(56,189,248,.16)}
+  .kx-cmd-label{font-size:14px}
+  .kx-cmd-group{font-size:11px;text-transform:uppercase;letter-spacing:.05em;opacity:.5}
+  .kx-cmd-empty{padding:16px;text-align:center;opacity:.6;font-size:13px}
+  .kx-cmd-foot{display:flex;gap:16px;justify-content:flex-end;padding:8px 14px;border-top:1px solid #1c2f4d;font-size:11px;opacity:.5}
+  .kx-search-btn{white-space:nowrap}`;
+  const el = document.createElement('style');
+  el.id = 'kx-cmd-style';
+  el.textContent = css;
+  document.head.appendChild(el);
+}
+
+function injectTrigger() {
+  const actions = document.querySelector('.header-actions');
+  if (!actions || actions.querySelector('#kx-search-btn')) return;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn-action kx-search-btn';
+  b.id = 'kx-search-btn';
+  b.title = 'Search / jump to anything (Ctrl or ⌘ + K)';
+  b.innerHTML = '\u2318 Search';
+  b.addEventListener('click', () => open());
+  actions.insertBefore(b, actions.firstChild);
+}
+
+/**
+ * @param {{ getActions?: () => Array }} ctx  getActions returns extra commands
+ *   (presets, garments, settings, exports…). Called each time the palette opens.
+ */
+export function initCommandPalette(ctx = {}) {
+  _getActions = ctx.getActions || null;
+  injectTrigger();
+  window.addEventListener('keydown', e => {
+    const inField = e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); opened ? close() : open(); return; }
+    if (!opened && !inField && e.key === '/') { e.preventDefault(); open(); }
+  });
+  return { open, close, refresh, isOpen: () => opened };
+}

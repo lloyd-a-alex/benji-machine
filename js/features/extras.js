@@ -73,6 +73,13 @@ function esc(s) {
 function applyTheme() {
   const root = document.documentElement;
   root.style.setProperty('--brand-accent', settings.accent);
+  // The picked accent now genuinely drives the UI (no more placebo): every
+  // component reads var(--accent-cyan)/var(--accent-rose), so re-pointing those
+  // at --brand-accent makes the whole surface respond — unless it's the default
+  // romantic pink, in which case we keep the calm cyan CAD accent for legibility.
+  const warm = /^#f[0-9ab]/i.test(settings.accent) || /^#e[0-9ab]/i.test(settings.accent) || /^#b[0-9e-f]/i.test(settings.accent) || /^#9[0-9a-f]/i.test(settings.accent);
+  root.style.setProperty('--accent-cyan', (settings.accent && settings.accent !== '#fb7185' && !warm) ? settings.accent : '#f472b6');
+  root.style.setProperty('--accent-rose', settings.accent || '#f43f5e');
   // Additive light mode: only applied when the user opts in, and scoped to a
   // data-attribute so the core dark CAD canvas is never affected by default.
   if (settings.theme === 'light') root.setAttribute('data-theme', 'light');
@@ -135,15 +142,70 @@ function injectStyles() {
   .kx-menu-item{text-align:left;background:transparent;border:0;color:#e2e8f0;padding:8px 10px;border-radius:8px;
     cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px}
   .kx-menu-item:hover{background:rgba(56,189,248,.14)}
+  /* ── contextual chrome: editor-only affordances hide off the CAD tab ── */
+  body[data-tab]:not([data-tab="editor"]) #left-toolbar,
+  body[data-tab]:not([data-tab="editor"]) .canvas-subbar{display:none}
+  body:not([data-tab]) #left-toolbar{display:flex}
+  /* ── designer-only (advanced) parameters: invisible until the hidden key ── */
+  .advanced-param{display:none !important}
+  body.kx-admin-on .advanced-param{display:flex !important}
+  .kx-admin-only{display:none}
+  body.kx-admin-on .kx-admin-only{display:inline-flex}
+  /* ── clothes catalogue nav: chunked categories, hover-reveal ── */
+  .clothes-nav{display:flex;flex-direction:column;gap:2px;max-height:min(46vh,420px);overflow:auto;margin-top:8px}
+  .clothes-cat-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted,#64748b);margin:10px 0 3px;padding-left:4px}
+  .clothes-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;border:1px solid transparent;
+    color:var(--text-secondary,#cbd5e1);padding:7px 9px;border-radius:8px;cursor:pointer;font-size:12px;transition:background .12s,border-color .12s,transform .08s}
+  .clothes-item:hover{background:rgba(56,189,248,.1);border-color:var(--border-subtle,#1e293b);transform:translateX(2px)}
+  .clothes-item.active{background:rgba(244,114,182,.16);border-color:var(--accent-cyan,#f472b6);color:#fff}
+  .clothes-item-icon{font-size:15px;width:18px;text-align:center}
+  .clothes-blurb{font-size:10px;color:#64748b;line-height:1.5;margin:0 0 10px}
+  .clothes-params{display:flex;flex-direction:column}
+  /* ── feasibility advisor modal ── */
+  .kx-feas{width:min(680px,94vw);max-height:86vh;overflow:auto;background:#0f1a2e;border:1px solid #24406e;border-radius:16px;
+    box-shadow:0 30px 70px rgba(0,0,0,.6);color:#e2e8f0;padding:22px;align-self:flex-start;margin-top:10vh}
+  .kx-feas-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .kx-feas-top h2{margin:0;font-size:20px}
+  .kx-feas-badge{font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px;border:1px solid}
+  .kx-feas-badge.kx-feas-feasible{color:#34d399;border-color:#34d399;background:rgba(52,211,153,.12)}
+  .kx-feas-badge.kx-feas-needs-attention{color:#fbbf24;border-color:#fbbf24;background:rgba(251,191,36,.12)}
+  .kx-feas-badge.kx-feas-not-feasible{color:#f43f5e;border-color:#f43f5e;background:rgba(244,63,94,.12)}
+  .kx-feas-sub{font-size:12px;opacity:.6;margin:6px 0 16px}
+  .kx-feas-list{display:flex;flex-direction:column;gap:10px}
+  .kx-feas-card{background:#0c1526;border:1px solid #1e2f4d;border-left-width:3px;border-radius:11px;padding:12px 14px}
+  .kx-feas-card.kx-feas-ok{border-left-color:#34d399}
+  .kx-feas-card.kx-feas-info{border-left-color:#38bdf8}
+  .kx-feas-card.kx-feas-warn{border-left-color:#fbbf24}
+  .kx-feas-card.kx-feas-error{border-left-color:#f43f5e}
+  .kx-feas-head{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:4px}
+  .kx-feas-dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.7}
+  .kx-feas-prob{font-size:12.5px;line-height:1.5;color:#cbd5e1}
+  .kx-feas-phil{font-size:11px;font-style:italic;color:#64748b;margin-top:6px}
+  .kx-feas-fix{margin-top:10px;background:rgba(56,189,248,.14);border:1px solid #2f5fa0;color:#bae6fd;border-radius:8px;
+    padding:6px 12px;font-size:12px;cursor:pointer;transition:background .12s}
+  .kx-feas-fix:hover{background:rgba(56,189,248,.28)}
+  .kx-feas-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
   /* ── additive light theme (only active under html[data-theme="light"]) ── */
-  html[data-theme="light"] body{filter:brightness(1.12) contrast(0.96)}
-  html[data-theme="light"] .app-header,html[data-theme="light"] .panel,
-  html[data-theme="light"] .sidebar,html[data-theme="light"] .toolbar{background:#f1f5f9;color:#0f172a}
-  html[data-theme="light"] .panel-title,html[data-theme="light"] .toolbar-label{color:#0f172a}
+  html[data-theme="light"]{--bg-main:#eef2f7;--bg-surface:#ffffff;--bg-surface-elevated:#f1f5f9;--bg-panel:#f8fafc;
+    --border-subtle:#dbe3ee;--text-primary:#0f172a;--text-secondary:#475569;--text-muted:#94a3b8}
+  html[data-theme="light"] body{background:#eef2f7;color:#0f172a}
+  html[data-theme="light"] header#main-header,html[data-theme="light"] #left-toolbar,
+  html[data-theme="light"] #right-sidebar,html[data-theme="light"] .tab-bar,
+  html[data-theme="light"] .sidebar-panel,html[data-theme="light"] .tanktop-sidebar{background:#fff;color:#0f172a}
+  html[data-theme="light"] #viewport-workspace,html[data-theme="light"] .tab-content{background:#f8fafc}
+  html[data-theme="light"] .brand-title,html[data-theme="light"] .tool-group-title{color:#0f172a}
+  html[data-theme="light"] .tab-btn,html[data-theme="light"] .tool-btn,html[data-theme="light"] .btn-action{color:#334155}
+  html[data-theme="light"] .btn-action{background:#fff;border-color:#dbe3ee}
+  html[data-theme="light"] .canvas-subbar{background:rgba(255,255,255,.9);border-color:#dbe3ee}
+  html[data-theme="light"] .num-input,html[data-theme="light"] .select-control{background:#fff;border-color:#dbe3ee;color:#0f172a}
+  html[data-theme="light"] .instruction-step-card{background:#f8fafc;border-color:#dbe3ee}
+  html[data-theme="light"] .instruction-step-text{color:#0f172a}
   html[data-theme="light"] .kx-modal{background:#fff;border-color:#fbcfe8;color:#1e293b}
   html[data-theme="light"] .kx-modal h2{color:#be185d}
   html[data-theme="light"] .kx-row input,html[data-theme="light"] .kx-row textarea{background:#fff;border-color:#e2e8f0;color:#0f172a}
   html[data-theme="light"] .kx-btn{color:#1e293b;border-color:#f9a8d4}
+  html[data-theme="light"] .clothes-item{color:#334155}
+  html[data-theme="light"] .clothes-item.active{color:#0f172a}
   .kx-egg{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:1350;
     background:linear-gradient(135deg,#7c3aed,#be185d);color:#fff;padding:10px 18px;border-radius:999px;
     font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.4);opacity:0;transition:opacity .3s,transform .3s;pointer-events:none}
@@ -179,13 +241,27 @@ function buildHeaderUI() {
 
   const aboutBtn = mkBtn('♥', 'About KnitCAD', () => openAbout());
   const gearBtn = mkBtn('⚙', 'Settings', () => openSettings());
+  gearBtn.classList.add('kx-admin-only'); // only the designer can see the gear
   const themeBtn = mkBtn('☾', 'Switch to light', () => toggleTheme());
   themeBtn.id = 'kx-theme';
   brand.appendChild(aboutBtn);
   brand.appendChild(themeBtn);
   brand.appendChild(gearBtn);
 
+  updateAdminChrome();
+  window.addEventListener('knit:admin', updateAdminChrome);
   refreshGreeting();
+}
+
+/**
+ * The gear (where the anniversary / photo / message live) stays invisible until
+ * the hidden designer key unlocks — so the gift's surface is just a clean tool.
+ */
+function updateAdminChrome() {
+  const admin = !!window.__knitAdmin;
+  document.querySelectorAll('.kx-admin-only').forEach(el => {
+    el.style.display = admin ? '' : 'none';
+  });
 }
 
 function toggleTheme() {
@@ -415,7 +491,7 @@ function installEasterEgg() {
     else if (buf.endsWith('alex')) { egg(`hey ${ZODIAC.yours.sign} ${ZODIAC.yours.glyph} \u2014 this whole app is for him \u2665`); buf = ''; }
     else if (buf.endsWith('sagittarius') || buf.endsWith('gemini')) {
       egg(`${ZODIAC.yours.glyph} ${ZODIAC.yours.sign} (${ZODIAC.yours.element}) + ${ZODIAC.his.glyph} ${ZODIAC.his.sign} (${ZODIAC.his.element}) = fire & air. you two just work \u2665`); buf = '';
-    } else if (buf.endsWith('beanie')) { egg('a beanie? coming right up \u2665 look in the Tailor tab'); buf = ''; }
+    } else if (buf.endsWith('beanie')) { egg('a beanie in \u2665 look in the Tailor tab'); buf = ''; }
   });
   const brand = document.querySelector('.brand-section');
   if (brand) on(brand, 'click', e => {
@@ -487,21 +563,10 @@ function installHeartsOnMove() {
 
 let audioCtx = null;
 function chime() {
+  // Route through the shared sound bus (sound.js owns the single AudioContext and
+  // the master 🔊/🔇 mute) so we never build a second oscillator stack / double-chime.
   if (!settings.soundOnExport) return;
-  try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const t = audioCtx.currentTime;
-    [880, 1320].forEach((f, i) => {
-      const o = audioCtx.createOscillator();
-      const g = audioCtx.createGain();
-      o.frequency.value = f; o.type = 'sine';
-      g.gain.setValueAtTime(0.0001, t + i * 0.08);
-      g.gain.exponentialRampToValueAtTime(0.12, t + i * 0.08 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.08 + 0.35);
-      o.connect(g).connect(audioCtx.destination);
-      o.start(t + i * 0.08); o.stop(t + i * 0.08 + 0.4);
-    });
-  } catch (_) { /* audio not available */ }
+  try { window.dispatchEvent(new CustomEvent('knit:fx', { detail: 'success' })); } catch (_) { /* ignore */ }
 }
 
 function watchSuccessToasts() {

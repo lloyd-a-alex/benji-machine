@@ -65,6 +65,14 @@
       </div>
 
       <div class="header-actions">
+        <!-- Feasibility advisor (the smart machine check) — always reachable -->
+        <button class="btn-action feasibility-btn" id="btn-feasibility" title="Check this pattern against the machine and auto-fix it">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 11l3 3L22 4" />
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+          </svg>
+          Feasibility
+        </button>
         <button class="btn-action" id="btn-open-presets" title="Browse authentic historical &amp; algorithmic patterns">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
@@ -152,9 +160,14 @@
               <path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z" />
             </svg>
           </button>
-          <button class="tool-btn" data-tool="select" id="tool-select" title="Marquee Selection">
+         <button class="tool-btn" data-tool="select" id="tool-select" title="Marquee Selection">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3">
               <rect width="18" height="18" x="3" y="3" rx="1" />
+            </svg>
+          </button>
+          <button class="tool-btn" data-tool="heart" id="tool-heart" title="Heart stamp - the signature stitch ♥">
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1">
+              <path d="M12 21s-7.5-4.9-10-9.2C.5 8.6 2 5 5.5 5 8 5 12 8 12 8s4-3 6.5-3C22 5 23.5 8.6 22 11.8 19.5 16.1 12 21 12 21z" />
             </svg>
           </button>
         </div>
@@ -275,13 +288,19 @@
             </svg>
             Tank Top Tailor CAD
           </button>
-          <button class="tab-btn" data-tab="beanie" id="tab-btn-beanie" title="Knit a beanie to fit a head and your yarn">
+         <button class="tab-btn" data-tab="beanie" id="tab-btn-beanie" title="Knit a beanie to fit a head and your yarn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M4 15a8 8 0 0 1 16 0" />
               <rect x="3" y="15" width="18" height="4" rx="1" />
               <circle cx="12" cy="6" r="1.4" />
             </svg>
             Beanie
+          </button>
+          <button class="tab-btn" data-tab="clothes" id="tab-btn-clothes" title="A catalogue of everything you can knit - hats, tops, scarves, socks and more">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z" />
+            </svg>
+            Clothes
           </button>
           <button class="tab-btn" data-tab="brother" id="tab-btn-brother">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -946,6 +965,26 @@
                 <input type="range" id="tanktop-strap-w" min="2.5" max="9" step="0.5" value="5">
               </div>
 
+              <!-- Designer-only fit tweaks (hidden until the hidden key unlocks them) -->
+              <div class="param-slider-row advanced-param">
+                <div class="param-slider-header"><span>Back Neck Drop:</span><span class="param-slider-val" id="val-tanktop-back-neck">3.5 cm</span></div>
+                <input type="range" id="tanktop-back-neck" min="1" max="12" step="0.5" value="3.5">
+              </div>
+              <div class="param-slider-row advanced-param">
+                <div class="param-slider-header"><span>Hem Ribbing Height:</span><span class="param-slider-val" id="val-tanktop-rib">4.5 cm</span></div>
+                <input type="range" id="tanktop-rib" min="1" max="9" step="0.5" value="4.5">
+              </div>
+              <div class="param-slider-row advanced-param">
+                <div style="display:flex;gap:14px;align-items:center;">
+                  <label style="font-size:12px;display:flex;gap:6px;align-items:center;">Rib type
+                    <select id="tanktop-ribtype" class="num-input" style="width:auto;">
+                      <option value="1x1">1×1</option>
+                      <option value="2x2">2×2</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
              <div class="tanktop-section-title" style="margin-top: 14px;">Your Yarn Gauge</div>
               <div class="param-slider-row">
                 <div class="param-slider-header">
@@ -1043,6 +1082,20 @@
                 <label style="font-size:12px;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="beanie-pom" checked> Pom-pom</label>
               </div>
 
+              <!-- Designer-only fit tweaks (hidden until the hidden key unlocks them) -->
+              <div class="param-slider-row advanced-param">
+                <div class="param-slider-header"><span>Negative ease:</span><span class="param-slider-val" id="val-beanie-ease">2 cm</span></div>
+                <input type="range" id="beanie-ease" min="0" max="5" step="0.5" value="2">
+              </div>
+              <div class="param-slider-row advanced-param">
+                <div class="param-slider-header"><span>Fold-over brim:</span><span class="param-slider-val" id="val-beanie-fold">0 cm</span></div>
+                <input type="range" id="beanie-fold" min="0" max="8" step="1" value="0">
+              </div>
+              <div class="param-slider-row advanced-param">
+                <div class="param-slider-header"><span>Crown depth:</span><span class="param-slider-val" id="val-beanie-crown">100%</span></div>
+                <input type="range" id="beanie-crown" min="70" max="130" step="5" value="100">
+              </div>
+
               <div class="tanktop-section-title" style="margin-top:14px;">Your Yarn Gauge</div>
               <div class="param-slider-row">
                 <div class="param-slider-header"><span>Stitches / 10 cm:</span></div>
@@ -1063,7 +1116,43 @@
             </div>
 
             <div class="tanktop-viewport">
-              <canvas id="beanie-canvas"></canvas>
+             <canvas id="beanie-canvas"></canvas>
+            </div>
+          </div>
+
+          <!-- Tab 6c: Clothes catalogue (every garment, one planner) -->
+          <div class="tab-panel" id="panel-clothes">
+            <div class="tanktop-sidebar clothes-sidebar">
+              <div class="clothes-picker-wrap">
+                <input type="text" id="clothes-search" class="num-input" style="width:100%;" placeholder="Search garments…" autocomplete="off">
+                <nav id="clothes-nav" class="clothes-nav"></nav>
+              </div>
+
+              <div class="tanktop-section-title" id="clothes-title" style="margin-top:12px;">Choose a garment</div>
+              <p id="clothes-blurb" class="clothes-blurb"></p>
+              <div id="clothes-params" class="clothes-params"></div>
+
+              <div class="tanktop-section-title" style="margin-top:14px;">Your Yarn Gauge</div>
+              <div class="param-slider-row">
+                <div class="param-slider-header"><span>Stitches / 10 cm:</span></div>
+                <input type="number" id="clothes-gauge-sts" class="num-input" value="28" min="8" max="120" step="0.5">
+              </div>
+              <div class="param-slider-row">
+                <div class="param-slider-header"><span>Rows / 10 cm:</span></div>
+                <input type="number" id="clothes-gauge-rows" class="num-input" value="40" min="8" max="200" step="0.5">
+              </div>
+
+              <div style="display:flex;gap:8px;margin-top:12px;">
+                <button class="btn-action btn-primary" id="btn-clothes-svg" style="flex:1;justify-content:center;">Print 1:1 SVG</button>
+                <button class="btn-action" id="btn-clothes-editor" style="flex:1;justify-content:center;" title="Send a cast-on swatch to the pattern editor">To Editor</button>
+              </div>
+
+              <div class="tanktop-section-title" style="margin-top:14px;">Row-by-Row Steps</div>
+              <div id="clothes-instructions"></div>
+            </div>
+
+            <div class="tanktop-viewport">
+              <canvas id="clothes-canvas"></canvas>
             </div>
           </div>
 

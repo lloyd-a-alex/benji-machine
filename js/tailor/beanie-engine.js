@@ -22,6 +22,8 @@ export class BeanieEngine {
     ribbingType: '1x1',   // '1x1' | '2x2'
     crownSegments: 6,     // 5 | 6 | 8 | 10
     negativeEaseCm: 2,    // beanie hugs the head a little
+    foldBrimCm: 0,        // designer-only: fold-over brim depth
+    crownDepthPct: 100,   // designer-only: how tall the crown dome is
     pomPom: true
   };
 
@@ -40,6 +42,8 @@ export class BeanieEngine {
     const headC = clamp(parseFloat(p.headCircumferenceCm) || 56, 40, 75);
     const heightC = clamp(parseFloat(p.beanieHeightCm) || 20, 12, 40);
     const ribC = clamp(parseFloat(p.ribbingHeightCm) || 5, 2, 12);
+    const foldC = clamp(parseFloat(p.foldBrimCm) || 0, 0, 8);        // designer-only
+    const crownDepth = clamp((parseFloat(p.crownDepthPct) || 100) / 100, 0.6, 1.4); // designer-only
 
     // Body circumference (with a little negative ease) -> stitch count.
     const bodyC = Math.max(40, headC - (parseFloat(p.negativeEaseCm) || 0));
@@ -70,10 +74,10 @@ export class BeanieEngine {
 
     const circumferenceMm = bodyC * 10;
     const heightMm = heightC * 10;
-    const brimWidthMm = ribC * 10;
+    const brimWidthMm = (ribC + foldC) * 10;
 
     const instructions = [
-      { step: 1, title: 'Cast on (brim)', text: `Cast on ${ribbingSts} sts, join in the round being careful not to twist. Knit ${ribbingRows} rounds (${ribC} cm) of ${p.ribbingType} ribbing on reduced tension.` },
+      { step: 1, title: 'Cast on (brim)', text: `Cast on ${ribbingSts} sts, join in the round being careful not to twist. Knit ${ribbingRows} rounds (${ribC} cm) of ${p.ribbingType} ribbing on reduced tension.${foldC > 0 ? ` Work ${foldC} cm extra so the brim folds back on itself.` : ''}` },
       { step: 2, title: 'Change to body', text: `Switch to ${p.ribbingType === '2x2' ? '2x2' : '1x1'}-matched needles and increase/decrease to ${bodySts} sts (${(bodySts / stsPerCm).toFixed(0)} cm around). Knit plain until the piece measures ${heightC - ribC} cm above the rib (${bodyRows} rounds).` },
       { step: 3, title: 'Crown decreases', text: `Place ${segments} markers (${stsPerSegment.toFixed(0)} sts apart). Decrease evenly every other round following the plan below until ${segments} sts remain.` },
       ...decreaseRounds.map((d, i) => ({ step: 4 + i, title: `Crown round ${i + 1}`, text: `Decrease ${d.decTotal} sts evenly (${Math.round(d.decTotal / segments)} per segment) → ${d.remaining} sts remain.` })),
@@ -84,7 +88,7 @@ export class BeanieEngine {
       params: p, gauge: { stitchesPer10Cm: stsPer10, rowsPer10Cm: rowsPer10 },
       bodySts, ribbingSts, ribbingRows, bodyRows, totalRows,
       segments, stsPerSegment, decreaseRounds,
-      circumferenceMm, heightMm, brimWidthMm,
+      circumferenceMm, heightMm, brimWidthMm, crownDepth,
       instructions
     };
   }
@@ -103,7 +107,7 @@ export class BeanieEngine {
     const domeW = baseW;
     const cx = w / 2;
     const bandH = clamp((model.brimWidthMm / model.heightMm) * availH, 24, availH * 0.4);
-    const domeH = availH * 0.62;
+    const domeH = availH * 0.62 * (model.crownDepth || 1);
     const bandTop = padY + domeH;
     const bandBottom = bandTop + bandH;
 

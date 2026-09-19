@@ -22,6 +22,11 @@ import { BrotherSimCanvas } from './ui/brother-sim-canvas.js';
 import { NotificationCenter } from './ui/notifications.js';
 import { installGlobalErrorBoundary, installRoundRectPolyfill, runGuarded } from './ui/safety.js';
 import { initExtras } from './features/extras.js';
+import { initSound, fx } from './features/sound.js';
+import { initCommandPalette } from './features/command-palette.js';
+import { initAdmin } from './features/admin.js';
+import { createFeasibilityAdvisor } from './features/feasibility.js';
+import { ClothesEngine, GARMENTS, CATEGORIES } from './tailor/clothes-catalog.js';
 
 class KnitApp {
   constructor() {
@@ -64,13 +69,30 @@ class KnitApp {
       this.extras = initExtras({ notifier: this.notifications });
     }, { notifier: this.notifications });
 
-    // Show the Benji love popup on first load with delay to ensure DOM is ready
-    // Use requestIdleCallback for non-blocking initialization
-    if ('requestIdleCallback' in window) {
-      requestIdleCallback(() => this._showLovePopup(), { timeout: 2000 });
-    } else {
-      setTimeout(() => this._showLovePopup(), 500);
+    // Sound, hidden designer key, feasibility advisor, command palette, clothes
+    // catalogue. Each is contained; a failure degrades that one feature only.
+    runGuarded('Sound', () => { this.sound = initSound(); });
+    runGuarded('Designer key', () => { this.admin = initAdmin({ notifier: this.notifications }); });
+    runGuarded('Feasibility advisor', () => { this.feasibility = createFeasibilityAdvisor(this); });
+    runGuarded('Clothes catalogue', () => { this.clothes = new ClothesEngine(); this._activeGarment = null; this._initClothesUI(); });
+    runGuarded('Command palette', () => { this.palette = initCommandPalette({ getActions: () => this._paletteActions() }); });
+
+    // Show the Benji love popup ONCE per browser (not on every refresh).
+    // It stays reachable again via the "Show love letter" command in the palette.
+    if (!this._lovePopupSeen()) {
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => this._showLovePopup(), { timeout: 2000 });
+      } else {
+        setTimeout(() => this._showLovePopup(), 500);
+      }
     }
+  }
+
+  _lovePopupSeen() {
+    try { return localStorage.getItem('knitcad.lovePopupSeen') === '1'; } catch (_) { return false; }
+  }
+  _markLovePopupSeen() {
+    try { localStorage.setItem('knitcad.lovePopupSeen', '1'); } catch (_) { /* ignore */ }
   }
 
   initDOM() {
@@ -135,8 +157,8 @@ class KnitApp {
         if (this.yarnSim && this.yarnSim.setYarnColors) {
           this.yarnSim.setYarnColors('#fbcfe8', '#e11d48');
         }
-        this.setYarnMaterial('cotton');
-        this.setYarnViewMode('shaded');
+        this.setYarnMaterial('cotton', { silent: true });
+        this.setYarnViewMode('shaded', { silent: true });
 
         // 3. CNC Toolpath Viewer
         this.toolpathViewer = new ToolpathViewer(this.elements.toolpathCanvas, {
@@ -486,7 +508,10 @@ class KnitApp {
       { id: 'tanktop-shoulder', key: 'shoulderWidthCm', valId: 'val-tanktop-shoulder', unit: 'cm' },
       { id: 'tanktop-neck-w', key: 'neckWidthCm', valId: 'val-tanktop-neck-w', unit: 'cm' },
       { id: 'tanktop-neck-drop', key: 'frontNeckDropCm', valId: 'val-tanktop-neck-drop', unit: 'cm' },
-      { id: 'tanktop-strap-w', key: 'strapWidthCm', valId: 'val-tanktop-strap-w', unit: 'cm' }
+      { id: 'tanktop-strap-w', key: 'strapWidthCm', valId: 'val-tanktop-strap-w', unit: 'cm' },
+      // Designer-only fit controls (hidden until the hidden key unlocks them).
+      { id: 'tanktop-back-neck', key: 'backNeckDropCm', valId: 'val-tanktop-back-neck', unit: 'cm' },
+      { id: 'tanktop-rib', key: 'ribbingHeightCm', valId: 'val-tanktop-rib', unit: 'cm' }
     ];
 
     tankTopParamMap.forEach(item => {
@@ -505,6 +530,13 @@ class KnitApp {
     // Tank Top Exporters
     document.getElementById('btn-tanktop-svg')?.addEventListener('click', () => this.exportTankTopSvg());
     document.getElementById('btn-tanktop-dxf')?.addEventListener('click', () => this.exportTankTopDxf());
+    // Designer-only ribbing style (1×1 / 2×2).
+    document.getElementById('tanktop-ribtype')?.addEventListener('change', e => {
+      if (this.tankTopCanvas) {
+        this.tankTopCanvas.setParams({ ribbingType: e.target.value });
+        this.updateTankTopInstructions();
+      }
+    });
 
     // Tank Top draw-on-grid + gauge ("just make it so I can draw", "fits your yarn")
     document.getElementById('btn-tank-draw')?.addEventListener('click', () => this.toggleTankDraw());
@@ -536,6 +568,11 @@ class KnitApp {
       el?.addEventListener('change', () => this.renderBeanie());
       el?.addEventListener('input', () => this.renderBeanie());
     });
+    // Advanced fit sliders + unlock reveal should repaint the beanie too.
+    ['beanie-ease', 'beanie-fold', 'beanie-crown'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', () => this.renderBeanie());
+    });
+    window.addEventListener('knit:admin', () => { this.renderBeanie(); this.renderClothes?.(); });
     document.getElementById('btn-beanie-svg')?.addEventListener('click', () => this.exportBeanieSvg());
     document.getElementById('btn-beanie-reversible')?.addEventListener('click', () => {
       this.loadPreset('reversible_double_bed_chevron');
@@ -574,7 +611,8 @@ class KnitApp {
 
     // Keyboard Shortcuts
     window.addEventListener('keydown', e => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      // Escape must always reach the modal closer, even from inside a field.
+      if (e.key !== 'Escape' && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         if (e.shiftKey) this.editor.redo();
@@ -609,7 +647,18 @@ class KnitApp {
         this.editor?.rotateSelection('ccw');
       } else if (e.key === ']') {
         this.editor?.rotateSelection('cw');
+      } else if (e.key === 'Escape') {
+        this._closeTopModal();
       }
+    });
+
+    // Feasibility advisor — the always-available "is this knit-able?" check.
+    document.getElementById('btn-feasibility')?.addEventListener('click', () => this.openFeasibility());
+
+    // Beanie + Clothes canvases should track the window like the tank top does.
+    window.addEventListener('resize', () => {
+      if (this.activeTab === 'beanie') this.renderBeanie();
+      else if (this.activeTab === 'clothes') this.renderClothes();
     });
   }
 
@@ -631,6 +680,8 @@ class KnitApp {
   }
 
   handlePatternChange() {
+    this._cardDirty = true;
+    fx('click');
     this.recompile();
   }
 
@@ -644,6 +695,7 @@ class KnitApp {
     this.updateScheduleUI();
     this.updateDiagnosticsUI();
     this.updateStatusStats();
+    this._cardDirty = false;
 
     // Update active tab contents
     if (this.activeTab === 'yarn') {
@@ -656,6 +708,11 @@ class KnitApp {
   }
 
   onTabSwitched(tab) {
+    // Contextual interface: the editor-only left draw toolbar and the CAD sub-bar
+    // only belong to the Pattern CAD Editor. Elsewhere they'd be noise (Hick's
+    // Law / cognitive-load). Drive it off a single data attribute.
+    try { document.body.dataset.tab = tab; } catch (_) { /* ignore */ }
+    fx('tab');
     // Contained: a throwing tab render only affects that tab, never the whole app.
     runGuarded(`Switched to "${tab}" tab`, () => this._renderTab(tab), {
       notifier: this.notifications
@@ -677,7 +734,9 @@ class KnitApp {
       // Always regenerate the card for the CURRENT mode before drawing, so a
       // Fair Isle / Tuck / Slip drawing you just made is reflected on the ribbon
       // (previously it could show a stale or lace-only compilation).
-      this.recompile();
+      // Only regenerate when the editor actually changed since the last compile,
+      // so explicit card edits (invert / clear / optimize) survive a tab switch.
+      if (this._cardDirty) this.recompile(); else this.renderPunchcardRibbon();
     } else if (tab === 'cnc') {
       this.toolpathViewer.resize();
       this.toolpathViewer.setCardData(this.currentProfile, this.compilationResult.cardMatrix);
@@ -687,6 +746,8 @@ class KnitApp {
       this.updateTankTopInstructions();
     } else if (tab === 'beanie') {
       this.renderBeanie();
+    } else if (tab === 'clothes') {
+      this.renderClothes();
     } else if (tab === 'brother') {
       this.brotherCanvas?.resize();
       const firstCardRow = this.compilationResult?.cardMatrix?.[0] || [];
@@ -1182,11 +1243,22 @@ class KnitApp {
   openModal(name) {
     this.closeAllModals();
     const modal = document.getElementById(`${name}-modal`);
-    if (modal) modal.classList.add('active');
+    if (!modal) return;
+    this._lastFocus = document.activeElement;
+    modal.classList.add('active');
+    // Move focus into the dialog and select the first control (Paradox of the
+    // Active User: people reach for the keyboard immediately).
+    setTimeout(() => {
+      const first = modal.querySelector('input:not([type=hidden]), select, textarea, button');
+      (first || modal).focus({ preventScroll: true });
+    }, 0);
   }
 
   closeAllModals() {
     document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.remove('active'));
+    // Return focus to whatever opened the dialog so keyboard flow is unbroken.
+    try { if (this._lastFocus && document.contains(this._lastFocus)) this._lastFocus.focus({ preventScroll: true }); } catch (_) { /* ignore */ }
+    this._lastFocus = null;
   }
 
   // Exporters
@@ -1371,7 +1443,11 @@ class KnitApp {
 
   // ---- Beanie tailor (self-contained; drives beanie-engine.js) ----
   _readBeanieParams() {
-    const val = (id, fallback) => {
+    const admin = !!window.__knitAdmin;
+    const val = (id, fallback, opts = {}) => {
+      // Advanced (designer-only) inputs stay invisible; when locked we fall back
+      // to the neutral default so the visible plan never references them.
+      if (opts.advanced && !admin) return fallback;
       const el = document.getElementById(id);
       if (!el) return fallback;
       const n = parseFloat(el.value);
@@ -1384,7 +1460,10 @@ class KnitApp {
         ribbingHeightCm: val('beanie-rib', 5),
         crownSegments: val('beanie-segments', 6),
         ribbingType: document.getElementById('beanie-ribtype')?.value || '1x1',
-        pomPom: document.getElementById('beanie-pom')?.checked ?? true
+        pomPom: document.getElementById('beanie-pom')?.checked ?? true,
+        negativeEaseCm: val('beanie-ease', 2, { advanced: true }),
+        foldBrimCm: val('beanie-fold', 0, { advanced: true }),
+        crownDepthPct: val('beanie-crown', 100, { advanced: true })
       },
       gauge: {
         stitchesPer10Cm: val('beanie-gauge-sts', 28),
@@ -1403,6 +1482,9 @@ class KnitApp {
     setLabel('val-beanie-height', `${params.beanieHeightCm} cm`);
     setLabel('val-beanie-rib', `${params.ribbingHeightCm} cm`);
     setLabel('val-beanie-seg', `${params.crownSegments}`);
+    setLabel('val-beanie-ease', `${params.negativeEaseCm} cm`);
+    setLabel('val-beanie-fold', `${params.foldBrimCm} cm`);
+    setLabel('val-beanie-crown', `${params.crownDepthPct}%`);
     const model = this.beanie.compute(params, gauge);
     this._beanieModel = model;
     if (canvas && canvas.getContext) {
@@ -1512,6 +1594,432 @@ class KnitApp {
       }
       return dxfStr.replace('0\nENDSEC\n0\nEOF', ents.join('\n') + '\n0\nENDSEC\n0\nEOF');
     } catch (e) { return dxfStr; }
+  }
+
+  // ---- Command-palette actions (the palette merges these with live DOM reads) ----
+  _paletteActions() {
+    const acts = [];
+    const click = (sel) => () => { const el = document.querySelector(sel); if (el) el.click(); };
+    // Garments — typing "beanie" / "sweater" / "socks" jumps straight to it.
+    try {
+      for (const g of GARMENTS) {
+        acts.push({
+          label: `${g.name}  \u2192 Clothes`, group: 'Garment',
+          keywords: `garment clothes knit ${g.name} ${g.category} ${g.id} ${g.structure}`.toLowerCase(),
+          run: () => this.openGarment(g.id)
+        });
+      }
+    } catch (_) { /* catalogue not ready */ }
+    // Presets — load any pattern by name.
+    try {
+      for (const p of (PATTERN_PRESETS || [])) {
+        acts.push({
+          label: `Preset: ${p.name}`, group: 'Preset',
+          keywords: `preset pattern ${p.category || ''} ${p.name}`.toLowerCase(),
+          run: () => { this.loadPreset(p.id); }
+        });
+      }
+    } catch (_) { /* presets not ready */ }
+    // Modes / tools / exports / settings.
+    ['lace', 'fair_isle', 'tuck', 'slip'].forEach(m => acts.push({ label: `Mode: ${m.replace('_', ' ')}`, group: 'Mode', keywords: `mode ${m} ${m.replace('_', ' ')}`, run: () => this.setPatternMode(m) }));
+    [['pencil', 'pencil draw paint'], ['eraser', 'eraser rub'], ['line', 'line straight'], ['rect', 'rectangle box'], ['ellipse', 'ellipse circle oval'], ['heart', 'heart love stamp'], ['fill', 'fill bucket flood']].forEach(([t, k]) =>
+      acts.push({ label: `Tool: ${t}`, group: 'Tool', keywords: `tool ${k}`, run: () => document.querySelector(`[data-tool="${t}"]`)?.click() }));
+    acts.push({ label: 'Export / CNC', group: 'Export', keywords: 'export save dxf gcode laser cnc download', run: click('#btn-open-export') });
+    acts.push({ label: 'Presets browser', group: 'Design', keywords: 'presets library browse patterns', run: click('#btn-open-presets') });
+    acts.push({ label: 'Math Studio', group: 'Design', keywords: 'math procedural generative reaction diffusion waves automata', run: click('#btn-open-math') });
+    acts.push({ label: 'Image Dither', group: 'Design', keywords: 'image photo dither import picture atkinson floyd steinberg', run: click('#btn-open-image') });
+    acts.push({ label: 'Settings', group: 'Settings', keywords: 'settings preferences accent colour name photo anniversary theme', run: () => this._openSettingsViaExtras() });
+    acts.push({ label: 'Toggle theme (light / dark)', group: 'Settings', keywords: 'theme light dark appearance toggle', run: () => document.getElementById('kx-theme')?.click() });
+    acts.push({ label: 'About KnitCAD', group: 'Settings', keywords: 'about info story help who made this', run: () => document.querySelector('.brand-section .kx-hbtn')?.click() });
+    acts.push({ label: 'Check machine feasibility', group: 'Advisor', keywords: 'feasibility check valid fix float snag machine advice', run: () => this.openFeasibility() });
+    acts.push({ label: 'Show love letter', group: 'Romance', keywords: 'love letter ily benji popup heart romantic', run: () => this._showLovePopup() });
+    acts.push({ label: 'Clear the canvas', group: 'Edit', keywords: 'clear erase reset blank canvas new empty', run: () => this.editor?.clear() });
+    return acts;
+  }
+
+  _openSettingsViaExtras() {
+    // The gear button is injected by the extras layer; a synthetic click reuses
+    // its own handler, so we never have to reach into that module's internals.
+    const gear = Array.from(document.querySelectorAll('.brand-section .kx-hbtn'))
+      .find(b => b.title === 'Settings');
+    if (gear) gear.click();
+  }
+
+  // ---- Clothes catalogue UI ----
+  _initClothesUI() {
+    const nav = document.getElementById('clothes-nav');
+    if (!nav) return;
+    nav.innerHTML = '';
+    // Chunked by category so the list never reads like a wall (Miller's Law).
+    CATEGORIES.forEach(cat => {
+      const list = GARMENTS.filter(g => g.category === cat);
+      if (!list.length) return;
+      const group = document.createElement('div');
+      group.className = 'clothes-cat';
+      const label = document.createElement('div');
+      label.className = 'clothes-cat-title';
+      label.textContent = cat;
+      group.appendChild(label);
+      list.forEach(g => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'clothes-item';
+        b.dataset.garment = g.id;
+        b.dataset.cat = cat.toLowerCase();
+        b.innerHTML = `<span class="clothes-item-icon">${g.icon || '\u2665'}</span><span>${g.name}</span>`;
+        b.title = g.blurb || '';
+        b.addEventListener('click', () => { this._selectGarment(g.id); fx('click'); });
+        group.appendChild(b);
+      });
+      nav.appendChild(group);
+    });
+
+    const search = document.getElementById('clothes-search');
+    search?.addEventListener('input', () => this._filterClothes(search.value));
+    ['clothes-gauge-sts', 'clothes-gauge-rows'].forEach(id =>
+      document.getElementById(id)?.addEventListener('change', () => this.renderClothes()));
+    document.getElementById('btn-clothes-svg')?.addEventListener('click', () => this.exportClothesSvg());
+    document.getElementById('btn-clothes-editor')?.addEventListener('click', () => this.sendClothesToEditor());
+
+    // Advanced (designer-only) parameters appear / vanish the moment the hidden
+    // key is typed — no reload, nothing obvious to anyone watching.
+    window.addEventListener('knit:admin', () => { this._buildClothesParamForm(); this.renderClothes(); });
+
+    if (!this._activeGarment) this._selectGarment('beanie', { render: false });
+  }
+
+  _filterClothes(q) {
+    q = (q || '').toLowerCase().trim();
+    const nav = document.getElementById('clothes-nav');
+    if (!nav) return;
+    let anyCat = false;
+    nav.querySelectorAll('.clothes-cat').forEach(catEl => {
+      let anyInCat = false;
+      catEl.querySelectorAll('.clothes-item').forEach(it => {
+        const g = GARMENTS.find(x => x.id === it.dataset.garment);
+        const hay = `${g ? g.name + ' ' + g.category + ' ' + (g.blurb || '') : ''} ${it.dataset.garment}`.toLowerCase();
+        const show = !q || hay.includes(q);
+        it.style.display = show ? '' : 'none';
+        if (show) anyInCat = true;
+      });
+      catEl.style.display = anyInCat ? '' : 'none';
+      if (anyInCat) anyCat = true;
+    });
+    if (q && !anyCat) {
+      nav.querySelectorAll('.clothes-item').forEach(it => { it.style.display = ''; });
+      nav.querySelectorAll('.clothes-cat').forEach(c => { c.style.display = ''; });
+    }
+  }
+
+  _garmentById(id) { return GARMENTS.find(g => g.id === id) || null; }
+
+  _selectGarment(id) {
+    const g = this._garmentById(id);
+    if (!g) return;
+    this._activeGarment = g;
+    this._clothesVals = {};
+    document.querySelectorAll('#clothes-nav .clothes-item').forEach(b =>
+      b.classList.toggle('active', b.dataset.garment === id));
+    this._buildClothesParamForm();
+    this.renderClothes();
+  }
+
+  _buildClothesParamForm() {
+    const host = document.getElementById('clothes-params');
+    const g = this._activeGarment;
+    if (!host || !g) return;
+    const admin = !!window.__knitAdmin;
+    const saved = this._clothesVals || {};
+    host.innerHTML = '';
+    g.params.forEach(pm => {
+      if (pm.advanced && !admin) return; // designer-only, invisible otherwise
+      if (pm.type === 'select') {
+        const row = document.createElement('div');
+        row.className = 'param-slider-row' + (pm.advanced ? ' advanced-param' : '');
+        const opts = (pm.options || []).map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+        row.innerHTML = `<div class="param-slider-header"><span>${pm.label}</span></div>`;
+        const sel = document.createElement('select');
+        sel.className = 'num-input';
+        sel.style.width = '100%';
+        sel.innerHTML = opts;
+        sel.value = saved[pm.key] != null ? saved[pm.key] : pm.default;
+        sel.addEventListener('change', () => { this._clothesVals[pm.key] = sel.value; this.renderClothes(); });
+        row.appendChild(sel);
+        host.appendChild(row);
+        return;
+      }
+      const row = document.createElement('div');
+      row.className = 'param-slider-row' + (pm.advanced ? ' advanced-param' : '');
+      const val = saved[pm.key] != null ? saved[pm.key] : pm.default;
+      row.innerHTML =
+        `<div class="param-slider-header"><span>${pm.label}</span><span class="param-slider-val" data-val="${pm.key}">${val}${pm.unit ? ' ' + pm.unit : ''}</span></div>`;
+      const input = document.createElement('input');
+      input.type = 'range';
+      input.min = pm.min; input.max = pm.max; input.step = pm.step;
+      input.value = val;
+      input.addEventListener('input', () => {
+        this._clothesVals[pm.key] = parseFloat(input.value);
+        const v = host.querySelector(`[data-val="${pm.key}"]`);
+        if (v) v.textContent = input.value + (pm.unit ? ' ' + pm.unit : '');
+        this.renderClothes();
+      });
+      row.appendChild(input);
+      host.appendChild(row);
+    });
+  }
+
+  _clothesParamsFromDom() {
+    const g = this._activeGarment;
+    const out = {};
+    if (!g) return out;
+    g.params.forEach(pm => {
+      const v = (this._clothesVals || {})[pm.key];
+      out[pm.key] = v != null ? v : pm.default;
+    });
+    return out;
+  }
+
+  renderClothes() {
+    const g = this._activeGarment;
+    const canvas = document.getElementById('clothes-canvas');
+    if (!g || !this.clothes || !canvas) return;
+    const title = document.getElementById('clothes-title');
+    const blurb = document.getElementById('clothes-blurb');
+    if (title) title.textContent = `${g.icon || ''} ${g.name}`.trim();
+    if (blurb) blurb.textContent = g.blurb || '';
+    const gauge = {
+      stitchesPer10Cm: parseFloat(document.getElementById('clothes-gauge-sts')?.value) || 28,
+      rowsPer10Cm: parseFloat(document.getElementById('clothes-gauge-rows')?.value) || 40
+    };
+    const plan = this.clothes.compute(g, this._clothesParamsFromDom(), gauge);
+    this._clothesPlan = plan;
+    const w = canvas.parentElement ? canvas.parentElement.clientWidth : 0;
+    const h = canvas.parentElement ? canvas.parentElement.clientHeight : 0;
+    if (w > 0 && h > 0) { canvas.width = w; canvas.height = h; }
+    this._drawClothes(canvas, plan);
+    const inst = document.getElementById('clothes-instructions');
+    if (inst) {
+      inst.innerHTML = (plan.instructions || []).map(step => `
+        <div class="instruction-step-card">
+          <div class="instruction-step-num">Step ${step.step}: ${step.title}</div>
+          <div class="instruction-step-text">${step.text}</div>
+        </div>`).join('');
+    }
+  }
+
+  // A tidy, garment-aware schematic — reads like a technical drawing.
+  _drawClothes(canvas, plan) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx || !plan) return;
+    const w = canvas.width, h = canvas.height;
+    ctx.fillStyle = '#070a12';
+    ctx.fillRect(0, 0, w, h);
+    const parts = plan.parts || [];
+    if (!parts.length) return;
+    const padX = Math.min(90, w * 0.16), padY = 54;
+    const availW = Math.max(40, w - padX * 2), availH = Math.max(40, h - padY * 2);
+    const fp = plan.footprintCm || { w: 40, h: 40 };
+    const scale = Math.min(availW / Math.max(1, fp.w), availH / Math.max(1, fp.h));
+    const cx = w / 2;
+    const boxW = Math.max(28, fp.w * scale);
+    const boxH = Math.max(28, fp.h * scale);
+    const top = (h - boxH) / 2;
+    const st = parts[0];
+    ctx.lineWidth = 2;
+    ctx.font = '12px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+
+    const paint = (fill, stroke) => {
+      const grad = ctx.createLinearGradient(0, top, 0, top + boxH);
+      grad.addColorStop(0, '#1e293b'); grad.addColorStop(1, '#334155');
+      ctx.fillStyle = fill || grad; ctx.fill();
+      ctx.strokeStyle = stroke || '#38bdf8'; ctx.stroke();
+    };
+    const rib = (y0, y1) => {
+      ctx.strokeStyle = 'rgba(56,189,248,0.35)'; ctx.lineWidth = 1;
+      const n = Math.min(46, Math.max(6, Math.round(boxW / 8)));
+      for (let i = 1; i < n; i++) {
+        const x = cx - boxW / 2 + boxW * i / n;
+        ctx.beginPath(); ctx.moveTo(x, y0 + 2); ctx.lineTo(x, y1 - 2); ctx.stroke();
+      }
+    };
+
+    ctx.beginPath();
+    switch (plan.garment.structure) {
+      case 'hat':
+        ctx.moveTo(cx - boxW / 2, top + boxH);
+        ctx.lineTo(cx - boxW / 2, top + boxH * 0.42);
+        ctx.bezierCurveTo(cx - boxW / 2, top, cx + boxW / 2, top, cx + boxW / 2, top + boxH * 0.42);
+        ctx.lineTo(cx + boxW / 2, top + boxH);
+        ctx.closePath();
+        paint();
+        rib(top + boxH * 0.8, top + boxH);
+        break;
+      case 'tube':
+        ctx.rect(cx - boxW / 2, top, boxW, boxH);
+        paint();
+        rib(top, top + Math.min(boxH * 0.3, 40));
+        break;
+      case 'triangle':
+        ctx.moveTo(cx - boxW / 2, top);
+        ctx.lineTo(cx + boxW / 2, top);
+        ctx.lineTo(cx, top + boxH);
+        ctx.closePath();
+        paint();
+        break;
+      case 'body':
+        ctx.rect(cx - boxW / 2, top, boxW, boxH);
+        paint();
+        ctx.strokeStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.moveTo(cx - boxW / 2, top); ctx.lineTo(cx - boxW / 2 + boxW * 0.18, top + boxH * 0.16);
+        ctx.moveTo(cx + boxW / 2, top); ctx.lineTo(cx + boxW / 2 - boxW * 0.18, top + boxH * 0.16);
+        ctx.stroke();
+        rib(top, top + Math.min(boxH * 0.16, 34));
+        break;
+      case 'hand': {
+        const rr = Math.min(14, boxW / 2);
+        this._roundRectPath(ctx, cx - boxW / 2, top, boxW, boxH, rr);
+        paint();
+        rib(top + boxH * 0.62, top + boxH);
+        ctx.beginPath();
+        this._roundRectPath(ctx, cx - boxW / 2 - boxW * 0.24, top + boxH * 0.5, boxW * 0.34, boxH * 0.28, 6);
+        paint(null, '#f472b6');
+        break;
+      }
+      case 'sock': {
+        this._roundRectPath(ctx, cx - boxW / 2, top, boxW, boxH * 0.62, 8);
+        this._roundRectPath(ctx, cx - boxW / 2, top + boxH * 0.62, boxW * 1.5, boxH * 0.38, 8);
+        paint();
+        rib(top, top + Math.min(boxH * 0.22, 30));
+        break;
+      }
+      default:
+        ctx.rect(cx - boxW / 2, top, boxW, boxH);
+        paint();
+    }
+
+    ctx.fillStyle = '#e2e8f0'; ctx.textAlign = 'center';
+    ctx.fillText(`${plan.garment.name} \u00b7 ${st.castOn} sts \u00b7 ${st.rows} rows`, cx, h - 30);
+    ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'left';
+    ctx.fillText(`gauge ${plan.gauge.stitchesPer10Cm} sts / ${plan.gauge.rowsPer10Cm} rows per 10 cm`, 12, 22);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#fb7185';
+    ctx.fillText('made for Benji \u2665', w - 12, 22);
+  }
+
+  _roundRectPath(ctx, x, y, ww, hh, r) {
+    r = Math.min(r, ww / 2, hh / 2);
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + ww, y, x + ww, y + hh, r);
+    ctx.arcTo(x + ww, y + hh, x, y + hh, r);
+    ctx.arcTo(x, y + hh, x, y, r);
+    ctx.arcTo(x, y, x + ww, y, r);
+    ctx.closePath();
+  }
+
+  openGarment(id) {
+    document.querySelector('.tab-btn[data-tab="clothes"]')?.click();
+    this._selectGarment(id);
+  }
+
+  exportClothesSvg() {
+    if (!this.clothes) return;
+    const plan = this._clothesPlan || (this._activeGarment && this.clothes.compute(this._activeGarment, this._clothesParamsFromDom(), {
+      stitchesPer10Cm: parseFloat(document.getElementById('clothes-gauge-sts')?.value) || 28,
+      rowsPer10Cm: parseFloat(document.getElementById('clothes-gauge-rows')?.value) || 40
+    }));
+    if (!plan) return;
+    const svgStr = this._stampWatermark(this.clothes.toSvg(plan));
+    this.downloadFile(svgStr, `benji_${plan.garment.id}_pattern_1to1.svg`, 'image/svg+xml');
+  }
+
+  sendClothesToEditor() {
+    const plan = this._clothesPlan;
+    if (!plan || !this.editor) return;
+    const part = plan.parts[0];
+    if (!part) return;
+    const targetRows = Math.max(8, Math.min(240, Math.min(part.rows, 48)));
+    const targetCols = Math.max(8, Math.min(this.currentProfile.columns, Math.min(part.castOn, this.currentProfile.columns)));
+    this.editor.setDimensions(targetRows, targetCols);
+    // Lay a subtle 1×1 checkerboard cast-on guide (numeric modes) or a plain
+    // knit field (lace, where cells are stitch glyphs) so the drop has structure.
+    const lace = this.currentMode === 'lace';
+    const blank = lace ? STITCH_TYPE.KNIT : 0;
+    for (let r = 0; r < this.editor.rows; r++) {
+      for (let c = 0; c < this.editor.cols; c++) {
+        this.editor.matrix[r][c] = (!lace && (r + c) % 2 === 0) ? 1 : blank;
+      }
+    }
+    this.editor.saveState(); this.editor.render(); this.editor.onChange();
+    document.querySelector('.tab-btn[data-tab="editor"]')?.click();
+    this.notifications.info(`Sent a ${targetCols}-st cast-on swatch to the editor \u2014 now draw your motif.`);
+  }
+
+  // ---- Feasibility advisor modal (drives feasibility.js) ----
+  openFeasibility() {
+    if (!this.feasibility) return;
+    fx('open');
+    let v = this.feasibility.verdict();
+    document.getElementById('kx-feas-backdrop')?.remove();
+    const bd = document.createElement('div');
+    bd.id = 'kx-feas-backdrop';
+    bd.className = 'kx-cmd-backdrop';
+    document.body.appendChild(bd);
+    const render = () => {
+      const label = v.status === 'feasible' ? '\u2713 Machine-feasible' : v.status === 'warn' ? '\u26a0 Needs attention' : '\u2715 Not feasible yet';
+      const cards = v.issues.map((it, i) => `
+        <div class="kx-feas-card kx-feas-${it.sev}">
+          <div class="kx-feas-head"><span class="kx-feas-dot"></span><strong>${it.title}</strong></div>
+          <div class="kx-feas-prob">${it.problem}</div>
+          <div class="kx-feas-phil">${it.philosophy || ''}</div>
+          ${it.fix && it.fix.run ? `<button class="kx-feas-fix" data-fix="${i}">${it.fix.label}${it.fix.safe ? ' \u00b7 safe' : ''}</button>` : ''}
+        </div>`).join('');
+      bd.innerHTML = `<div class="kx-feas" role="dialog" aria-modal="true" aria-label="Machine feasibility">
+        <div class="kx-feas-top"><h2>Machine feasibility</h2><span class="kx-feas-badge kx-feas-${v.status}">${label}</span></div>
+        <p class="kx-feas-sub">Checked live against ${this.currentProfile.name}. Each fix only changes what it must.</p>
+        <div class="kx-feas-list">${cards}</div>
+        <div class="kx-feas-foot">
+          ${v.fixable ? `<button class="kx-btn kx-primary" id="kx-feas-all">Fix all safe issues (${v.fixable})</button>` : ''}
+          <button class="kx-btn" id="kx-feas-close">Done</button>
+        </div>
+      </div>`;
+      bd.querySelectorAll('[data-fix]').forEach(b => b.addEventListener('click', () => {
+        const it = v.issues[parseInt(b.dataset.fix, 10)];
+        try { it && it.fix && it.fix.run && it.fix.run(); } catch (_) { /* contained */ }
+        this.recompile();
+        v = this.feasibility.verdict();
+        fx('success');
+        render();
+      }));
+      const all = bd.querySelector('#kx-feas-all');
+      if (all) all.addEventListener('click', () => {
+        let guard = 0;
+        while (guard++ < 12) {
+          v = this.feasibility.verdict();
+          const nxt = v.issues.find(it => it.fix && it.fix.safe && it.fix.run);
+          if (!nxt) break;
+          try { nxt.fix.run(); } catch (_) { break; }
+          this.recompile();
+        }
+        v = this.feasibility.verdict();
+        fx('success');
+        render();
+      });
+      bd.querySelector('#kx-feas-close')?.addEventListener('click', () => bd.remove());
+    };
+    render();
+    bd.addEventListener('mousedown', e => { if (e.target === bd) bd.remove(); });
+    setTimeout(() => bd.querySelector('.kx-btn')?.focus(), 0);
+  }
+
+  // Escape should close whatever is on top — our overlays AND the native modals.
+  _closeTopModal() {
+    const feas = document.getElementById('kx-feas-backdrop');
+    if (feas) { feas.remove(); return; }
+    const native = document.querySelector('.modal-backdrop.active');
+    if (native) { this.closeAllModals(); return; }
+    this.extras?.closeModal?.();
   }
 
   // ---- Romance watermark (Part 3) ----
@@ -1740,7 +2248,7 @@ class KnitApp {
     this.notifications.success('Fabric reset to needle-bed mounting (cast-on + working edge).');
   }
 
-  setYarnMaterial(material) {
+  setYarnMaterial(material, opts = {}) {
     if (!this.yarnSim?.topology) return;
 
     const materials = {
@@ -1790,10 +2298,10 @@ class KnitApp {
       if (btn) btn.classList.toggle('active', id === `btn-yarn-${material}`);
     });
 
-    this.notifications.info(`${material.charAt(0).toUpperCase() + material.slice(1)} yarn — stiffness ${mat.stiffness}, damping ${mat.damping}.`);
+    if (!opts.silent) this.notifications.info(`${material.charAt(0).toUpperCase() + material.slice(1)} yarn — stiffness ${mat.stiffness}, damping ${mat.damping}.`);
   }
 
-  setYarnViewMode(mode) {
+  setYarnViewMode(mode, opts = {}) {
     if (!this.yarnSim) return;
     this.yarnSim.viewMode = mode;
     this.yarnSim.render();
@@ -1805,7 +2313,7 @@ class KnitApp {
     });
 
     const labels = { wireframe: 'Wireframe', shaded: 'Shaded', stress: 'Stress heatmap' };
-    this.notifications.info(`View mode: ${labels[mode] || mode}.`, { duration: 2500, log: false });
+    if (!opts.silent) this.notifications.info(`View mode: ${labels[mode] || mode}.`, { duration: 2500, log: false });
   }
 
   takeYarnScreenshot() {
@@ -2307,6 +2815,8 @@ class KnitApp {
 
     popup.style.display = 'flex';
     popup.classList.remove('hidden');
+    this._markLovePopupSeen();
+    fx('success');
 
     const HEARTS = ['💗', '💖', '💓', '💕', '♥'];
     const OPTIMIZED_COUNT = 6;
