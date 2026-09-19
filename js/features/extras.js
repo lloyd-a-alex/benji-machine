@@ -1,5 +1,5 @@
 /**
- * KnitCAD — self-contained "extras" layer (personalization + UX polish).
+ * KNITCAT — self-contained "extras" layer (personalization + UX polish).
  *
  * Design rules (this file must never break the core app):
  *   • It only ADDS DOM (header buttons, modals, overlays) — it never mutates
@@ -16,6 +16,8 @@
  *           optional hearts-on-mousemove.
  */
 
+// Historic `knitcad.` prefix is deliberate: it holds the anniversary, names, photo
+// and theme, so renaming the key would wipe someone's saved love.
 const SETTINGS_KEY = 'knitcad.settings.v1';
 const DEFAULTS = {
   yourName: 'Alex',
@@ -41,6 +43,10 @@ let settings = { ...DEFAULTS };
 let notifier = null;
 let activeModal = null;
 const listeners = [];
+// Set by buildMobileChrome(): closes the panel drawer, reporting whether it did.
+let drawerCloser = () => false;
+
+function closeDrawer() { return drawerCloser(); }
 
 function on(target, type, handler, opts) {
   target.addEventListener(type, handler, opts);
@@ -98,7 +104,7 @@ function daysTogether() {
 
 /* ── styles (injected once, scoped under our own classes) ─────────────── */
 function injectStyles() {
-  if (document.getElementById('knitcad-extras-style')) return;
+  if (document.getElementById('knitcat-extras-style')) return;
   const css = `
   .kx-greet{font-size:11px;color:var(--brand-accent,#fb7185);margin-left:8px;opacity:.85;font-style:italic}
   .kx-days{font-size:11px;color:var(--text-secondary,#cbd5e1);margin-left:6px}
@@ -146,9 +152,7 @@ function injectStyles() {
   body[data-tab]:not([data-tab="editor"]) #left-toolbar,
   body[data-tab]:not([data-tab="editor"]) .canvas-subbar{display:none}
   body:not([data-tab]) #left-toolbar{display:flex}
-  /* ── designer-only (advanced) parameters: invisible until the hidden key ── */
-  .advanced-param{display:none !important}
-  body.kx-admin-on .advanced-param{display:flex !important}
+  /* ── (knit/fit parameters are no longer designer-gated — always visible) ── */
   .kx-admin-only{display:none}
   body.kx-admin-on .kx-admin-only{display:inline-flex}
   /* ── clothes catalogue nav: chunked categories, hover-reveal ── */
@@ -210,9 +214,48 @@ function injectStyles() {
     background:linear-gradient(135deg,#7c3aed,#be185d);color:#fff;padding:10px 18px;border-radius:999px;
     font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.4);opacity:0;transition:opacity .3s,transform .3s;pointer-events:none}
   .kx-egg.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+  /* ── responsive: these are overlays, so this layer owns their mobile shape ── */
+  @media (pointer:coarse){
+    .kx-hbtn{width:40px;height:40px;font-size:17px}
+    .kx-row input,.kx-row textarea{font-size:16px;min-height:44px}   /* stops iOS zoom-to-focus */
+    .kx-check{font-size:15px}
+    .kx-menu-btn{min-height:44px}
+  }
+  @media (max-width:640px){
+    .kx-backdrop{padding:0;align-items:stretch;justify-content:stretch}
+    .kx-modal{width:100%;max-width:100%;max-height:none;border-radius:0;border:0;padding:18px 16px
+      calc(24px + env(safe-area-inset-bottom))}
+    .kx-modal h2{font-size:18px}
+    .kx-actions{flex-wrap:wrap;margin-top:14px}
+    .kx-btn{flex:1 1 44%;min-height:46px}
+    .kx-feas{width:100%;max-width:100%;max-height:none;margin:0;align-self:stretch;border-radius:0;border:0;
+      padding:16px 14px calc(22px + env(safe-area-inset-bottom))}
+    .kx-feas-top{flex-wrap:wrap;align-items:flex-start}
+    .kx-feas-top h2{font-size:17px}
+    .kx-feas-fix{min-height:44px;width:100%}
+    .kx-feas-foot{flex-wrap:wrap}
+    .clothes-nav{max-height:min(38dvh,300px)}
+    /* The Studio dropdown becomes a bottom sheet: never clipped by a screen edge. */
+    .kx-menu-drop{position:fixed;left:8px;right:8px;top:auto;bottom:calc(8px + env(safe-area-inset-bottom));
+      min-width:0;padding:8px}
+    .kx-menu-item{min-height:48px}
+    .kx-letter{padding:22px 16px calc(22px + env(safe-area-inset-bottom))}
+    .kx-letter .inner{max-width:100%}
+    .kx-egg{bottom:calc(18px + env(safe-area-inset-bottom));font-size:13px;padding:9px 14px;max-width:88vw}
+  }
+  @media (max-height:560px){
+    .kx-modal{padding:14px}
+    .kx-letter h1{font-size:clamp(22px,6vh,34px);margin-bottom:10px}
+    .kx-letter p{font-size:clamp(13px,2.6vh,17px);line-height:1.55}
+  }
+  @media (hover:none){
+    .kx-hbtn:hover{transform:none}
+    .clothes-item:hover{transform:none}
+    .kx-menu-item:active,.kx-btn:active{filter:brightness(1.2)}
+  }
   `;
   const el = document.createElement('style');
-  el.id = 'knitcad-extras-style';
+  el.id = 'knitcat-extras-style';
   el.textContent = css;
   document.head.appendChild(el);
 }
@@ -239,7 +282,7 @@ function buildHeaderUI() {
   avatar.alt = '';
   brand.appendChild(avatar);
 
-  const aboutBtn = mkBtn('♥', 'About KnitCAD', () => openAbout());
+  const aboutBtn = mkBtn('♥', 'About KNITCAT', () => openAbout());
   const gearBtn = mkBtn('⚙', 'Settings', () => openSettings());
   gearBtn.classList.add('kx-admin-only'); // only the designer can see the gear
   const themeBtn = mkBtn('☾', 'Switch to light', () => toggleTheme());
@@ -460,10 +503,12 @@ function openAbout() {
   const anni = settings.anniversary ? `<br><em>${esc(settings.anniversary)}</em>` : '';
   const modal = openModal(`
     <div class="kx-about">
-      <h2>About KnitCAD ${ZODIAC.yours.glyph}\u2192${ZODIAC.his.glyph}</h2>
+      <h2>About KNITCAT ${ZODIAC.yours.glyph}\u2192${ZODIAC.his.glyph}</h2>
       <p>I built this for my CUTE SEXY PRETTY GORGEOUS BOYFRIEND.</p>
-      <p>It's a real knitting-machine CAD tool \u2014 design punchcard patterns, simulate a Brother KH-830,
-      decompile lace into carriage passes, and export to DXF, G-code, SVG or 1:1 printables.
+      <p>It's a real knitting-machine CAD/CAM studio \u2014 draw a punchcard pattern and the lace decompiler
+      schedules the eyelets and directional yarn transfers into carriage passes a single-bed Brother KH-830 can
+      actually run, simulate the yarn in 3D, work out a beanie or a tank top to fit, and export DXF, G-code, SVG or
+      1:1 printable cards.</p>
       <p class="sig">${from}${anni}</p>
       <div class="kx-actions"><button class="kx-btn kx-primary" id="kx-about-ok" type="button">Close</button></div>
     </div>
@@ -585,10 +630,70 @@ function watchSuccessToasts() {
 function installEscapeClose() {
   on(document, 'keydown', e => {
     if (e.key !== 'Escape') return;
+    if (closeDrawer()) return; // an open panel drawer always wins
     const letter = document.querySelector('.kx-letter');
     if (letter) { letter.remove(); return; }
     closeModal();
   });
+}
+
+/* ── narrow-screen chrome: the diagnostics sidebar becomes a drawer ──────── */
+
+/** True when the layout is in its drawer tier (kept in sync with styles.css). */
+function isDrawerMode() {
+  try { return window.matchMedia('(max-width: 900px)').matches; } catch (_) { return false; }
+}
+
+/**
+ * Phones have no room for a 320px diagnostics column, so the sidebar slides in
+ * over the canvas when asked. Only ever adds a button — if the header or the
+ * sidebar is missing, this does nothing at all.
+ */
+function buildMobileChrome() {
+  const actions = document.querySelector('.header-actions');
+  const sidebar = document.getElementById('right-sidebar');
+  if (!actions || !sidebar || document.getElementById('kx-panels-btn')) return;
+
+  const backdrop = document.createElement('div');
+  backdrop.id = 'kx-drawer-backdrop';
+  document.body.appendChild(backdrop);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'kx-panels-btn';
+  btn.className = 'btn-action kx-panels-btn';
+  btn.title = 'Machine diagnostics, gauge & quick exports';
+  btn.setAttribute('aria-label', 'Toggle machine panel');
+  btn.setAttribute('aria-controls', 'right-sidebar');
+  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2"><rect x="3" y="3" width="12" height="18" rx="2"/><path d="M15 9h6M15 15h6"/></svg>Panel';
+  actions.insertBefore(btn, actions.firstChild);
+
+  const paint = () => {
+    const open = document.body.classList.contains('kx-drawer-open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  const setOpen = open => {
+    document.body.classList.toggle('kx-drawer-open', open);
+    paint();
+  };
+  drawerCloser = () => {
+    if (!document.body.classList.contains('kx-drawer-open')) return false;
+    setOpen(false);
+    return true;
+  };
+
+  on(btn, 'click', e => {
+    e.stopPropagation();
+    setOpen(!document.body.classList.contains('kx-drawer-open'));
+  });
+  on(backdrop, 'click', () => setOpen(false));
+  // Leaving the drawer tier (rotate, resize, un-split) must never trap it open.
+  on(window, 'resize', () => { if (!isDrawerMode()) setOpen(false); });
+  on(window, 'orientationchange', () => { if (!isDrawerMode()) setOpen(false); });
+  // Let the main app dismiss the drawer when the user moves to another tab.
+  window.knitcatMobile = { closeDrawer: () => drawerCloser(), isDrawerMode };
+  paint();
 }
 
 /**
@@ -601,6 +706,7 @@ export function initExtras(ctx = {}) {
   load();
   applyTheme();
   buildHeaderUI();
+  try { buildMobileChrome(); } catch (_) { /* header keeps no drawer affordance */ }
   try { buildStudioMenu(); } catch (_) { /* header keeps its original buttons */ }
   updateAvatar();
   installEscapeClose();

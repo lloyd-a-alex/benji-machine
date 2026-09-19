@@ -18,6 +18,7 @@
  */
 
 import { calculateCardDimensions } from '../machine/profiles.js';
+import { optimizeToolpath, pathLengthMm } from '../math/tsp-path.js';
 
 /** Linear interpolation */
 const lerp = (a, b, t) => a + (b - a) * Math.min(1, Math.max(0, t));
@@ -125,13 +126,8 @@ export class ToolpathViewer {
 
   /** Recompute rapid travel distance and cycle estimate from current point order */
   _recomputeMetrics() {
-    this.totalRapidDistanceMm = 0;
-    let prevX = 0, prevY = 0;
-    for (const pt of this.toolpathPoints) {
-      const dx = pt.x - prevX, dy = pt.y - prevY;
-      this.totalRapidDistanceMm += Math.sqrt(dx * dx + dy * dy);
-      prevX = pt.x; prevY = pt.y;
-    }
+    // Measured from machine home (0, 0), which is where every program starts.
+    this.totalRapidDistanceMm = pathLengthMm(this.toolpathPoints);
 
     const rapidTime = (this.totalRapidDistanceMm / 3000) * 60;
     const punchTime = this.toolpathPoints.length * 0.18;
@@ -149,61 +145,19 @@ export class ToolpathViewer {
   }
 
   /**
-   * Reduce rapid-travel distance with a nearest-neighbour rebuild followed by
-   * 2-opt improvement passes (classic TSP heuristic for punch-card drilling).
+   * Reduce rapid-travel distance with the shared nearest-neighbour + 2-opt
+   * ordering. Deliberately the SAME function the G-code exporter runs, so what
+   * this preview measures is what the exported program will actually do.
    * Returns { beforeMm, afterMm } so callers can report the real gain.
    */
   optimize() {
-    const pts = this.toolpathPoints;
-    if (pts.length < 3) return { beforeMm: this.totalRapidDistanceMm, afterMm: this.totalRapidDistanceMm };
-
-    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-    const origin = { x: 0, y: 0 };
     const beforeMm = this.totalRapidDistanceMm;
-
-    // ── Nearest neighbour from the machine home origin (0, 0) ──
-    const remaining = pts.slice();
-    const ordered = [];
-    let cur = origin;
-    while (remaining.length) {
-      let bestI = 0, bestD = Infinity;
-      for (let i = 0; i < remaining.length; i++) {
-        const d = dist(cur, remaining[i]);
-        if (d < bestD) { bestD = d; bestI = i; }
-      }
-      cur = remaining.splice(bestI, 1)[0];
-      ordered.push(cur);
+    if (this.toolpathPoints.length >= 3) {
+      this.toolpathPoints = optimizeToolpath(this.toolpathPoints);
+      this.currentToolIndex = 0;
+      this.isPlaying = false;
+      this._recomputeMetrics();
     }
-
-    // ── 2-opt: reverse interior segments to remove path crossings ──
-    let improved = true;
-    let guard = 0;
-    while (improved && guard++ < 30) {
-      improved = false;
-      const n = ordered.length;
-      for (let i = 0; i < n - 1 && !improved; i++) {
-        const a = i === 0 ? origin : ordered[i - 1];
-        const b = ordered[i];
-        for (let j = i + 1; j < n; j++) {
-          const c = ordered[j];
-          // Open path: reversing at the tail only replaces edge a→b with a→c
-          const delta = (j === n - 1)
-            ? dist(a, c) - dist(a, b)
-            : dist(a, c) + dist(b, ordered[j + 1]) - (dist(a, b) + dist(c, ordered[j + 1]));
-          if (delta < -1e-6) {
-            const seg = ordered.splice(i, j - i + 1);
-            ordered.splice(i, 0, ...seg.reverse());
-            improved = true;
-            break;
-          }
-        }
-      }
-    }
-
-    this.toolpathPoints = ordered;
-    this.currentToolIndex = 0;
-    this.isPlaying = false;
-    this._recomputeMetrics();
     return { beforeMm, afterMm: this.totalRapidDistanceMm };
   }
 

@@ -1,5 +1,5 @@
 /**
- * KnitCAD — self-contained micro sound layer (WebAudio, zero deps).
+ * KNITCAT — self-contained micro sound layer (WebAudio, zero deps).
  *
  * Philosophy: sound should feel like a machine doing its work, never like a toy.
  * Everything is quiet (<0.14 gain), short (<0.4 s) and uses gentle sine/triangle
@@ -14,12 +14,17 @@
  * Audio is created lazily on the first real gesture to satisfy autoplay rules.
  */
 
+// Storage key keeps the historic `knitcad.` prefix: renaming it would reset the
+// mute preference for anyone already using the app.
 const KEY = 'knitcad.sound.v1';
 
 let enabled = true;
 let ctx = null;
 let master = null;
-let unlocked = false;
+// The autoplay policy is absolute: creating OR resuming an AudioContext outside
+// a genuine gesture handler logs "The AudioContext was not allowed to start".
+// So the context is not even constructed until we have seen a real gesture.
+let gestureSeen = false;
 
 function loadPref() {
   try { enabled = localStorage.getItem(KEY) !== 'off'; } catch (_) { enabled = true; }
@@ -29,7 +34,7 @@ function savePref() {
 }
 
 function ensureCtx() {
-  if (ctx || typeof window === 'undefined') return ctx;
+  if (!gestureSeen || ctx || typeof window === 'undefined') return ctx;
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return null;
   try {
@@ -41,17 +46,29 @@ function ensureCtx() {
   return ctx;
 }
 
+/**
+ * Called ONLY from real gesture handlers (pointerdown / keydown / click).
+ * Arms the context and performs the silent-play ritual iOS still needs.
+ */
 function unlock() {
-  if (unlocked) return;
+  gestureSeen = true;
   const c = ensureCtx();
-  if (c && c.state === 'suspended') c.resume().catch(() => {});
-  unlocked = true;
+  if (!c) return;
+  if (c.state === 'suspended') c.resume().catch(() => {});
+  try {
+    const buf = c.createBuffer(1, 1, 22050);
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    src.connect(c.destination);
+    src.start(0);
+  } catch (_) { /* older engines: nothing to prime */ }
 }
 
 /** Play a single enveloped tone. */
 function tone({ f = 440, type = 'sine', dur = 0.12, gain = 0.08, delay = 0, glideTo = null }) {
   const c = ensureCtx();
-  if (!c) return;
+  // No context yet, or the browser still refuses to run it — stay silent.
+  if (!c || c.state !== 'running') return;
   const t0 = c.currentTime + delay;
   const o = c.createOscillator();
   const g = c.createGain();
@@ -81,11 +98,32 @@ const SFX = {
   error: () => tone({ f: 220, glideTo: 140, type: 'sawtooth', dur: 0.2, gain: 0.05 })
 };
 
+/** True once the AudioContext exists and is actually running. */
+function isReady() {
+  try { return !!ctx && ctx.state === 'running'; } catch (_) { return false; }
+}
+
+// resume() is asynchronous, so the gesture that armed the context cannot hear
+// its own click. We park exactly one sound and release it on 'statechange'.
+let pendingUnlock = null;
+
 function play(type) {
-  if (!enabled) return;
+  // Startup chimes fire long before any gesture; dropping them is the whole
+  // point — touching the AudioContext then is what logged the console error.
+  if (!enabled || !gestureSeen) return;
   const fn = SFX[type];
   if (!fn) return;
-  try { ensureCtx(); fn(); } catch (_) { /* audio unavailable — stay silent */ }
+  try {
+    if (isReady()) { fn(); return; }
+    const c = ensureCtx();
+    if (!c || pendingUnlock) return;
+    pendingUnlock = fn;
+    c.addEventListener('statechange', () => {
+      const queued = pendingUnlock;
+      pendingUnlock = null;
+      if (c.state === 'running' && typeof queued === 'function') queued();
+    }, { once: true });
+  } catch (_) { /* audio unavailable — stay silent */ }
 }
 
 function injectToggle() {
@@ -113,12 +151,18 @@ function injectToggle() {
 export function initSound() {
   loadPref();
   injectToggle();
-  // First gesture anywhere unlocks the AudioContext.
-  window.addEventListener('pointerdown', unlock, { once: true });
-  window.addEventListener('keydown', unlock, { once: true });
+  // Any real interaction arms audio. Not `once` — the first resume() can still
+  // be rejected (async), so we keep trying until the context reports running.
+  const arm = () => { if (!isReady()) unlock(); };
+  window.addEventListener('pointerdown', arm, { passive: true });
+  window.addEventListener('keydown', arm);
   window.addEventListener('knit:fx', e => play(e && e.detail));
+  // Tiny probe so other code (e.g. the love-popup chime retry) can tell when
+  // audio is truly unlocked without importing this module.
+  window.knitcatAudio = { isReady };
   return {
     play,
+    isReady,
     setEnabled(v) { enabled = !!v; savePref(); const b = document.getElementById('kx-sound'); if (b) b.textContent = enabled ? '\uD83D\uDD0A' : '\uD83D\uDD07'; },
     isEnabled() { return enabled; }
   };

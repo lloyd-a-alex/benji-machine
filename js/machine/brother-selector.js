@@ -69,13 +69,57 @@ export class BrotherSelectorMechanism {
   }
 
   /**
-   * Updates carriage position across the needle bed and recalculates mechanical linkage
+   * Updates carriage position across the needle bed and recalculates mechanical linkage.
+   *
+   * `explicitDirection` (+1 / -1) exists because inferring the travel direction by
+   * comparing positions silently breaks at the ends of the bed: the position gets
+   * clamped to the limit, so `new >= prev` reads as "moving right" and overwrites
+   * the reversal the caller had just decided on. The auto-sweep used to park the
+   * carriage at the right-hand stop and flicker there forever.
+   *
+   * @param {number} posNeedle needle index along the bed
+   * @param {number|null} explicitDirection +1 left-to-right, -1 right-to-left, or null to infer
    */
-  setCarriagePosition(posNeedle) {
+  setCarriagePosition(posNeedle, explicitDirection = null) {
     const prevPos = this.carriagePosition;
     this.carriagePosition = Math.max(0, Math.min(this.totalNeedles - 1, posNeedle));
-    this.carriageDirection = (this.carriagePosition >= prevPos) ? 1 : -1;
+    if (explicitDirection === 1 || explicitDirection === -1) {
+      this.carriageDirection = explicitDirection;
+    } else if (this.carriagePosition !== prevPos) {
+      // Only re-derive when the needle actually moved; a no-op must not flip it.
+      this.carriageDirection = this.carriagePosition > prevPos ? 1 : -1;
+    }
     this.recalculateKinematics();
+  }
+
+  /**
+   * Move the carriage by `deltaNeedles`, bouncing off both bed stops.
+   *
+   * This is the one place allowed to reverse the carriage, and it returns whether
+   * a reversal happened so the caller can index the punchcard. A real machine
+   * advances the card one row at the end of every pass, in either direction.
+   *
+   * @param {number} deltaNeedles signed movement in needle pitches
+   * @returns {0|1|-1} 0 = no reversal, +/-1 = a pass just completed
+   */
+  stepCarriage(deltaNeedles) {
+    const max = this.totalNeedles - 1;
+    let pos = this.carriagePosition + deltaNeedles;
+    let reversed = 0;
+
+    if (pos >= max) {
+      pos = max;
+      if (this.carriageDirection > 0) reversed = 1;
+      this.carriageDirection = -1;
+    } else if (pos <= 0) {
+      pos = 0;
+      if (this.carriageDirection < 0) reversed = -1;
+      this.carriageDirection = 1;
+    }
+
+    this.carriagePosition = pos;
+    this.recalculateKinematics();
+    return reversed;
   }
 
   /**

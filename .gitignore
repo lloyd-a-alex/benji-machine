@@ -9,3 +9,6 @@ npm-debug.log*
 
 # Transient smoke-test screenshots
 smoke-*.png
+
+# Transient test output
+tests/.out.txt

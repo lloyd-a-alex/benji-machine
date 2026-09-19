@@ -9,6 +9,8 @@
  * 5. Full Project JSON Intermediate Representation (.kcard)
  */
 
+import { buildProjectDocument } from '../project/kcard.js';
+
 export class FormatsExporter {
   /**
    * Generates ASCII punchcard matrix with row headers and alignment markings
@@ -114,14 +116,13 @@ export class FormatsExporter {
 
   /**
    * Complete Project JSON Bundle (.kcard)
+   *
+   * The envelope (format tag, schema version, timestamp) is owned by
+   * ../project/kcard.js so that what we write and what we accept on load can
+   * never drift apart.
    */
   static generateProjectJson(projectData) {
-    return JSON.stringify({
-      format: 'Antigravity_Industrial_Knit_CAD',
-      version: '2.0.0',
-      timestamp: new Date().toISOString(),
-      ...projectData
-    }, null, 2);
+    return JSON.stringify(buildProjectDocument(projectData), null, 2);
   }
 
   /**
@@ -191,9 +192,9 @@ export class FormatsExporter {
    */
   static generateXmlPattern(projectData) {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<knitpattern xmlns="http://knitcad.org/schema/v2">
+<knitpattern xmlns="urn:knitcat:punchcard:v2">
   <metadata>
-    <format>Antigravity_Industrial_Knit_CAD</format>
+    <format>KNITCAT_Punchcard_V2</format>
     <version>2.0.0</version>
     <timestamp>${new Date().toISOString()}</timestamp>
     <profile>${projectData.profileId || 'standard'}</profile>
@@ -234,10 +235,10 @@ export class FormatsExporter {
   static generateDocumentation(projectData, compilationResult) {
     const lines = [];
     
-    lines.push(`# KnitCAD Pattern Documentation`);
+    lines.push(`# KNITCAT Pattern Documentation`);
     lines.push(``);
     lines.push(`## Project Information`);
-    lines.push(`- **Format**: Antigravity Industrial Knit CAD v2.0`);
+    lines.push(`- **Format**: KNITCAT punchcard exchange v2.0`);
     lines.push(`- **Generated**: ${new Date().toISOString()}`);
     lines.push(`- **Profile**: ${projectData.profileId || 'standard'}`);
     lines.push(`- **Mode**: ${projectData.mode || 'lace'}`);

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { ClothesEngine, GARMENTS, CATEGORIES } from '../js/tailor/clothes-catalog.js';
 import { createFeasibilityAdvisor } from '../js/features/feasibility.js';
 import { digest } from '../js/features/admin.js';
-import { MACHINE_PROFILES } from '../js/machine/profiles.js';
+import { MACHINE_PROFILES, profileLimits, bedNeedleCapacity } from '../js/machine/profiles.js';
 import { STITCH_TYPE } from '../js/math/knit-topology.js';
 
 const gauge = { stitchesPer10Cm: 24, rowsPer10Cm: 32 };
@@ -24,10 +24,10 @@ test('every garment belongs to a declared category and has params', () => {
   }
 });
 
-test('advanced params exist but are a minority (designer-only surface stays calm)', () => {
+test('advanced-tagged params exist but stay a minority (fit surface stays calm)', () => {
   const adv = GARMENTS.reduce((a, g) => a + g.params.filter(p => p.advanced).length, 0);
   const tot = GARMENTS.reduce((a, g) => a + g.params.length, 0);
-  assert.ok(adv > 0, 'some designer-only params exist');
+  assert.ok(adv > 0, 'some tagged advanced params exist');
   assert.ok(adv < tot / 2, 'advanced params are the exception, not the rule');
 });
 
@@ -89,7 +89,14 @@ test('1:1 SVG export is well-formed and personalised', () => {
 // ─── Feasibility advisor (expert system) ──────────────────────────────────────
 
 function fakeApp(mode, matrix, profile = MACHINE_PROFILES.brother_standard_24) {
-  return { currentMode: mode, currentProfile: profile, compilationResult: null, editor: { matrix } };
+  const editor = {
+    matrix,
+    // The advisor's trim fixes call straight back into the editor, so record what
+    // shape was actually asked for instead of trusting the label text.
+    requests: [],
+    setDimensions(rows, cols) { this.requests.push({ rows, cols }); }
+  };
+  return { currentMode: mode, currentProfile: profile, compilationResult: null, editor };
 }
 
 test('blank fair-isle card is flagged as informational', () => {
@@ -140,6 +147,88 @@ test('bulkier gauge tolerates a shorter maximum float', () => {
   const adv = createFeasibilityAdvisor(fakeApp('fair_isle', [[0]]));
   // maxFloatFor returns the default for a fine bed
   assert.ok(adv.maxFloatFor(fine) >= 5);
+});
+
+// ─── One source of truth for the physical envelope ───────────────────────────
+
+test('every profile states its bed length, float cap and tuck cap', () => {
+  for (const p of Object.values(MACHINE_PROFILES)) {
+    assert.ok(p.bedLengthMm > 0, `${p.id} states a bed length`);
+    assert.ok(p.maxFloatNeedles >= 2, `${p.id} states a float cap`);
+    assert.ok(p.maxTuckLoops >= 2, `${p.id} states a tuck cap`);
+    // Capacity is derived, so it can never contradict the pitch it came from.
+    assert.ok(bedNeedleCapacity(p) >= p.columns, `${p.id} bed fits at least one repeat`);
+    assert.equal(
+      bedNeedleCapacity(p),
+      Math.max(p.columns, Math.floor(p.bedLengthMm / p.pitchX)),
+      `${p.id} needle capacity derives from pitch x bed length`
+    );
+  }
+});
+
+test('the advisor reads float limits from the profile instead of its own copy', () => {
+  const adv = createFeasibilityAdvisor(fakeApp('fair_isle', [[0]]));
+  for (const p of Object.values(MACHINE_PROFILES)) {
+    assert.equal(adv.maxFloatFor(p), profileLimits(p).maxFloatNeedles,
+      `${p.id}: advisor and diagnostics must agree or the app contradicts itself`);
+  }
+});
+
+test('a card wider than the needle bed is an error with a one-click trim', () => {
+  const profile = MACHINE_PROFILES.brother_standard_24;
+  const { maxNeedles } = profileLimits(profile);
+  const app = fakeApp('fair_isle', [new Array(maxNeedles + 25).fill(0)], profile);
+  const wide = createFeasibilityAdvisor(app).analyze().find(i => /wider than/i.test(i.title));
+  assert.ok(wide, 'over-width flagged');
+  assert.equal(wide.sev, 'error', 'unreachable columns are not a warning');
+  assert.equal(wide.fix.safe, true);
+  wide.fix.run();
+  assert.deepEqual(app.editor.requests, [{ rows: 1, cols: maxNeedles }],
+    'the trim asks for exactly the bed width');
+});
+
+test('tuck mode caps VERTICAL loop stacking at the profile limit', () => {
+  const profile = MACHINE_PROFILES.brother_standard_24;
+  const { maxTuckLoops } = profileLimits(profile);
+  // 24 blank rows in one column: nothing to do with horizontal floats.
+  const matrix = Array.from({ length: maxTuckLoops + 12 }, () => [0, 1]);
+  const app = fakeApp('tuck', matrix, profile);
+  const adv = createFeasibilityAdvisor(app);
+  const issue = adv.analyze().find(i => /tuck for up to/i.test(i.title));
+  assert.ok(issue, 'long tuck column flagged');
+  assert.match(issue.problem, new RegExp(`${maxTuckLoops} rows`), 'names the machine limit');
+  issue.fix.run();
+  assert.ok(!adv.analyze().some(i => /tuck for up to/i.test(i.title)), 'fix clears the stacking');
+});
+
+// ─── Single-bed vs double-bed honesty ───────────────────────────────────────
+
+test('every machine profile declares how many needle beds it has', () => {
+  for (const p of Object.values(MACHINE_PROFILES)) {
+    assert.ok(p.beds === 1 || p.beds === 2, `${p.id} says 1 or 2 beds`);
+  }
+  assert.equal(MACHINE_PROFILES.brother_standard_24.beds, 1, 'KH-830 is single-bed');
+  assert.equal(MACHINE_PROFILES.passap_duo_40.beds, 2, 'Passap Duo is double-bed');
+});
+
+test('lace on a single-bed machine explains that transfers stay in one bed', () => {
+  const rows = Array.from({ length: 6 }, (_, r) => Array.from({ length: 8 }, (_, c) =>
+    (c === 2 && r % 3 === 0) ? STITCH_TYPE.EYELET : STITCH_TYPE.KNIT));
+  const adv = createFeasibilityAdvisor(fakeApp('lace', rows));
+  const bed = adv.analyze().find(i => /needle bed/i.test(i.title));
+  assert.ok(bed, 'single-bed note is surfaced');
+  assert.equal(bed.sev, 'info');
+  assert.match(bed.problem, /same bed/i);
+});
+
+test('a double-bed profile is flagged as a modelling mismatch, not silently compiled', () => {
+  const rows = Array.from({ length: 6 }, () => Array.from({ length: 8 }, () => 1));
+  const adv = createFeasibilityAdvisor(fakeApp('fair_isle', rows, MACHINE_PROFILES.passap_duo_40));
+  const warn = adv.analyze().find(i => /two needle beds/i.test(i.title));
+  assert.ok(warn, 'double-bed advisory present');
+  assert.equal(warn.sev, 'warn');
+  // Changing the user's machine is a preference: never bundle it into "Fix all".
+  assert.equal(warn.fix.safe, false);
 });
 
 // ─── Hidden designer key (double digest, never plaintext) ─────────────────────

@@ -1,5 +1,5 @@
 /**
- * KnitCAD — hidden Designer (admin) key.
+ * KNITCAT — hidden Designer (admin) key.
  *
  * The app looks calm and finished to its recipient; designer mode — which lets
  * Alex tweak the "behind the glass" settings (advanced garment parameters, the

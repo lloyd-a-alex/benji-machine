@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Machine Lace: Eyelets, Yarn Transfers &amp; Punchcards | KNITCAT</title>
+  <meta name="description"
+    content="Why an eyelet needs a yarn transfer, the directional transfer rule, collision-free carriage passes, plain anchor rows, and single- vs double-bed machines.">
+  <meta name="keywords" content="machine lace knitting, knitting machine eyelet, yarn transfer knitting machine, transfer carriage brother LC-2, silver reed lace carriage, punchcard lace knitting, single bed double bed knitting machine, knitting machine float length, knitting machine CAD, lace decompiler">
+  <meta name="author" content="Alex">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <link rel="canonical" href="https://lloyd-a-alex.github.io/benji-machine/knitting-machine-lace-guide.html">
+  <meta name="theme-color" content="#070a12">
+
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="KNITCAT">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:url" content="https://lloyd-a-alex.github.io/benji-machine/knitting-machine-lace-guide.html">
+  <meta property="og:title" content="Machine Lace: Eyelets, Yarn Transfers &amp; Punchcards">
+  <meta property="og:description"
+    content="Why an eyelet needs a transfer, the directional transfer rule, collision-free carriage passes, plain anchor rows, and what changes on a double-bed machine.">
+  <meta property="og:image" content="https://lloyd-a-alex.github.io/benji-machine/og-cover.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Machine Lace Explained: Eyelets, Yarn Transfers &amp; Punchcards">
+  <meta name="twitter:description"
+    content="The mechanics behind every punchcard lace pattern, written for people who sit at the machine.">
+  <meta name="twitter:image" content="https://lloyd-a-alex.github.io/benji-machine/og-cover.png">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "@id": "https://lloyd-a-alex.github.io/benji-machine/knitting-machine-lace-guide.html#article",
+        "headline": "Machine Lace: Eyelets, Yarn Transfers and Punchcards",
+        "description": "A practical explanation of knitting machine lace mechanics: how eyelets form, why transfers are directional, how collisions are scheduled, and what differs between single-bed and double-bed machines.",
+        "author": { "@type": "Person", "name": "Alex", "url": "https://github.com/lloyd-a-alex" },
+        "publisher": { "@type": "Person", "name": "Alex", "url": "https://github.com/lloyd-a-alex" },
+        "datePublished": "2026-09-19",
+        "dateModified": "2026-09-19",
+        "inLanguage": "en",
+        "isAccessibleForFree": true,
+        "mainEntityOfPage": "https://lloyd-a-alex.github.io/benji-machine/knitting-machine-lace-guide.html",
+        "about": [
+          { "@type": "Thing", "name": "Machine lace knitting" },
+          { "@type": "Thing", "name": "Punchcard knitting machine" },
+          { "@type": "Thing", "name": "Yarn transfer" }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "KNITCAT", "item": "https://lloyd-a-alex.github.io/benji-machine/" },
+          { "@type": "ListItem", "position": 2, "name": "Machine lace guide", "item": "https://lloyd-a-alex.github.io/benji-machine/knitting-machine-lace-guide.html" }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is the difference between an eyelet and a transfer on a knitting machine?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Both leave a hole. A transfer physically slides an existing loop onto the neighbouring needle, emptying one needle, creating a left- or right-leaning slant and reducing the stitch count by one. An eyelet (yarnover) is the hole itself, produced by emptying a needle and then knitting a plain row so yarn bridges the gap. A yarnover adds openwork without directional shaping; a transfer adds openwork plus shaping — which is why lace repeats pair them to keep the stitch count constant." }
+          },
+          {
+            "@type": "Question",
+            "name": "Why does a Brother lace carriage need plain knit rows after lace passes?",
+            "acceptedAnswer": { "@type": "Answer", "text": "The lace carriage selects and transfers but feeds no yarn. After the transfer passes the empty needles must be fed loops by the main knit carriage, which is why two plain knit rows follow each lace sequence — and why the punchcard has to contain those blank rows." }
+          },
+          {
+            "@type": "Question",
+            "name": "Can two adjacent stitches transfer in the same carriage pass?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Not always. A loop moving into a needle that is simultaneously vacating is a read-write race that drops stitches; cascading transfers (i → i+1 and i+1 → i+2) and two loops landing on one needle conflict as well. A scheduler must split them across passes, alternating carriage direction." }
+          },
+          {
+            "@type": "Question",
+            "name": "What is the difference between single bed and double bed knitting machines?",
+            "acceptedAnswer": { "@type": "Answer", "text": "A single-bed machine has one needle bed, so a transfer moves a loop to an adjacent needle on the same bed and only in the carriage's direction of travel. A double-bed machine has front and back beds, so loops move between beds — loop holding, fisherman's rib, tuck-and-rib, circular knitting — and transfers are not bound to a sideways neighbour. Punchcard lace on Brother and Silver Reed is a single-bed technique." }
+          },
+          {
+            "@type": "Question",
+            "name": "How long can a float be on a knitting machine?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Roughly seven stitches at standard 4.5 mm gauge and five at bulky 9 mm. Longer floats snag on needle latches and pucker the face. Catch them by knitting a stitch in the same colour inside the run, mirroring the motif, or planning two-colour motifs at least a stitch apart." }
+          },
+          {
+            "@type": "Question",
+            "name": "Why is my punchcard read several rows below the needles?",
+            "acceptedAnswer": { "@type": "Answer", "text": "The card is gripped by a feed belt and read by a sensor drum behind the working needles, so the row being read is not the row being knitted: about seven rows on Brother standard gauge, five on Silver Reed. Corrections take effect that many rows later." }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="css/styles.css?v=__BUILD__">
+  <style>
+    /* This page is a document, not the app: a reading layout on the same
+       design system, so it stays legible and never inherits the shell's
+       overflow:hidden app frame. */
+    html, body { height: auto; overflow: visible; }
+    body { padding: 0 0 64px; line-height: 1.7; }
+    .doc-header {
+      display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px;
+      padding: 20px clamp(16px, 5vw, 40px);
+      background: var(--bg-surface); border-bottom: 1px solid var(--border-subtle);
+    }
+    .doc-header a.doc-brand {
+      font-size: 14px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+      color: var(--accent-cyan); text-decoration: none;
+    }
+    .doc-header nav { display: flex; gap: 14px; font-size: 12px; margin-left: auto; }
+    .doc-header nav a { color: var(--text-secondary); text-decoration: none; }
+    .doc-header nav a:hover { color: var(--text-primary); text-decoration: underline; }
+    .doc-main { max-width: 76ch; margin: 0 auto; padding: 32px clamp(16px, 5vw, 40px); }
+    .doc-main h1 { font-size: clamp(24px, 5vw, 34px); line-height: 1.25; margin-bottom: 10px; color: var(--text-primary); }
+    .doc-main h2 {
+      font-size: clamp(17px, 3.4vw, 21px); margin: 36px 0 10px; color: var(--accent-cyan);
+      border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;
+    }
+    .doc-main h3 { font-size: 14px; margin: 22px 0 6px; color: var(--text-primary); }
+    .doc-main p, .doc-main li { font-size: 14.5px; color: var(--text-secondary); margin-bottom: 12px; }
+    .doc-main strong { color: var(--text-primary); }
+    .doc-main ul, .doc-main ol { padding-left: 22px; margin-bottom: 14px; }
+    .doc-main a { color: var(--accent-cyan); }
+    .doc-main table { width: 100%; border-collapse: collapse; margin: 14px 0 22px; font-size: 13px; }
+    .doc-main th, .doc-main td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-subtle); }
+    .doc-main thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-primary); }
+    .doc-main code { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg-surface-elevated); padding: 1px 5px; border-radius: 4px; }
+    .doc-lede { font-size: 16px; color: var(--text-primary); }
+    .doc-cta {
+      display: block; margin: 26px 0; padding: 16px 18px; border-radius: 12px;
+      border: 1px solid var(--accent-cyan); background: rgba(56, 189, 248, .08);
+      color: var(--text-primary); text-decoration: none; font-size: 14px;
+    }
+    .doc-cta:hover { background: rgba(56, 189, 248, .16); }
+    .doc-toc { font-size: 13.5px; border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px 18px; background: var(--bg-surface); }
+    .doc-toc ol { margin: 0; padding-left: 20px; }
+    .doc-faq dt { font-weight: 700; color: var(--text-primary); margin-top: 18px; }
+    .doc-faq dd { margin: 6px 0 0; font-size: 14.5px; color: var(--text-secondary); }
+    .doc-footer { max-width: 76ch; margin: 0 auto; padding: 22px clamp(16px, 5vw, 40px); border-top: 1px solid var(--border-subtle); font-size: 12.5px; color: var(--text-muted); }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  </style>
+</head>
+
+<body class="theme-romance">
+  <header class="doc-header">
+    <a class="doc-brand" href="./">KNITCAT&nbsp;♥</a>
+    <nav aria-label="Site">
+      <a href="./">Knitting machine CAD/CAM app</a>
+      <a href="./knitting-machine-lace-guide.html" aria-current="page">Lace guide</a>
+      <a href="https://github.com/lloyd-a-alex/benji-machine">Source</a>
+    </nav>
+  </header>
+
+  <main class="doc-main">
+    <h1>Machine lace explained: eyelets, yarn transfers &amp; punchcards</h1>
+    <p class="doc-lede">Every punchcard lace pattern — feather and fan, shell, leaf, bobble lace — is built from two
+      actions: <strong>making a hole</strong> and <strong>moving a loop sideways</strong>. On a hand-knit piece you do
+      both with needles. On a machine, one of them is a mechanical constraint and the other is a scheduling problem,
+      and that is why machine lace behaves so differently from hand lace.</p>
+
+    <a class="doc-cta" href="./">→ Open KNITCAT, the free knitting machine CAD/CAM &amp; lace decompiler — draw the
+      chart, it plans the carriage passes and cuts the card.</a>
+
+    <section class="doc-toc" aria-label="Contents">
+      <h2 class="sr-only">Contents</h2>
+      <ol>
+        <li><a href="#hole">Why a hole is harder than it looks</a></li>
+        <li><a href="#direction">The directional transfer rule</a></li>
+        <li><a href="#collision">Transfer collisions and why passes multiply</a></li>
+        <li><a href="#anchor">Plain anchor rows, and Brother vs Silver Reed</a></li>
+        <li><a href="#beds">Single bed vs double bed</a></li>
+        <li><a href="#floats">Float limits by gauge</a></li>
+        <li><a href="#card">Punchcard mechanics: repeat, offset, blank rows</a></li>
+        <li><a href="#design">Designing a repeat that survives the machine</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ol>
+    </section>
+
+    <h2 id="hole">1. Why a hole is harder than it looks</h2>
+    <p>An <strong>eyelet</strong> is a yarnover: yarn laid over a needle without a stitch under it, so the next row
+      loops up around it and opens a hole. In hand knitting you make one by simply putting the yarn forward.</p>
+    <p>A knitting machine cannot do that. Needles only receive yarn when they are in working position and there is a
+      loop on them to be cleared, or when a carriage wraps an <em>empty</em> needle deliberately. So machine eyelets
+      are manufactured in two steps:</p>
+    <ol>
+      <li><strong>Empty the needle.</strong> Transfer its loop onto a neighbour. The needle is now out of work.</li>
+      <li><strong>Knit past it.</strong> On the next plain pass the empty needle rises and catches the yarn, which
+        forms a new, oversized loop — the hole, once it settles.</li>
+    </ol>
+    <p>That is why an eyelet and a transfer are not duplicate tools. The transfer is the mechanism; the eyelet is the
+      result. In KNITCAT's chart, the <code>○ Eyelet</code> cell states the <em>intent</em> (“a hole here”) and the
+      decompiler pays for it with a one-needle transfer — unless you have already drawn an adjacent
+      <code>↖</code>/<code>↗</code> transfer or a <code>∧</code> decrease to foot the bill, in which case it uses
+      yours. Same hole, one fewer pass.</p>
+
+    <h3>Keeping the stitch count honest</h3>
+    <p>A transfer removes a needle from work; a yarnover adds a loop back. A repeat that only transfers shrinks; one
+      that only makes holes grows. Traditional machine lace pairs them: one yarnover per single transfer, two per
+      centred double decrease, and the width comes out unchanged. Count them across your repeat — the arithmetic is
+      the design.</p>
+
+    <h2 id="direction">2. The directional transfer rule</h2>
+    <p>A lace carriage's transfer cam is a shaped metal blade. Pushed left → right, it sweeps each selected loop to
+      the needle on its <em>right</em>. Pushed right → left, it moves loops <em>left</em>. It cannot choose.</p>
+    <p>So the pattern's geometry is tied to carriage travel:</p>
+    <table>
+      <thead>
+        <tr><th scope="col">You want</th><th scope="col">Carriage must travel</th><th scope="col">Chart cell</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Loop to move right <code>i &rarr; i+1</code></td><td>Left → right</td><td><code>↗ Transfer R</code></td></tr>
+        <tr><td>Loop to move left <code>i &rarr; i&minus;1</code></td><td>Right → left</td><td><code>↖ Transfer L</code></td></tr>
+        <tr><td>Three loops into one, centred</td><td>Both, in two passes</td><td><code>∧ Double dec</code></td></tr>
+      </tbody>
+    </table>
+    <p>This is why a lace motif's left and right halves are rarely symmetrical on the card even when they look
+      symmetrical in the fabric: the machine can only obey one direction per pass.</p>
+
+    <h2 id="collision">3. Transfer collisions and why passes multiply</h2>
+    <p>Three physical impossibilities turn “one row of the chart” into several carriage passes:</p>
+    <ul>
+      <li><strong>Read-write race</strong> — needle <code>i</code> hands its loop to <code>i+1</code> at the same moment <code>i+1</code> hands its
+        loop away. The cam reads a needle mid-vacation; a loop drops.</li>
+      <li><strong>Cascading transfers</strong> — <code>i &rarr; i+1</code> and <code>i+1 &rarr; i+2</code> in one pass: order matters, and
+        the cams cannot enforce it.</li>
+      <li><strong>Converging transfers</strong> — two loops landing on one needle in the same pass (what a decrease
+        wants). The second arrival pushes the first off; that is a dropped stitch, not a decrease.</li>
+    </ul>
+    <p>The fix is scheduling, not design compromise: split the conflicting operations into separate passes and
+      alternate the carriage direction between them. Because the carriage ends where it finished, every pass flips
+      which transfers are legal next — and that is what produces the pass counts people find shocking on lace cards.
+      KNITCAT models this as a directed acyclic graph and reports the resulting <a href="./">carriage pass
+      schedule</a> row by row, with the punch holes for each pass.</p>
+
+    <h2 id="anchor">4. Plain anchor rows, and Brother vs Silver Reed</h2>
+    <h3>Brother (separated carriages)</h3>
+    <p>The Brother LC-5, LC-7 and LC-8 / LC-2 lace carriages select and transfer but carry no yarn. After the lace
+      sequence, the main K-carriage must knit — normally two plain rows — to feed yarn to the vacated needles and
+      anchor the eyelets. Fashion lace patterns are therefore always “lace passes, then plain rows”, and the card has
+      to include the blank rows.</p>
+    <h3>Silver Reed / Studio / Singer (combined carriage)</h3>
+    <p>The Silver Reed LC-1 / LC-5 / LC-9 lace carriages transfer <em>and</em> knit in the same pass, so fewer blank
+      rows are needed and the same chart compiles to a shorter card. Gauge geometry is nearly identical (4.5 mm), so
+      the two systems' cards look interchangeable and are not: hole positions, sprocket pitch and the reading offset
+      differ.</p>
+    <table>
+      <thead><tr><th scope="col">Profile</th><th scope="col">Lace carriage behaviour</th><th scope="col">Card reading offset</th><th scope="col">Row pitch</th></tr></thead>
+      <tbody>
+        <tr><td>Brother standard 24</td><td>Transfers only; plain rows required</td><td>7 rows</td><td>5.08 mm</td></tr>
+        <tr><td>Silver Reed standard 24</td><td>Transfer + knit together</td><td>5 rows</td><td>5.00 mm</td></tr>
+        <tr><td>Passap Duo / E-series</td><td>Pusher + dual lock systems</td><td>0 rows</td><td>5.00 mm</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="beds">5. Single bed vs double bed</h2>
+    <p><strong>Single bed</strong> — one needle bed. Transfers move a loop to an adjacent needle <em>on the same
+      bed</em>, only in the carriage's travel direction. Punchcard lace on Brother and Silver Reed is single-bed, and
+      so is everything this guide and KNITCAT's decompiler schedule.</p>
+    <p><strong>Double bed</strong> — a front and a back bed face each other. Loops move <em>between</em> beds
+      (ribbing setting, links and holds, full needle and plating rib) which gives loop holding, fisherman's rib,
+      tuck-and-rib textures and genuinely two-sided fabric. Because the destination bed is a different physical
+      place, the sideways-direction constraint that dominates single-bed lace does not apply in the same way.</p>
+    <p>KNITCAT's Passap profile exists because Passap cards are 40 stitches wide on a different pitch — you get
+      correct geometry, hole sizes and printable or CNC-cuttable output, but the transfer plan it prints is modelled
+      single-bed. If you need true inter-bed action, use the machine's own pattern system for that part. The
+      feasibility advisor says so explicitly whenever a two-bed profile is selected.</p>
+
+    <h2 id="floats">6. Float limits by gauge</h2>
+    <p>A float is yarn carried across the back without being knitted. In Fair Isle it runs behind the pattern; in slip
+      stitch it is the slipped run. Too long and it snags on needle latches, shows through the face, and lace-puckers
+      the fabric narrower than its cast-on.</p>
+    <table>
+      <thead><tr><th scope="col">Gauge</th><th scope="col">Needle pitch</th><th scope="col">Safe float</th><th scope="col">Why</th></tr></thead>
+      <tbody>
+        <tr><td>Fine</td><td>3.0 mm</td><td>up to ~9 sts</td><td>Short bridges are cheap at fine gauge</td></tr>
+        <tr><td>Standard</td><td>4.5 mm</td><td>up to ~7 sts</td><td>The classic stranded limit</td></tr>
+        <tr><td>Bulky</td><td>9.0 mm</td><td>up to ~5 sts</td><td>Thick yarn spans less far before it drags</td></tr>
+      </tbody>
+    </table>
+    <p>Ways to catch a float: knit a stitch in the same colour inside the run, mirror the motif so both colours
+      travel, or in two-colour work plan motifs at least one stitch apart. KNITCAT's advisor measures runs against the
+      selected profile and can insert catches for you.</p>
+
+    <h2 id="card">7. Punchcard mechanics: repeat, offset, blank rows</h2>
+    <ul>
+      <li><strong>24-stitch repeat</strong> — the card loops every 24 holes, so the pattern repeat must divide 24
+        evenly (24, 12, 8, 6, 4, 3, 2, 1). A 10-stitch motif will <em>never</em> line up.</li>
+      <li><strong>Reading offset</strong> — the sensor drum reads the card several rows behind the needles (7 on
+        Brother, 5 on Silver Reed). A correction made now shows up several rows later; when you rescue a piece mid-knit
+        you are editing the future, not the present.</li>
+      <li><strong>Blank rows are instructions</strong> — an entirely unpunched row means “knit plain”. Deleting them
+        to save tape changes the fabric.</li>
+      <li><strong>Joining cards</strong> — overlap the tape by one row's pitch and punch across the seam, or the drum
+        loses registration at every join.</li>
+      <li><strong>Direction</strong> — cards are read bottom-up in knit order, and the row nearest the tension
+        dial... which is why printed ribbons are labelled with row numbers.</li>
+    </ul>
+
+    <h2 id="design">8. Designing a repeat that survives the machine</h2>
+    <ol>
+      <li>Pick the machine profile first: it decides gauge, pitch, hole size and carriage rules.</li>
+      <li>Draw the repeat so the width divides 24 (or 40 on Passap). Use symmetry mirrors to check tiling.</li>
+      <li>Place decreases where you want the slant, then place eyelets so every hole is paid for.</li>
+      <li>Count: yarnovers minus transfers should be zero across the repeat.</li>
+      <li>Run the feasibility check — it flags collisions, floats and over-tall cards with the reason.</li>
+      <li>Read the carriage pass schedule and sanity-check the pass count against your patience.</li>
+      <li>Preview the yarn simulation: eyelets that look tidy in 3D usually behave at the machine.</li>
+      <li>Export at 1:1, verify the calibration ruler, then punch or cut.</li>
+    </ol>
+
+    <h2 id="faq">9. FAQ</h2>
+    <dl class="doc-faq">
+      <dt>What is the difference between an eyelet and a transfer on a knitting machine?</dt>
+      <dd>Both leave a hole. A transfer physically slides an existing loop onto the neighbouring needle, emptying one
+        needle, creating a left- or right-leaning slant and reducing the stitch count by one. An eyelet (yarnover) is
+        the hole itself, produced by emptying a needle and then knitting a plain row so yarn bridges the gap. A yarnover
+        adds openwork without directional shaping; a transfer adds openwork plus shaping — which is why lace repeats
+        pair them to keep the stitch count constant.</dd>
+
+      <dt>Why does a Brother lace carriage need plain knit rows after lace passes?</dt>
+      <dd>The lace carriage selects and transfers but feeds no yarn. After the transfer passes the empty needles must
+        be fed loops by the main knit carriage, which is why two plain knit rows follow each lace sequence — and why
+        the punchcard has to contain those blank rows.</dd>
+
+      <dt>Can two adjacent stitches transfer in the same carriage pass?</dt>
+      <dd>Not always. A loop moving into a needle that is simultaneously vacating is a read-write race that drops
+        stitches; cascading transfers (<code>i &rarr; i+1</code> and <code>i+1 &rarr; i+2</code>) and two loops landing
+        on one needle conflict as well. A scheduler must split them across passes, alternating carriage direction.</dd>
+
+      <dt>What is the difference between single bed and double bed knitting machines?</dt>
+      <dd>A single-bed machine has one needle bed, so a transfer moves a loop to an adjacent needle on the same bed and
+        only in the carriage's direction of travel. A double-bed machine has front and back beds, so loops move between
+        beds — loop holding, fisherman's rib, tuck-and-rib, circular knitting — and transfers are not bound to a
+        sideways neighbour. Punchcard lace on Brother and Silver Reed is a single-bed technique.</dd>
+
+      <dt>How long can a float be on a knitting machine?</dt>
+      <dd>Roughly seven stitches at standard 4.5 mm gauge and five at bulky 9 mm. Longer floats snag on needle latches
+        and pucker the face. Catch them by knitting a stitch in the same colour inside the run, mirroring the motif, or
+        planning two-colour motifs at least a stitch apart.</dd>
+
+      <dt>Why is my punchcard read several rows below the needles?</dt>
+      <dd>The card is gripped by a feed belt and read by a sensor drum behind the working needles, so the row being read
+        is not the row being knitted: about seven rows on Brother standard gauge, five on Silver Reed. Corrections take
+        effect that many rows later.</dd>
+    </dl>
+
+    <a class="doc-cta" href="./">→ Back to the KNITCAT knitting machine CAD/CAM studio: chart it, decompile the lace,
+      cut the card.</a>
+  </main>
+
+  <footer class="doc-footer">
+    <p>KNITCAT — free browser knitting machine CAD/CAM, punchcard compiler &amp; lace decompiler for Brother KH-830,
+      Silver Reed and CNC card cutting. Written for the machine and for Benji 💗.</p>
+    <p><a href="./">App</a> · <a href="./knitting-machine-lace-guide.html">Lace guide</a> ·
+      <a href="https://github.com/lloyd-a-alex/benji-machine">GitHub</a></p>
+  </footer>
+</body>
+
+</html>

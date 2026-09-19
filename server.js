@@ -1,5 +1,5 @@
 /**
- * KnitCAD zero-dependency dev server (ESM)
+ * KNITCAT zero-dependency dev server (ESM)
  * Usage: node server.js [port]   (default 3000)
  */
 import http from 'node:http';
@@ -61,5 +61,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[KnitCAD] Dev server running at http://localhost:${PORT}`);
+  console.log(`[KNITCAT] Dev server running at http://localhost:${PORT}`);
 });

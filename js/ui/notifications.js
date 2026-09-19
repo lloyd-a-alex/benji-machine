@@ -1,5 +1,5 @@
 /**
- * Accessible toast notification center for KnitCAD.
+ * Accessible toast notification center for KNITCAT.
  * Replaces blocking alert() dialogs with non-modal, screen-reader-friendly messages.
  */
 
@@ -35,11 +35,11 @@ export class NotificationCenter {
     if (log) {
       const payload = detailLines.length ? detailLines : (body || headline);
       const logFn = type === 'error' ? console.error : type === 'warning' ? console.warn : console.log;
-      logFn(`[KnitCAD][${type}] ${headline}`, payload);
+      logFn(`[KNITCAT][${type}] ${headline}`, payload);
     }
 
     if (!this.container) {
-      console.warn('[KnitCAD] Toast container missing; falling back to console only.');
+      console.warn('[KNITCAT] Toast container missing; falling back to console only.');
       return null;
     }
 

@@ -1,5 +1,5 @@
 /**
- * KnitCAD safety layer — fully self-contained.
+ * KNITCAT safety layer — fully self-contained.
  *
  * Everything here degrades gracefully: if a guarded block throws, it logs a
  * friendly toast (if a notifier is available) and returns a fallback instead of
@@ -21,7 +21,10 @@ export function installGlobalErrorBoundary(notifier) {
     lastShown = now;
     try {
       if (notifier && typeof notifier.error === 'function') {
-        notifier.error('Something went wrong in the background.', {
+        // The headline stays calm and says the important part: nothing is lost.
+        // The raw exception belongs in `details` (and the console), not in front
+        // of someone who just wants to keep designing.
+        notifier.error('Something went wrong in the background — your card is safe.', {
           details: [String(message), source].filter(Boolean),
           duration: 8000
         });
@@ -34,13 +37,13 @@ export function installGlobalErrorBoundary(notifier) {
   window.addEventListener('error', e => {
     const msg = e && e.message ? e.message : 'Unknown error';
     const where = e && e.filename ? `${e.filename.split('/').pop()}:${e.lineno || 0}` : '';
-    console.error('[KnitCAD] Uncaught error:', msg, where, e && e.error);
+    console.error('[KNITCAT] Uncaught error:', msg, where, e && e.error);
     report(msg, where);
   });
 
   window.addEventListener('unhandledrejection', e => {
     const reason = e && e.reason ? e.reason : 'Unhandled promise rejection';
-    console.error('[KnitCAD] Unhandled rejection:', reason);
+    console.error('[KNITCAT] Unhandled rejection:', reason);
     report(reason && reason.message ? reason.message : String(reason));
   });
 }
@@ -54,7 +57,7 @@ export function runGuarded(label, fn, options = {}) {
   try {
     return fn();
   } catch (err) {
-    console.error(`[KnitCAD] Guarded block "${label}" failed:`, err);
+    console.error(`[KNITCAT] Guarded block "${label}" failed:`, err);
     if (notifier && typeof notifier.warn === 'function') {
       notifier.warn(`${label} could not run.`, { details: [String((err && err.message) || err)] });
     }
@@ -85,7 +88,8 @@ export function installRoundRectPolyfill() {
     r = r.map(v => (typeof v === 'number' && !Number.isNaN(v) ? Math.max(0, v) : 0));
     while (r.length < 4) r.push(0);
     const [tl, tr, br, bl] = r;
-    // Clamp radii so they can exceed half the side length.
+    // Clamp radii so they can never exceed half the shorter side, which would
+    // otherwise make arcTo() carve self-intersecting corners.
     const max = Math.min(w, h) / 2;
     const s = v => Math.min(Math.abs(v), max);
     const [a, b, c, d] = [s(tl), s(tr), s(br), s(bl)];

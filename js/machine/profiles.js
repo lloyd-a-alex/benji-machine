@@ -2,6 +2,23 @@
  * Industrial Knitting Machine & Punchcard Profiles
  * Defines physical gauge parameters, hole metrics, feed sprockets,
  * carriage mechanics, and carriage transfer characteristics.
+ *
+ * ── Needle beds: read the `beds` field before trusting a transfer ────────────
+ * Every profile here is described by how many needle beds it works.
+ *
+ *   beds: 1  A SINGLE-BED machine (Brother KH-830 family, Silver Reed SK-280,
+ *            Studio, Singer, Toyota, Brother Chunky). There is one row of
+ *            latches. A "transfer" lifts a loop off needle *n* and hangs it on
+ *            needle *n±1* of THAT SAME bed, so the fabric never leaves the bed
+ *            and an eyelet is just a needle left empty for one row.
+ *            LaceCompiler and the punchcard schedule are written for this model.
+ *
+ *   beds: 2  A DOUBLE-BED machine (Passap Duo 80 / E6000 with a ribber, or a
+ *            Brother + KR-850 ribber). Transfers move loops BETWEEN the two
+ *            opposed beds — front-to-back and back-to-front — which needs a
+ *            completely different pass schedule and a second card. Patterns
+ *            designed here still knit stranded on the top bed, but the advisor
+ *            flags the mismatch instead of pretending the timings match.
  */
 
 export const MACHINE_PROFILES = {
@@ -33,7 +50,19 @@ export const MACHINE_PROFILES = {
       requiresEmptyNeedleSelection: true,
       cardReadingOffsetRows: 7,   // Sensor drum reads card 7 rows below active needles
     },
-    description: 'Standard 4.5mm gauge for Brother KH-830, KH-836, KH-881, KH-890, KH-892, KH-894 with LC-2 lace carriage.'
+    // Single bed: transfers shuffle loops along one row of needles.
+    beds: 1,
+    // Physical bed length in mm. Needle capacity is derived from this and pitchX,
+    // so the two can never drift apart: 900 / 4.5 = 200 needles, which is exactly
+    // the bed the KH-830 kinematics simulator draws.
+    bedLengthMm: 900,
+    // Longest stranded run this gauge can bridge before it starts catching on
+    // fingers (or, on bulky, before it distorts the fabric).
+    maxFloatNeedles: 9,
+    // Consecutive held loops one needle can carry before the bulk lifts it out of
+    // the cam channel.
+    maxTuckLoops: 6,
+    description: 'Standard 4.5mm gauge for Brother KH-830, KH-836, KH-881, KH-890, KH-892, KH-894 with LC-2 lace carriage. Single needle bed — transfers stay within the same bed.'
   },
 
   silver_reed_standard_24: {
@@ -64,7 +93,12 @@ export const MACHINE_PROFILES = {
       requiresEmptyNeedleSelection: false,
       cardReadingOffsetRows: 5,
     },
-    description: 'Standard 4.5mm gauge for Silver Reed SK-280, SK-700, Singer Memo-Matic, Studio with LC-580 or punchcard LC-1.'
+    // Single bed, and one carriage pass does transfer + knit at once.
+    beds: 1,
+    bedLengthMm: 900,       // same 4.5mm pitch and bed length as the Brother family
+    maxFloatNeedles: 9,
+    maxTuckLoops: 6,
+    description: 'Standard 4.5mm gauge for Silver Reed SK-280, SK-700, Singer Memo-Matic, Studio with LC-580 or punchcard LC-1. Single needle bed.'
   },
 
   passap_duo_40: {
@@ -95,7 +129,13 @@ export const MACHINE_PROFILES = {
       requiresEmptyNeedleSelection: false,
       cardReadingOffsetRows: 0,
     },
-    description: 'Double-bed 5mm system for Passap Duo 80 with U-100E transfer carriage or Deco punchcard reader.'
+    // Two opposed beds: a transfer moves a loop from the front bed to the back
+    // bed (or back to front), NOT to its neighbour along one row.
+    beds: 2,
+    bedLengthMm: 900,
+    maxFloatNeedles: 7,     // 5mm pitch: the same stitch count is a longer loose strand
+    maxTuckLoops: 6,
+    description: 'Double-bed (two needle beds) 5mm system for Passap Duo 80 with U-100E transfer carriage or Deco punchcard reader. Transfers cross between the two beds.'
   },
 
   brother_bulky_24: {
@@ -126,7 +166,12 @@ export const MACHINE_PROFILES = {
       requiresEmptyNeedleSelection: true,
       cardReadingOffsetRows: 6,
     },
-    description: '9mm heavy yarn machine for Brother KH-260, KH-270 with punchcard patterning.'
+    beds: 1, // single bed, just wider needle spacing
+    // A 9mm bed the same physical length holds half the needles of a 4.5mm one.
+    bedLengthMm: 900,
+    maxFloatNeedles: 5,     // each skipped needle is 9mm of loose yarn
+    maxTuckLoops: 4,
+    description: '9mm heavy yarn machine for Brother KH-260, KH-270 with punchcard patterning. Single needle bed.'
   },
 
   toyota_standard_24: {
@@ -157,7 +202,11 @@ export const MACHINE_PROFILES = {
       requiresEmptyNeedleSelection: true,
       cardReadingOffsetRows: 7,
     },
-    description: 'Toyota KS-901, KS-950 standard 4.5mm punchcard machines.'
+    beds: 1, // single bed
+    bedLengthMm: 900,
+    maxFloatNeedles: 7,
+    maxTuckLoops: 6,
+    description: 'Toyota KS-901, KS-950 standard 4.5mm punchcard machines. Single needle bed.'
   },
 
   custom_parametric: {
@@ -188,9 +237,46 @@ export const MACHINE_PROFILES = {
       requiresEmptyNeedleSelection: true,
       cardReadingOffsetRows: 0,
     },
-    description: 'Fully customizable physical parameters for experimental CNC cut cards or DIY knitting machines.'
+    beds: 1, // assume one bed unless you build a ribber
+    bedLengthMm: 900,
+    maxFloatNeedles: 9,
+    maxTuckLoops: 6,
+    description: 'Fully customizable physical parameters for experimental CNC cut cards or DIY knitting machines. Modelled as a single bed.'
   }
 };
+
+/**
+ * How many needles fit across this machine's bed.
+ *
+ * Derived rather than stored: pitch and bed length are the two real physical
+ * numbers, and a separately-maintained needle count is one edit away from
+ * contradicting them. Doubles as the width limit for a design — nothing else in
+ * the pipeline stopped you from drawing a 500-stitch pattern for a 200-needle
+ * bed and getting a silently truncated card out of the other end.
+ *
+ * @param {object} profile
+ * @returns {number} needles available across the bed (never below the card repeat)
+ */
+export function bedNeedleCapacity(profile) {
+  const pitch = profile?.pitchX || 4.5;
+  const length = profile?.bedLengthMm || 900;
+  return Math.max(profile?.columns || 24, Math.floor(length / pitch));
+}
+
+/**
+ * The handful of limits the editor and the advisor both need, in one place so
+ * their messages cannot drift apart.
+ */
+export function profileLimits(profile) {
+  return {
+    minRows: profile?.minRows ?? 8,
+    maxRows: profile?.maxRows ?? 240,
+    maxNeedles: bedNeedleCapacity(profile),
+    maxFloatNeedles: profile?.maxFloatNeedles ?? 9,
+    maxTuckLoops: profile?.maxTuckLoops ?? 6,
+    beds: profile?.beds ?? 1
+  };
+}
 
 /**
  * Calculates physical geometric bounding box for a card configuration

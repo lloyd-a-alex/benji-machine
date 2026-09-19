@@ -23,14 +23,62 @@ export class BrotherSimCanvas {
     this.sweepSpeed = 0.4;
     this.animFrameId = null;
 
+    // The whole compiled card, not just one row. A punchcard is a *sequence*: the
+    // drum indexes forward one row at the end of every carriage pass, so feeding
+    // the simulator a single row and looping it paints a false picture of the
+    // machine (every pattern looked like its own first row).
+    this.cardRows = [];
+    this.rowCarriage = [];
+    this.cardRow = 0;
+    this.passesCompleted = 0;
+
     this.setupEvents();
     this.resize();
   }
 
-  setCardPattern(cardRow24) {
-    this.mechanism.setPunchcardRow(cardRow24);
-    this.currentPattern = cardRow24;
+  /**
+   * Feed the simulator a full compiled punchcard.
+   * @param {boolean[][]} cardMatrix rows x 24 hole flags
+   * @param {{cardRowIndex:number, carriageType?:string}[]} [strokes] per-row carriage metadata
+   */
+  setCard(cardMatrix, strokes = []) {
+    this.cardRows = Array.isArray(cardMatrix) ? cardMatrix : [];
+    this.rowCarriage = new Array(this.cardRows.length).fill(null);
+    for (const s of strokes || []) {
+      if (s && s.cardRowIndex >= 0 && s.cardRowIndex < this.rowCarriage.length) {
+        this.rowCarriage[s.cardRowIndex] = s.carriageType;
+      }
+    }
+    this.cardRow = 0;
+    this.passesCompleted = 0;
+    this._applyCardRow();
     this.render();
+  }
+
+  /** Legacy single-row entry point; still valid, just no longer the whole story. */
+  setCardPattern(cardRow24) {
+    this.setCard([cardRow24], []);
+  }
+
+  /** Push the currently-indexed card row into the sensing pins. */
+  _applyCardRow() {
+    const row = this.cardRows[this.cardRow] || [];
+    this.mechanism.setPunchcardRow(row);
+    this.currentPattern = row;
+    const carriage = this.rowCarriage[this.cardRow];
+    if (carriage) this.setCarriageType(carriage === 'knit' ? 'knit' : 'lace');
+  }
+
+  /**
+   * A completed pass indexes the card forward, exactly like the ratchet pawl on
+   * the machine. Wraps so the demo keeps running on short cards.
+   */
+  _indexCard() {
+    this.passesCompleted++;
+    if (this.cardRows.length > 1) {
+      this.cardRow = (this.cardRow + 1) % this.cardRows.length;
+      this._applyCardRow();
+    }
   }
 
   play() {
@@ -48,7 +96,10 @@ export class BrotherSimCanvas {
   }
 
   reset() {
-    this.mechanism.setCarriagePosition(0);
+    this.mechanism.setCarriagePosition(0, 1);
+    this.cardRow = 0;
+    this.passesCompleted = 0;
+    this._applyCardRow();
     this.mechanism.carriageDirection = 1;
     this.autoSweep = true;
     this.render();
@@ -71,33 +122,65 @@ export class BrotherSimCanvas {
   }
 
   setupEvents() {
-    this.canvas.addEventListener('mousedown', e => {
+    this.canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+    // Pointer Events so the carriage can also be dragged with a finger or pen.
+    this.canvas.addEventListener('pointerdown', e => {
       const rect = this.canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const carriageX = this.needleToScreenX(this.mechanism.carriagePosition);
+      // Fingers are less precise than a cursor — grab a wider band on touch.
+      const grab = e.pointerType === 'mouse' ? 40 : 56;
 
-      if (Math.abs(mouseX - carriageX) < 40) {
+      if (Math.abs(mouseX - carriageX) < grab) {
         this.isDraggingCarriage = true;
+        this._wasAutoSweeping = this.autoSweep;
         this.autoSweep = false;
+        try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* window listeners still cover it */ }
       }
     });
 
-    window.addEventListener('mousemove', e => {
+    window.addEventListener('pointermove', e => {
       if (this.isDraggingCarriage) {
         const rect = this.canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const needle = this.screenXToNeedle(mouseX);
+        const before = this.mechanism.carriageDirection;
         this.mechanism.setCarriagePosition(needle);
+        // Hand-cranking the carriage through the end of a stroke indexes the card
+        // too — the pawl does not know whether the belt or a person moved it.
+        if (needle <= 0 && before < 0) this._indexCard();
+        else if (needle >= this.mechanism.totalNeedles - 1 && before > 0) this._indexCard();
         this.render();
       }
     });
 
-    window.addEventListener('mouseup', () => {
+    // Releasing the carriage hands control back to the belt if it was the belt
+    // driving before the grab. Previously a single drag stopped the animation for
+    // the rest of the session with no obvious way to restart it.
+    const release = () => {
+      if (!this.isDraggingCarriage) return;
       this.isDraggingCarriage = false;
-    });
+      if (this._wasAutoSweeping) {
+        this.autoSweep = true;
+        this._wasAutoSweeping = false;
+        this.startLoop();
+      }
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
 
+    // The resize storm matters on phones: opening the on-screen keyboard fires a
+    // dozen layout changes a second, and each one would otherwise re-render 200
+    // needles plus 8 bars. Coalesce to one repaint per animation frame.
+    let resizePending = false;
     window.addEventListener('resize', () => {
-      this.resize();
+      if (resizePending) return;
+      resizePending = true;
+      requestAnimationFrame(() => {
+        resizePending = false;
+        this.resize();
+      });
     });
   }
 
@@ -130,19 +213,20 @@ export class BrotherSimCanvas {
     if (this.animFrameId) return;
     let lastTime = performance.now();
     const loop = (now) => {
+      // Nothing to animate: hand-dragging already paints from its own handler, so
+      // holding a frame slot here would burn battery displaying a still image.
+      if (!this.autoSweep && !this.isDraggingCarriage) {
+        this.animFrameId = null;
+        return;
+      }
       const dt = (now - lastTime) / 1000;
       lastTime = now;
 
       if (this.autoSweep && !this.isDraggingCarriage) {
-        let pos = this.mechanism.carriagePosition + (this.mechanism.carriageDirection * this.sweepSpeed * 60 * dt);
-        if (pos >= this.mechanism.totalNeedles - 1) {
-          pos = this.mechanism.totalNeedles - 1;
-          this.mechanism.carriageDirection = -1;
-        } else if (pos <= 0) {
-          pos = 0;
-          this.mechanism.carriageDirection = 1;
-        }
-        this.mechanism.setCarriagePosition(pos);
+        const step = this.mechanism.carriageDirection * this.sweepSpeed * 60 * dt;
+        // stepCarriage owns the bounce off the bed stops and reports a completed
+        // pass; feeding it a signed delta keeps the card indexed one row per pass.
+        if (this.mechanism.stepCarriage(step)) this._indexCard();
       }
 
       this.render();
@@ -274,7 +358,8 @@ export class BrotherSimCanvas {
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText('24-PIN PUNCHCARD READER', drumX + 12, drumY + 18);
+    const total = this.cardRows.length || 1;
+    ctx.fillText(`24-PIN PUNCHCARD READER  ROW ${this.cardRow + 1}/${total}`, drumX + 12, drumY + 18);
 
     // Draw 24 Sensing Pins
     const pinStartX = drumX + 16;
@@ -305,6 +390,14 @@ export class BrotherSimCanvas {
     ctx.fillText(`Active Track: ${telemetry.activeTrack + 1}/24 → Bar: ${telemetry.activeBar + 1}/8`, drumX + 12, drumY + 60);
     ctx.fillText(`Working Needles (D): ${telemetry.totalWorkingNeedles}`, drumX + 12, drumY + 74);
     ctx.fillText(`Pulled-Down (B):     ${telemetry.totalPulledDown}`, drumX + 12, drumY + 86);
+    // Which carriage should be on the bed for THIS row, straight from the schedule.
+    const rowCarriage = this.rowCarriage[this.cardRow];
+    if (rowCarriage) {
+      ctx.fillStyle = rowCarriage === 'knit' ? '#fbbf24' : '#f43f5e';
+      ctx.fillText(`Row carriage: ${rowCarriage === 'knit' ? 'K — knit carriage' : 'L — lace carriage'}`, drumX + 112, drumY + 74);
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(`Card passes: ${this.passesCompleted}`, drumX + 112, drumY + 86);
+    }
 
     // 5. Educational Mechanism Explainer Banner at top-left
     ctx.fillStyle = '#38bdf8';

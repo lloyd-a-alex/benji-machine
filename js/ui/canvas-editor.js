@@ -447,7 +447,7 @@ export class CanvasEditor {
     };
   }
 
-  // Mouse & Touch Event Handlers
+  // Mouse, touch & pen handlers — Pointer Events so every input device works.
   setupEvents() {
     const canvas = this.canvas;
 
@@ -456,7 +456,18 @@ export class CanvasEditor {
     // Performance optimization: throttled rendering
     this.throttledRender = this.throttle(() => this.render(), 16); // ~60fps max
 
-    canvas.addEventListener('mousedown', e => {
+    // Live pointers over the canvas, for pinch-zoom / two-finger pan.
+    this._pointers = new Map();
+    this._pinch = null;
+
+    canvas.addEventListener('pointerdown', e => {
+      this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this._pointers.size >= 2) {
+        this._beginPinch();
+        return;
+      }
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* window listeners still cover it */ }
+
       const cell = this.screenToCell(e.clientX, e.clientY);
       this.lastMousePos = { x: e.clientX, y: e.clientY };
 
@@ -485,7 +496,12 @@ export class CanvasEditor {
       this.render();
     });
 
-    window.addEventListener('mousemove', e => {
+    window.addEventListener('pointermove', e => {
+      if (this._pointers.has(e.pointerId)) this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this._pinch) {
+        this._updatePinch();
+        return;
+      }
       const cell = this.screenToCell(e.clientX, e.clientY);
       this.hoverCell = cell;
 
@@ -514,7 +530,12 @@ export class CanvasEditor {
       }
     });
 
-    window.addEventListener('mouseup', e => {
+    const endStroke = e => {
+      this._pointers.delete(e.pointerId);
+      if (this._pinch && this._pointers.size < 2) {
+        this._pinch = null;
+        canvas.style.cursor = 'crosshair';
+      }
       if (this.isPanning) {
         this.isPanning = false;
         canvas.style.cursor = 'crosshair';
@@ -553,7 +574,9 @@ export class CanvasEditor {
         this.render();
         this.onChange();
       }
-    });
+    };
+    window.addEventListener('pointerup', endStroke);
+    window.addEventListener('pointercancel', endStroke);
 
     canvas.addEventListener('wheel', e => {
       e.preventDefault();
@@ -575,6 +598,42 @@ export class CanvasEditor {
       this.resizeCanvas();
       this.render();
     });
+  }
+
+  /** Two fingers down: drop any stroke and switch to navigating. */
+  _beginPinch() {
+    this.isMouseDown = false;
+    this.isPanning = false;
+    this.dragStartCell = null;
+    const [a, b] = [...this._pointers.values()];
+    this._pinch = {
+      dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+    };
+    this.canvas.style.cursor = 'grabbing';
+  }
+
+  /** Pinch distance → zoom about the midpoint; midpoint drift → pan. */
+  _updatePinch() {
+    const pts = [...this._pointers.values()];
+    if (pts.length < 2 || !this._pinch) return;
+    const [a, b] = pts;
+    const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const rect = this.canvas.getBoundingClientRect();
+    const px = mid.x - rect.left;
+    const py = mid.y - rect.top;
+
+    this.panX += mid.x - this._pinch.mid.x;
+    this.panY += mid.y - this._pinch.mid.y;
+
+    const newZoom = Math.max(8, Math.min(70, this.zoom * (dist / this._pinch.dist)));
+    this.panX = px - (px - this.panX) * (newZoom / this.zoom);
+    this.panY = py - (py - this.panY) * (newZoom / this.zoom);
+    this.zoom = newZoom;
+
+    this._pinch = { dist, mid };
+    this.render();
   }
 
   resizeCanvas() {

@@ -4,8 +4,8 @@
 
 import { KnitTopologyNetwork, STITCH_TYPE } from '../math/knit-topology.js';
 
-// Set to true via window.__KNITCAD_DEBUG__ to emit per-frame timing logs.
-const DEBUG = typeof window !== 'undefined' ? !!window.__KNITCAD_DEBUG__ : false;
+// Set to true via window.__KNITCAT_DEBUG__ to emit per-frame timing logs.
+const DEBUG = typeof window !== 'undefined' ? !!window.__KNITCAT_DEBUG__ : false;
 
 export class YarnSimulator {
   constructor(canvasElement, options = {}) {
@@ -64,9 +64,10 @@ export class YarnSimulator {
       this.animating = true;
       this.centerFabric();
       this.render();
-      if (DEBUG) console.log(`[KnitCAD][Yarn] updateFabric completed in ${Math.round(performance.now() - t0)}ms (${this.rows}×${this.cols})`);
+      this.startAnimationLoop();
+      if (DEBUG) console.log(`[KNITCAT][Yarn] updateFabric completed in ${Math.round(performance.now() - t0)}ms (${this.rows}×${this.cols})`);
     } catch (err) {
-      console.error('[KnitCAD][Yarn] updateFabric error:', err);
+      console.error('[KNITCAT][Yarn] updateFabric error:', err);
     }
   }
 
@@ -100,7 +101,22 @@ export class YarnSimulator {
   setTension(tensionFactor) {
     this.yarnTension = Math.max(0.2, Math.min(3.0, tensionFactor));
     this.applyMaterialProfile(this.materialProfile);
+    // Force at least one honest comparison. The sleep detector compares against
+    // prevStrainEnergy, and leaving the pre-tension value in there meant the very
+    // next frame looked "settled" and put the fabric straight back to sleep — so
+    // changing tension appeared to do nothing at all.
+    this.prevStrainEnergy = Infinity;
+    this.wake();
+  }
+
+  /**
+   * Resume the physics loop. The solver parks itself once the fabric settles, so
+   * anything that perturbs it has to say "wake up" rather than just flipping a
+   * flag the parked loop is no longer reading.
+   */
+  wake() {
     this.animating = true;
+    this.startAnimationLoop();
   }
 
   resetMounting() {
@@ -124,10 +140,11 @@ export class YarnSimulator {
     }
 
     topo.totalStrainEnergy = 0;
-    this.prevStrainEnergy = 0;
-    this.animating = true;
+    this.prevStrainEnergy = Infinity;
+    this.wake();
     this.centerFabric();
-    if (DEBUG) console.log('[KnitCAD][Yarn] Fabric mounting reset to needle-bed anchors');
+    this.render();
+    if (DEBUG) console.log('[KNITCAT][Yarn] Fabric mounting reset to needle-bed anchors');
   }
 
   centerFabric() {
@@ -144,6 +161,10 @@ export class YarnSimulator {
       this.canvas.width = parent.clientWidth;
       this.canvas.height = parent.clientHeight;
       this.centerFabric();
+      // The canvas buffer was just reallocated (and cleared). The physics loop may
+      // be parked, so paint immediately or the view stays blank until something
+      // perturbs the fabric.
+      this.render();
     }
   }
 
@@ -155,32 +176,89 @@ export class YarnSimulator {
       this._listeners.push({ target, type, handler, opts });
     };
 
-    on(this.canvas, 'mousedown', e => {
-      this.animating = true;
-      this.isMouseDown = true;
-      this.lastMouse = { x: e.clientX, y: e.clientY };
+    // Pointer Events, not mouse events. Every other canvas in this app takes
+    // pointers; the yarn view was the odd one out, which meant the single most
+    // tactile thing in the whole tool — pulling fabric around — did nothing on a
+    // phone or a drawing tablet.
+    try { this.canvas.style.touchAction = 'none'; } catch (_) { /* inline style is optional */ }
+
+    // Active pointers by id, so two-finger pinch and one-finger pan don't fight.
+    this._pointers = new Map();
+    this._pinchStartDist = 0;
+    this._pinchStartZoom = 1;
+
+    on(this.canvas, 'pointerdown', e => {
+      this.canvas.setPointerCapture?.(e.pointerId);
+      this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      this.wake();
+      if (this._pointers.size === 1) {
+        this.isMouseDown = true;
+        this.lastMouse = { x: e.clientX, y: e.clientY };
+      } else if (this._pointers.size === 2) {
+        // Second finger down: this is a zoom gesture, not a pan.
+        this.isMouseDown = false;
+        const [a, b] = [...this._pointers.values()];
+        this._pinchStartDist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        this._pinchStartZoom = this.zoom;
+      }
     });
 
-    on(window, 'mousemove', e => {
+    on(this.canvas, 'pointermove', e => {
+      if (!this._pointers.has(e.pointerId)) return;
+      this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (this._pointers.size >= 2) {
+        const [a, b] = [...this._pointers.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        this.zoom = Math.max(0.3, Math.min(4.0, this._pinchStartZoom * (dist / this._pinchStartDist)));
+        this.render();
+        return;
+      }
       if (this.isMouseDown) {
         this.panX += e.clientX - this.lastMouse.x;
         this.panY += e.clientY - this.lastMouse.y;
         this.lastMouse = { x: e.clientX, y: e.clientY };
+        this.render();
       }
     });
 
-    on(window, 'mouseup', () => {
-      this.isMouseDown = false;
-    });
+    const lift = e => {
+      // Registered on both the canvas and the window, so a single release arrives
+      // twice via bubbling. Bail on the second one instead of re-running the
+      // one-finger handover below.
+      if (!this._pointers.has(e.pointerId)) return;
+      this._pointers.delete(e.pointerId);
+      if (this._pointers.size === 0) this.isMouseDown = false;
+      // Dropping back to one finger: re-anchor the pan so the fabric doesn't jump.
+      else if (this._pointers.size === 1) {
+        const only = [...this._pointers.values()][0];
+        this.lastMouse = { x: only.x, y: only.y };
+        this.isMouseDown = true;
+      }
+    };
+    on(this.canvas, 'pointerup', lift);
+    on(this.canvas, 'pointercancel', lift);
+    // Safety net: if the pointer is captured and released outside the canvas, the
+    // up event still has to land somewhere.
+    on(window, 'pointerup', lift);
 
     on(this.canvas, 'wheel', e => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.12 : 0.89;
       this.zoom = Math.max(0.3, Math.min(4.0, this.zoom * factor));
-    });
+      this.render();
+    }, { passive: false });
 
+    // Coalesce the resize storm: an on-screen keyboard opening fires a dozen
+    // layout changes a second, and each one used to resize and re-centre.
+    let resizeQueued = false;
     on(window, 'resize', () => {
-      this.resize();
+      if (resizeQueued) return;
+      resizeQueued = true;
+      requestAnimationFrame(() => {
+        resizeQueued = false;
+        this.resize();
+      });
     });
   }
 
@@ -197,19 +275,24 @@ export class YarnSimulator {
 
   startAnimationLoop() {
     if (this.animFrameId) return;
-    this.animating = true;
     const loop = () => {
-      if (this.animating) {
-        this.topology.stepPhysics(4, 0.016, this.topology.damping);
-        const energy = this.topology.totalStrainEnergy;
-        // Never sleep while gravity is draping the fabric — keep integrating
-        if (!this.topology.gravityEnabled &&
-            Math.abs(this.prevStrainEnergy - energy) < this.energySleepThreshold) {
-          this.animating = false;
-        }
-        this.prevStrainEnergy = energy;
-        this.render();
+      // Release the frame budget once the fabric has settled. The previous version
+      // kept requesting frames forever and merely skipped the physics, so an idle
+      // yarn tab still pinned a slot on the browser's animation clock — the single
+      // biggest battery drain in the app for no visible reason.
+      if (!this.animating) {
+        this.animFrameId = null;
+        return;
       }
+      this.topology.stepPhysics(4, 0.016, this.topology.damping);
+      const energy = this.topology.totalStrainEnergy;
+      // Never sleep while gravity is draping the fabric — keep integrating
+      if (!this.topology.gravityEnabled &&
+          Math.abs(this.prevStrainEnergy - energy) < this.energySleepThreshold) {
+        this.animating = false;
+      }
+      this.prevStrainEnergy = energy;
+      this.render();
       this.animFrameId = requestAnimationFrame(loop);
     };
     this.animFrameId = requestAnimationFrame(loop);
@@ -266,7 +349,7 @@ export class YarnSimulator {
         }
       }
     } catch (err) {
-      console.warn('[KnitCAD][Yarn] render error:', err);
+      console.warn('[KNITCAT][Yarn] render error:', err);
     } finally {
       ctx.restore();
     }
@@ -355,7 +438,7 @@ export class YarnSimulator {
 
   exportObj() {
     const geoms = this.topology?.generateDetailedYarnGeometry?.() || [];
-    let obj = '# Benji KnitCAD Yarn Fabric Export\n';
+    let obj = '# Benji KNITCAT Yarn Fabric Export\n';
     obj += `# Loops: ${geoms.length}\n`;
     let vertexIndex = 1;
 

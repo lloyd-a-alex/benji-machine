@@ -1,0 +1,191 @@
+Ô£ö cell keys round-trip and clip to the card (2.4733ms)
+Ô£ö a marquee survives either drag direction (0.6519ms)
+Ô£ö expand adds one ring, contract strips one, invert completes them (0.9352ms)
+Ô£ö feathering dithers the new ring instead of faking transparency (0.4413ms)
+Ô£û the wand picks a region, and refuses to pick the whole card by accident (1.5421ms)
+Ô£ö a lasso selects by cell centre (0.7341ms)
+Ô£ö the geometry tools produce one-cell-wide paths (0.5043ms)
+Ô£ö curves reach their endpoints and pass through their points (0.6753ms)
+Ô£û regions, alignment and distribution do the arithmetic a CAD user expects (1.4504ms)
+Ô£ö a selection slides but never off the edge in silence (0.574ms)
+Ô£ö a fresh card is blank in the right alphabet for its mode (0.3478ms)
+Ô£ö typing a cell address accepts the ways people write them (0.9541ms)
+Ô£ö one cell changes, nothing else does, and history is not corrupted (0.5387ms)
+Ô£ö inserting and deleting rows and columns keeps the card rectangular (0.862ms)
+Ô£ö reversing a row mirrors the leans; reversing a column must not (0.3916ms)
+Ô£ö rows and columns can be swapped and slid past each other (0.5306ms)
+Ô£ö a row can be copied and put back over or beside its neighbour (0.3706ms)
+Ô£ö interleave weaves an overlay repeat into a plain body (0.407ms)
+Ô£ö whole-card transforms mirror the directional glyphs exactly when the needles move (0.5217ms)
+Ô£ö a quarter turn is allowed and honestly labelled (0.3879ms)
+Ô£û transpose swaps needles and rows and mirrors the lean (0.4576ms)
+Ô£û a region flips inside the marquee and stays put outside it (1.5083ms)
+Ô£û invert works on the punchcard reading, not on JavaScript truthiness (0.6184ms)
+Ô£ö painting reports what it had to skip (0.3887ms)
+Ô£ö moving a selection cannot smear it or push it off the bed quietly (0.4564ms)
+Ô£û motifs survive capture, transform and stamping (1.7299ms)
+Ô£ö a Fair Isle block stamped into lace becomes real lace primitives (0.1982ms)
+Ô£ö softening is a majority vote, not a smear (0.6425ms)
+Ô£ö smudging drags the content along the stroke (0.285ms)
+Ô£ö selection conversion leaves the rest of the card alone (0.3652ms)
+Ô£ö mode conversion is alphabet-correct in both directions (0.3116ms)
+Ô£ö a design can be resampled or retiled onto another bed (0.719ms)
+Ôä╣ tests 32
+Ôä╣ suites 0
+Ôä╣ pass 26
+Ôä╣ fail 6
+Ôä╣ cancelled 0
+Ôä╣ skipped 0
+Ôä╣ todo 0
+Ôä╣ duration_ms 189.1826
+
+Ô£û failing tests:
+
+test at tests\editor-chart.test.mjs:89:1
+Ô£û the wand picks a region, and refuses to pick the whole card by accident (1.5421ms)
+  AssertionError [ERR_ASSERTION]: a capped selection must not be applied at all
+  
+  3 !== 0
+  
+      at TestContext.<anonymous> (file:///C:/Projects/benji%20machine/tests/editor-chart.test.mjs:104:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 3,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\editor-chart.test.mjs:157:1
+Ô£û regions, alignment and distribution do the arithmetic a CAD user expects (1.4504ms)
+  AssertionError [ERR_ASSERTION]: gaps 4 and 2 should be even
+      at TestContext.<anonymous> (file:///C:/Projects/benji%20machine/tests/editor-chart.test.mjs:188:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at tests\editor-chart.test.mjs:345:1
+Ô£û transpose swaps needles and rows and mirrors the lean (0.4576ms)
+  AssertionError [ERR_ASSERTION]: a diagonal reflection turns \ into /
+  
+  'K' !== 'TR'
+  
+      at TestContext.<anonymous> (file:///C:/Projects/benji%20machine/tests/editor-chart.test.mjs:356:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'K',
+    expected: 'TR',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\editor-chart.test.mjs:359:1
+Ô£û a region flips inside the marquee and stays put outside it (1.5083ms)
+  AssertionError [ERR_ASSERTION]: a marquee bigger than the card is the card
+  + actual - expected
+  
+    [
+      [
+  +     9,
+        2,
+        1,
+  -     9
+      ],
+      [
+  +     9,
+        4,
+        3,
+  -     9
+      ]
+    ]
+  
+      at TestContext.<anonymous> (file:///C:/Projects/benji%20machine/tests/editor-chart.test.mjs:369:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ [ 9, 2, 1 ], [ 9, 4, 3 ] ],
+    expected: [ [ 2, 1, 9 ], [ 4, 3, 9 ] ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at tests\editor-chart.test.mjs:372:1
+Ô£û invert works on the punchcard reading, not on JavaScript truthiness (0.6184ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+      [
+        'O',
+        'K'
+      ],
+      [
+  +     'K',
+        'O',
+  -     'O'
+      ]
+    ]
+  
+      at TestContext.<anonymous> (file:///C:/Projects/benji%20machine/tests/editor-chart.test.mjs:378:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ [ 'O', 'K' ], [ 'K', 'O' ] ],
+    expected: [ [ 'O', 'K' ], [ 'O', 'O' ] ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at tests\editor-chart.test.mjs:415:1
+Ô£û motifs survive capture, transform and stamping (1.7299ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///C:/Projects/benji%20machine/tests/editor-chart.test.mjs:438:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:911:18)
+      at Test.postRun (node:internal/test_runner/test:1465:19)
+      at Test.run (node:internal/test_runner/test:1390:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+

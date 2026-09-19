@@ -1,4 +1,4 @@
-// Zero-dependency unit tests for KnitCAD pure functions.
+// Zero-dependency unit tests for KNITCAT pure functions.
 // Run with:  node --test tests/
 // These import browser-free modules only (math / machine profiles).
 

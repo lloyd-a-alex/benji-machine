@@ -1,5 +1,5 @@
 /* =========================================================
-   KnitCAD Industrial — Knitting Machine CAD/CAM & Lace Decompiler
+   KNITCAT — Knitting Machine CAD/CAM & Lace Decompiler
    Design System: Deep Dark Precision Engineering + Romance Theme
    Made with infinite love for Benji 💗
    ========================================================= */
@@ -9,6 +9,8 @@
   --bg-surface: #0f172a;
   --bg-surface-elevated: #1e293b;
   --bg-panel: #131d33;
+  /* Recessed fields: link inputs, code, anything that should look read-only. */
+  --bg-inset: #0b1020;
   --border-subtle: #1e293b;
   --border-active: #38bdf8;
   --border-focus: #0ea5e9;
@@ -30,12 +32,31 @@
   --radius-md: 8px;
   --radius-lg: 12px;
   --shadow-panel: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+
+  /* --- responsive primitives (overridden live by js/app.js) -------------
+     --kx-vh  : the *visual* viewport height, so the iOS URL bar and the
+                Android soft keyboard can never push content off screen.
+     --safe-* : notch / home-indicator insets, active under viewport-fit=cover.
+     --tap    : the WCAG minimum comfortable hit target.               */
+  --kx-vh: 100dvh;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --tap: 44px;
 }
 
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* Buttons and panels in this app set `display:` in their own rules, which beats
+   the UA stylesheet's `[hidden] { display: none }`. Without this global, every
+   `el.hidden = true` in js/features/* silently leaves the element on screen. */
+[hidden] {
+  display: none !important;
 }
 
 html, body {
@@ -48,14 +69,31 @@ html, body {
   font-size: 13px;
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  /* Never let mobile browsers silently re-scale the UI type. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* No rubber-band scroll of the whole shell on touch devices. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Text is meant to be copy-able where it is prose, not chrome. */
+input, textarea, .modal-body, .schedule-desc, .stroke-notes, .kx-modal, .kx-about {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* App Layout Grid */
 #app-container {
   display: flex;
   flex-direction: column;
-  width: 100vw;
+  /* 100% (not 100vw) so a classic scrollbar never adds phantom width. */
+  width: 100%;
   height: 100vh;
+  /* vh -> dvh -> JS-measured visual viewport: each layer wins where supported,
+     so the shell always fits the *visible* box on every browser. */
+  height: 100dvh;
+  height: var(--kx-vh, 100dvh);
 }
 
 /* --- Top Header Navigation --- */
@@ -391,6 +429,128 @@ header#main-header {
   color: #ffffff;
 }
 
+/* --- Screen-reader / SEO helpers ----------------------------------------
+   .sr-only is clipped visually but stays in the accessibility tree and the
+   DOM, so crawlers read the full keyword-bearing heading too. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Shown only when JavaScript is off (the app itself can't run then). */
+.noscript-notice {
+  max-width: 68ch;
+  margin: 0 auto;
+  padding: 32px 20px;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.noscript-notice h1 {
+  font-size: 20px;
+  margin-bottom: 12px;
+  color: var(--accent-cyan);
+}
+
+.noscript-notice a { color: var(--accent-cyan); }
+
+/* The "ⓘ Eyelets vs transfers" affordance sits in the stitch palette but must
+   not read as another stitch tool — it opens an explanation, not a brush. */
+.lace-guide-btn {
+  background-color: transparent;
+  border-style: dashed;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.lace-guide-btn:hover { color: var(--accent-cyan); border-color: var(--accent-cyan); }
+
+/* --- Prose inside the lace guide / doc modals --------------------------- */
+.lace-guide { user-select: text; -webkit-user-select: text; }
+.lace-guide h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-cyan);
+  margin: 20px 0 8px;
+}
+.lace-guide p { font-size: 12.5px; line-height: 1.7; margin-bottom: 10px; color: var(--text-secondary); }
+.lace-guide p strong, .lace-guide li strong { color: var(--text-primary); }
+.lace-guide-lede { color: var(--text-primary); font-size: 13.5px; }
+.lace-guide ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.lace-guide li {
+  position: relative;
+  padding-left: 16px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+}
+.lace-guide li::before {
+  content: "\2192";
+  position: absolute;
+  left: 0;
+  color: var(--accent-cyan);
+}
+.lace-guide code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-surface-elevated);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+.lace-guide-foot { border-top: 1px solid var(--border-subtle); padding-top: 12px; margin-top: 18px; }
+.lace-guide a { color: var(--accent-cyan); text-decoration: underline; }
+
+.lace-guide-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 18px;
+  font-size: 11.5px;
+}
+.lace-guide-table caption {
+  caption-side: top;
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding-bottom: 6px;
+}
+.lace-guide-table th,
+.lace-guide-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+.lace-guide-table thead th {
+  color: var(--text-primary);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom-color: var(--border-active);
+}
+.lace-guide-table tbody th { color: var(--accent-cyan); white-space: nowrap; }
+
+/* Docs link in the status bar. */
+.status-docs-link {
+  color: var(--accent-cyan);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent-cyan);
+}
+
+.status-docs-link:hover { color: var(--text-primary); border-bottom-color: var(--text-primary); }
+
 .subbar-divider {
   width: 1px;
   height: 20px;
@@ -443,6 +603,21 @@ canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* Interactive surfaces own their gestures: without this, dragging the pencil
+   would scroll/zoom the *page* instead of drawing. */
+#editor-canvas, #tanktop-canvas, #brother-canvas, #toolpath-canvas, #yarn-canvas {
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+/* The punchcard ribbon is a tall, scrollable strip — let fingers scroll it. */
+#punchcard-canvas { touch-action: pan-x pan-y; }
+
+/* Fingers, not cursors: drop the legacy 300 ms tap delay. */
+button, [role="button"], label, a, input[type="range"], input[type="checkbox"], select {
+  touch-action: manipulation;
 }
 
 /* Schedule Tab View */
@@ -553,7 +728,9 @@ canvas {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  /* Intrinsic: columns count derives from available width, never a breakpoint.
+     min(… ,100%) keeps it from overflowing containers narrower than the tile. */
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
   gap: 16px;
 }
 
@@ -939,7 +1116,7 @@ canvas {
 /* Quick Export Buttons */
 .quick-exports {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(132px, 100%), 1fr));
   gap: 8px;
   margin-top: 8px;
 }
@@ -1283,6 +1460,16 @@ footer#status-bar {
   text-transform: uppercase;
 }
 
+/* Explanatory line under a field. Deliberately not a tooltip: the hint is part of
+   the decision, and a tooltip hides it behind a hover that touch devices don't have. */
+.form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted, var(--text-secondary));
+}
+
 .form-control {
   background-color: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
@@ -1300,7 +1487,7 @@ footer#status-bar {
 /* Presets Grid in Modal */
 .presets-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
   gap: 12px;
 }
 
@@ -1462,7 +1649,16 @@ body.theme-romance .brand-title::after {
   justify-content: center;
   background: radial-gradient(ellipse at center, rgba(48, 6, 72, 0.97) 0%, rgba(10, 2, 18, 0.99) 100%);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   animation: lovePopupFadeIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  /* This overlay is the whole screen on a phone: it MUST be scrollable and
+     inset-aware, otherwise the "click here" button falls below the visible
+     box and the popup can never be dismissed. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
 }
 
 .benji-love-popup.hidden {
@@ -1483,11 +1679,14 @@ body.theme-romance .brand-title::after {
 .love-popup-content {
   position: relative;
   width: 100%;
-  height: 100%;
+  /* height:100% + overflow:hidden used to clip the card on short screens —
+     the content now sizes itself and the overlay scrolls instead. */
+  min-height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
+  flex: 1 0 auto;
 }
 
 .love-hearts-rain {
@@ -1550,9 +1749,12 @@ body.theme-romance .brand-title::after {
   background: linear-gradient(145deg, rgba(58, 10, 90, 0.95), rgba(30, 4, 54, 0.98));
   border: 2px solid rgba(244, 114, 182, 0.5);
   border-radius: 24px;
-  padding: 48px 56px;
+  /* Fluid gutter: generous on a desktop, tight on a 320 px phone. */
+  padding: clamp(20px, 5vh, 48px) clamp(18px, 5vw, 56px);
   text-align: center;
+  width: min(560px, 100%);
   max-width: 560px;
+  margin: auto; /* stays centred while scrolling instead of jumping to the top */
   box-shadow:
     0 0 80px rgba(244, 114, 182, 0.25),
     0 0 160px rgba(236, 72, 153, 0.12),
@@ -1566,9 +1768,9 @@ body.theme-romance .brand-title::after {
 }
 
 .love-popup-big-heart {
-  font-size: 64px;
+  font-size: clamp(40px, 9vh, 64px);
   display: block;
-  margin-bottom: 16px;
+  margin-bottom: clamp(8px, 1.6vh, 16px);
   animation: heartPulse 1.4s ease-in-out infinite;
   line-height: 1;
 }
@@ -1581,11 +1783,14 @@ body.theme-romance .brand-title::after {
 
 .love-popup-title {
   font-family: var(--font-ui);
-  font-size: 32px;
+  /* Fluid: the row of exclamation marks must never widen the card. */
+  font-size: clamp(19px, 5.4vw, 32px);
   font-weight: 800;
   color: #fff1f2;
   letter-spacing: -0.5px;
-  margin-bottom: 10px;
+  margin-bottom: clamp(6px, 1.4vh, 10px);
+  overflow-wrap: anywhere;
+  word-break: normal;
   background: linear-gradient(135deg, #fce7f3, #f9a8d4, #f472b6);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -1593,17 +1798,17 @@ body.theme-romance .brand-title::after {
 }
 
 .love-popup-subtitle {
-  font-size: 16px;
+  font-size: clamp(12px, 3.4vw, 16px);
   font-weight: 600;
   color: #fbcfe8;
-  margin-bottom: 14px;
+  margin-bottom: clamp(8px, 1.8vh, 14px);
 }
 
 .love-popup-msg {
-  font-size: 14px;
+  font-size: clamp(12px, 3.2vw, 14px);
   color: #e879f9;
   line-height: 1.7;
-  margin-bottom: 30px;
+  margin-bottom: clamp(14px, 4vh, 30px);
   opacity: 0.9;
 }
 
@@ -1611,20 +1816,42 @@ body.theme-romance .brand-title::after {
   background: linear-gradient(135deg, #be185d, #9d174d);
   border: 1px solid #f472b6;
   color: #fff;
-  padding: 14px 32px;
+  /* Generous, finger-sized, and never wider than the card itself. */
+  min-height: var(--tap);
+  min-width: 44px;
+  padding: clamp(10px, 2.2vh, 14px) clamp(18px, 4vw, 32px);
   border-radius: 50px;
-  font-size: 14px;
+  font-size: clamp(12.5px, 3.2vw, 14px);
   font-weight: 700;
+  line-height: 1.35;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   box-shadow: 0 4px 20px rgba(190, 24, 93, 0.4);
   letter-spacing: 0.3px;
+  overflow-wrap: anywhere;
+  -webkit-appearance: none;
 }
 
-.love-popup-close:hover {
-  transform: scale(1.06) translateY(-2px);
-  box-shadow: 0 8px 30px rgba(244, 114, 182, 0.6);
-  background: linear-gradient(135deg, #db2777, #be185d);
+/* Hover only where a real cursor exists — on touch a sticky :hover leaves the
+   button looking permanently pressed. */
+@media (hover: hover) {
+  .love-popup-close:hover {
+    transform: scale(1.06) translateY(-2px);
+    box-shadow: 0 8px 30px rgba(244, 114, 182, 0.6);
+    background: linear-gradient(135deg, #db2777, #be185d);
+  }
+}
+
+/* Finger feedback: the tap must visibly land. */
+.love-popup-close:active {
+  transform: scale(0.97);
+  box-shadow: 0 2px 10px rgba(244, 114, 182, 0.45);
+  filter: brightness(1.18);
+}
+
+.love-popup-close:focus-visible {
+  outline: 2px solid #fbcfe8;
+  outline-offset: 3px;
 }
 
 .tanktop-sidebar {
@@ -1914,3 +2141,691 @@ body.theme-romance .brand-title::after {
 /* Light theme: keep the primary button readable on white */
 html[data-theme="light"] #btn-open-export.btn-primary,
 html[data-theme="light"] .btn-action.btn-primary { color: #fff; }
+
+
+/* ============================================================================
+   RESPONSIVE LAYER — one shell, every device, both orientations
+   ----------------------------------------------------------------------------
+   Ordered widest → narrowest so the tighter tier always wins the cascade.
+   Nothing here alters the desktop presentation: every rule is either scoped
+   to a media feature (width, height, pointer, hover) or a breakpoint above
+   the largest phone/tablet.
+
+   The approach is *intrinsic* wherever a number can be derived from the space
+   available (auto-fit + minmax + clamp + min()), and only falls back to
+   breakpoints for genuine re-flow decisions (a rail turning horizontal, a
+   sidebar becoming a drawer). Intrinsic rules automatically survive browser
+   zoom, OS font scaling, split-screen, multi-window and foldable hinges —
+   cases where the CSS width lies about the real estate you have.
+
+   Tiers
+     0  always        overflow guards, drawer/backdrop defaults, ribbon scale
+     1  pointer:coarse finger ergonomics: hit targets, sliders, no 16px zoom
+     2  >=1760        desktops, ultrawides, open foldables
+     3  <=1280        slim laptop
+     4  <=1024       tablet landscape
+     5  <=900        tablet portrait — diagnostics sidebar becomes a drawer
+     6  <=760        phone landscape / large phone — rails go horizontal
+     7  <=600        phone portrait — modals become sheets, chrome goes icon-only
+     8  <=420 / 340  small phones, smartwatch-class widths
+     9  height-driven short viewports, landscape phones, installed PWA-ish boxes
+     10 hover:none / reduced-motion / forced-colors
+   ========================================================================== */
+
+/* ---- Tier 0 — safety nets that apply at every size ---------------------- */
+
+/* Flex and grid children refuse to shrink below their content by default, which
+   is the single most common cause of a panel pushing the layout sideways. */
+#workbench,
+#viewport-workspace,
+.tab-content,
+.tab-panel,
+.tab-panel > *,
+.canvas-wrapper,
+.context-toolbar,
+.tanktop-sidebar,
+.tanktop-viewport,
+.clothes-params,
+.sidebar-panel {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Long mono values (gauge numbers, toolpaths, coordinates) must wrap rather
+   than widen their column. */
+.property-value,
+.stat-value,
+.stroke-transfers,
+.instruction-step-text,
+.clothes-blurb,
+.diag-item,
+.preset-desc {
+  overflow-wrap: anywhere;
+}
+
+/* The tab strip carries 9 tabs; it has always to fit, on any width. */
+.tab-bar {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+.tab-bar::-webkit-scrollbar { display: none; }
+.tab-btn {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+/* Drawer scaffolding — inert (and invisible) until a narrow tier arms it. */
+#kx-drawer-backdrop { display: none; }
+.kx-panels-btn { display: none; }
+
+/* The punchcard ribbon is drawn taller than its wrapper on purpose (it is the
+   1:1 scale view): the CSS height must not squash it into the viewport. */
+#panel-punchcard .canvas-wrapper { overflow: auto; }
+#punchcard-canvas { height: auto; max-width: none; }
+
+
+/* ---- Tier 1 — anything touched by a finger ------------------------------ */
+
+@media (pointer: coarse) {
+  /* One extra point of type size reads far better at arm's length. */
+  html, body { font-size: 14px; }
+
+  /* WCAG 2.5.5: 44x44 hit targets, without inflating the visual design. */
+  .tab-btn { min-height: var(--tap); padding: 0 14px; }
+  .tool-btn { width: var(--tap); height: var(--tap); }
+  .tool-btn svg { width: 20px; height: 20px; }
+  .mode-btn, .btn-action, .toolbar-btn, .stitch-btn, .kx-menu-item, .clothes-item {
+    min-height: 40px;
+  }
+  .kx-hbtn { width: 40px; height: 40px; font-size: 17px; }
+  .modal-close { width: var(--tap); height: var(--tap); font-size: 26px; }
+  .num-input { min-height: 40px; }
+
+  /* iOS Safari zooms the whole page when a focused control is under 16px. */
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+  select, textarea {
+    font-size: 16px;
+  }
+
+  /* Native range thumbs are ~12px — untouchable. Rebuild them for fingers. */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 34px;
+    background: transparent;
+    accent-color: var(--accent-cyan);
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--bg-surface-elevated);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    margin-top: -11px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-cyan);
+    background: #0b1220;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.45);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--bg-surface-elevated);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-cyan);
+    background: #0b1220;
+  }
+  /* Match the ids that already ship a custom thumb, so nothing regresses. */
+  .cnc-speed-slider::-webkit-slider-thumb,
+  #brother-speed::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+    margin-top: -11px;
+    border: 2px solid var(--accent-cyan);
+    border-radius: 50%;
+    background: #0b1220;
+  }
+
+  input[type="checkbox"] { width: 22px; height: 22px; }
+  .checkbox-label { gap: 9px; }
+
+  /* Hide the drag-handle affordance where a swipe does the job. */
+  .clothes-item:hover { transform: none; }
+}
+
+
+/* ---- Tier 2 — big displays get the breathing room back ------------------ */
+
+@media (min-width: 1760px) {
+  html, body { font-size: 14px; }
+  #right-sidebar { width: 372px; }
+  .schedule-content-wrapper { padding: 26px min(9vw, 120px); }
+  #panel-tanktop.active,
+  #panel-beanie.active,
+  #panel-clothes.active { grid-template-columns: minmax(340px, 400px) minmax(0, 1fr); }
+}
+
+
+/* ---- Tier 3 — slim laptops --------------------------------------------- */
+
+@media (max-width: 1280px) {
+  header#main-header { padding: 0 10px; gap: 8px; }
+  .header-center { gap: 10px; }
+  .mode-btn { padding: 5px 9px; }
+  .btn-action { padding: 6px 9px; }
+  #right-sidebar { width: 288px; }
+  #panel-tanktop.active,
+  #panel-beanie.active,
+  #panel-clothes.active { grid-template-columns: minmax(252px, 300px) minmax(0, 1fr); }
+}
+
+
+/* ---- Tier 4 — tablet landscape ----------------------------------------- */
+
+@media (max-width: 1024px) {
+  /* The <select> is self-evident; its label is the first thing to go. */
+  .profile-picker { padding: 4px 8px; }
+  .profile-picker label { display: none; }
+  .kx-greet, .kx-days { display: none; }
+  .canvas-subbar { gap: 8px; padding: 6px 8px; }
+  #right-sidebar { width: 264px; }
+}
+
+
+/* ---- Tier 5 — the sidebar becomes a drawer ----------------------------- */
+
+@media (max-width: 900px) {
+  /* Header wraps instead of squeezing, and respects the notch. */
+  header#main-header {
+    height: auto;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 6px;
+    padding:
+      calc(7px + var(--safe-top))
+      calc(10px + var(--safe-right))
+      7px
+      calc(10px + var(--safe-left));
+  }
+  .brand-section { flex: 1 1 auto; }
+  .brand-title { font-size: 13px; }
+  .header-center {
+    order: 3;
+    flex: 1 0 100%;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+  .header-center::-webkit-scrollbar { display: none; }
+  .profile-picker, .mode-selector { flex: 0 0 auto; }
+  .header-actions { flex: 0 0 auto; gap: 6px; }
+
+  /* Diagnostics / gauge / quick-export slide in over the canvas, so the
+     workspace gets the full width a phone actually has. */
+  #right-sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(340px, 88vw);
+    height: 100%;
+    transform: translateX(103%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    border-left: 1px solid var(--border-subtle);
+    box-shadow: -18px 0 44px rgba(0, 0, 0, 0.6);
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    z-index: 1400;
+  }
+  body.kx-drawer-open #right-sidebar { transform: none; }
+
+  #kx-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(3, 7, 18, 0.62);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    z-index: 1390;
+  }
+  body.kx-drawer-open #kx-drawer-backdrop { display: block; }
+  .kx-panels-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  #panel-tanktop.active,
+  #panel-beanie.active,
+  #panel-clothes.active { grid-template-columns: minmax(0, 1fr); }
+}
+
+
+/* ---- Tier 6 — phones: the rails turn horizontal ------------------------ */
+
+@media (max-width: 760px) {
+  /* Workbench stacks, so the tool rail can sit above the canvas. */
+  #workbench { flex-direction: column; }
+
+  #left-toolbar {
+    width: auto;
+    height: auto;
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 8px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  #left-toolbar::-webkit-scrollbar { display: none; }
+  .tool-group { flex-direction: row; flex: 0 0 auto; width: auto; gap: 6px; }
+  .tool-group-title { align-self: center; padding-left: 2px; }
+
+  /* Legacy absolute context rails, if present, join the stack. */
+  .context-toolbar {
+    position: static;
+    width: auto;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* Per-tab toolbars become single-line, flick-scrollable strips. */
+  .schedule-toolbar,
+  .yarn-toolbar,
+  .punchcard-toolbar,
+  .cnc-toolbar,
+  .tanktop-toolbar,
+  .brother-toolbar {
+    min-height: 46px;
+    padding: 8px 10px;
+    gap: 8px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .schedule-toolbar::-webkit-scrollbar,
+  .yarn-toolbar::-webkit-scrollbar,
+  .punchcard-toolbar::-webkit-scrollbar,
+  .cnc-toolbar::-webkit-scrollbar,
+  .tanktop-toolbar::-webkit-scrollbar,
+  .brother-toolbar::-webkit-scrollbar { display: none; }
+  .schedule-toolbar .toolbar-group,
+  .yarn-toolbar .toolbar-group,
+  .punchcard-toolbar .toolbar-group,
+  .cnc-toolbar .toolbar-group,
+  .tanktop-toolbar .toolbar-group,
+  .brother-toolbar .toolbar-group { flex: 0 0 auto; }
+  .toolbar-btn { flex: 0 0 auto; }
+  .toolbar-divider { flex: 0 0 auto; margin: 0; height: 22px; }
+
+  /* The floating overlay becomes a full-width strip it can scroll in. */
+  .canvas-subbar {
+    left: 8px;
+    right: 8px;
+    top: 8px;
+    width: auto;
+    max-width: calc(100% - 16px);
+    gap: 8px;
+    padding: 6px 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .canvas-subbar::-webkit-scrollbar { display: none; }
+  .stitch-selector, .symmetry-controls, .dimension-control, .subbar-divider {
+    flex: 0 0 auto;
+  }
+  .cnc-controls-floating {
+    left: 8px;
+    right: 8px;
+    top: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .cnc-controls-floating::-webkit-scrollbar { display: none; }
+
+  /* Tailors: drawing on top, parameters in a scroll sheet beneath. The fr
+     split keeps the canvas usable while the (long) parameter list scrolls. */
+  #panel-tanktop.active {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(190px, 1fr) minmax(240px, 1.25fr);
+  }
+  #panel-beanie.active,
+  #panel-clothes.active {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(190px, 1fr) minmax(240px, 1.25fr);
+  }
+  .tanktop-sidebar { padding: 14px 14px calc(20px + var(--safe-bottom)); }
+
+  /* Instruction lists read as prose, so they scroll in place. */
+  #tanktop-instructions-list,
+  #beanie-instructions-list,
+  #clothes-instructions {
+    max-height: none;
+    overflow: visible;
+  }
+
+  footer#status-bar {
+    height: auto;
+    min-height: 24px;
+    padding: 3px 8px calc(3px + var(--safe-bottom));
+    font-size: 10px;
+  }
+  .status-left, .status-right { gap: 10px; overflow-x: auto; scrollbar-width: none; }
+  .status-left::-webkit-scrollbar, .status-right::-webkit-scrollbar { display: none; }
+  .status-left > span, .status-right > span { flex: 0 0 auto; white-space: nowrap; }
+}
+
+
+/* ---- Tier 7 — phone portrait: sheets and icon-only chrome -------------- */
+
+@media (max-width: 600px) {
+  /* Modals take the whole screen; a 580px card is meaningless here. */
+  .modal-backdrop {
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
+  }
+  .modal-card {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: inherit;
+    padding: 12px 14px;
+    padding-top: calc(12px + var(--safe-top));
+  }
+  .modal-body { padding: 14px; gap: 14px; }
+  .modal-footer {
+    position: sticky;
+    bottom: 0;
+    flex-wrap: wrap;
+    padding: 12px 14px calc(12px + var(--safe-bottom));
+  }
+  .modal-footer .btn-action { flex: 1 1 44%; justify-content: center; }
+
+  /* Header actions collapse to glyph-only; every one already has a title and
+     an icon, so nothing is lost but width. */
+  .header-actions .btn-action {
+    font-size: 0;
+    gap: 0;
+    width: var(--tap);
+    min-height: var(--tap);
+    padding: 0;
+    justify-content: center;
+  }
+  .header-actions .btn-action > svg { width: 19px; height: 19px; }
+  .header-actions #kx-search-btn { font-size: 0; }
+  #kx-search-btn::before { content: "\2315"; font-size: 19px; line-height: 1; }
+
+  /* Single-column everywhere the reader scrolls, never scans sideways. */
+  .presets-grid { grid-template-columns: minmax(0, 1fr); }
+  .schedule-content-wrapper { padding: 12px 12px calc(24px + var(--safe-bottom)); }
+  .schedule-list.view-timeline .schedule-item { min-width: min(76vw, 220px); }
+  .schedule-stats-panel, .schedule-header-card { padding: 12px 14px; }
+  .property-row { font-size: 12px; }
+
+  /* Toasts belong to the thumb, not the notch. */
+  .toast-container {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    gap: 8px;
+    padding: 0 10px calc(10px + var(--safe-bottom));
+  }
+
+  .clothes-nav { max-height: min(38dvh, 300px); }
+  #status-profile { display: none; }
+}
+
+
+/* ---- Tier 8 — small phones and cover screens --------------------------- */
+
+@media (max-width: 420px) {
+  html, body { font-size: 13.5px; }
+  .brand-version { display: none; }
+  .tab-btn { padding: 0 10px; font-size: 11px; }
+  .mode-btn { padding: 5px 7px; font-size: 10px; }
+  .stat-value { font-size: 16px; }
+}
+
+@media (max-width: 340px) {
+  /* Watch-class / dual-fold cover width: keep it functional, not pretty. */
+  .brand-title { font-size: 11px; }
+  .tab-btn { padding: 0 8px; }
+  .quick-exports { grid-template-columns: minmax(0, 1fr); }
+}
+
+
+/* ---- Tier 9 — height is the constraint, not width ---------------------- */
+
+/* Landscape phones (and laptops with a short window) must not spend half the
+   screen on chrome; the canvas is the point. */
+@media (max-height: 560px) {
+  header#main-header { padding-top: calc(4px + var(--safe-top)); min-height: 0; }
+  .kx-greet, .kx-days, .kx-avatar, .brand-version { display: none; }
+  .tab-bar { height: 32px; }
+  .tab-btn { min-height: 32px; font-size: 11px; }
+  footer#status-bar { min-height: 20px; font-size: 9.5px; }
+  .love-popup-inner { padding: 14px 18px; }
+  .love-popup-big-heart { display: none; }
+  .love-popup-msg { margin-bottom: 10px; }
+}
+
+@media (max-height: 420px) and (orientation: landscape) {
+  #status-bar .status-right { display: none; }
+  .canvas-subbar { top: 4px; padding: 3px 6px; }
+}
+
+/* Portrait tablets and phones: the drawer should never exceed the visible box. */
+@media (orientation: portrait) and (max-width: 900px) {
+  #right-sidebar { width: min(380px, 92vw); }
+}
+
+
+/* ---- Tier 10 — input models and user preferences ----------------------- */
+
+/* No hover capability: stop painting hover states that stick after a tap,
+   and give the press something honest to show instead. */
+@media (hover: none) {
+  .preset-card:hover,
+  .btn-action:hover,
+  .toolbar-btn:hover,
+  .clothes-item:hover,
+  .kx-hbtn:hover,
+  .love-popup-close:hover,
+  body.theme-romance .btn-action:hover,
+  body.theme-romance .toolbar-btn:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  .btn-action:active, .toolbar-btn:active, .tool-btn:active,
+  .tab-btn:active, .stitch-btn:active, .clothes-item:active,
+  .kx-hbtn:active, .love-popup-close:active, .kx-btn:active {
+    transform: scale(0.96);
+    filter: brightness(1.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* The heart rain is pure motion; park it and keep the message. */
+  .love-hearts-rain, .love-sparkles { display: none; }
+}
+
+/* Windows High Contrast / Forced Colors: borders carry the structure. */
+@media (forced-colors: active) {
+  .tab-btn.active, .mode-btn.active, .tool-btn.active, .stitch-btn.active {
+    outline: 2px solid Highlight;
+  }
+  .modal-card, .kx-modal, .benji-love-popup { border: 1px solid CanvasText; }
+}
+
+/* ============================================================================
+   PWA CHROME — install affordance, connection status, update banner
+   These elements are injected by js/features/pwa.js, so nothing here may depend
+   on markup being present: each rule is scoped to its own class and every one of
+   them has a [hidden] escape, because a half-supported install prompt must be
+   invisible rather than broken.
+   ========================================================================== */
+.net-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.net-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-emerald);
+  box-shadow: 0 0 6px var(--accent-emerald);
+}
+
+.net-status[hidden] { display: none; }
+
+.net-status--installed { color: #6ee7b7; border-color: rgba(52, 211, 153, 0.45); }
+
+.net-status--offline {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.net-status--offline::before { background: #f87171; box-shadow: none; }
+
+#btn-install-app {
+  border-color: rgba(52, 211, 153, 0.5);
+  color: #6ee7b7;
+}
+
+#btn-install-app:hover {
+  background: rgba(52, 211, 153, 0.14);
+  border-color: var(--accent-emerald);
+}
+
+#btn-install-app.hidden { display: none; }
+
+.pwa-banner {
+  position: fixed;
+  z-index: 10060;
+  top: calc(10px + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100vw - 24px));
+  padding: 9px 8px 9px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--accent-cyan);
+  background: linear-gradient(135deg, #0b2a45, var(--bg-surface));
+  color: var(--text-primary);
+  box-shadow: var(--shadow-panel);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pwa-banner[hidden] { display: none; }
+
+.pwa-banner-text { flex: 1 1 auto; min-width: 0; }
+
+.pwa-banner-action {
+  flex: 0 0 auto;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  color: #04121f;
+  background: var(--accent-cyan);
+  border: 1px solid var(--accent-cyan);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.pwa-banner-action:hover { filter: brightness(1.1); }
+
+.pwa-banner-close {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  min-width: 28px;
+  min-height: 28px;
+}
+
+.pwa-banner-close:hover { color: var(--text-primary); }
+
+/* On a phone the thumb is at the bottom and the notch is at the top. */
+@media (max-width: 720px) {
+  .pwa-banner {
+    top: auto;
+    bottom: calc(10px + var(--safe-bottom));
+    left: calc(12px + var(--safe-left));
+    right: calc(12px + var(--safe-right));
+    transform: none;
+    max-width: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .pwa-banner, .net-status, #btn-install-app { border: 1px solid CanvasText; }
+  .pwa-banner-action { background: ButtonFace; color: ButtonText; }
+}

@@ -157,6 +157,8 @@ export class TankTopCanvas {
 
   setupEvents() {
     this.canvas.style.cursor = 'grab';
+    // Long-press on a finger should never summon the browser context menu.
+    this.canvas.addEventListener('contextmenu', e => e.preventDefault());
 
     this.canvas.addEventListener('wheel', e => {
       e.preventDefault();
@@ -168,7 +170,18 @@ export class TankTopCanvas {
     let isDragging = false;
     let startMouse = { x: 0, y: 0 };
 
-    this.canvas.addEventListener('mousedown', e => {
+    // Pointer Events: one code path for mouse, touch and pen.
+    this._pointers = new Map();
+    this._pinch = null;
+
+    this.canvas.addEventListener('pointerdown', e => {
+      this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this._pointers.size >= 2) {
+        this._beginPinch();
+        return;
+      }
+      try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* window listeners still cover it */ }
+
       const paintIntent = this.drawMode && !e.altKey && (e.button === 0 || e.button === 2);
       if (paintIntent) {
         this._painting = true;
@@ -181,7 +194,12 @@ export class TankTopCanvas {
       this.canvas.style.cursor = 'grabbing';
     });
 
-    window.addEventListener('mousemove', e => {
+    window.addEventListener('pointermove', e => {
+      if (this._pointers.has(e.pointerId)) this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this._pinch) {
+        this._updatePinch();
+        return;
+      }
       if (this._painting) {
         this.paintAt(e.clientX, e.clientY, this._paintValue);
         return;
@@ -194,15 +212,54 @@ export class TankTopCanvas {
       }
     });
 
-    window.addEventListener('mouseup', () => {
+    const endPointer = e => {
+      this._pointers.delete(e.pointerId);
+      if (this._pinch && this._pointers.size < 2) this._pinch = null;
       this._painting = false;
       isDragging = false;
       this.canvas.style.cursor = this.drawMode ? 'crosshair' : 'grab';
-    });
+    };
+    window.addEventListener('pointerup', endPointer);
+    window.addEventListener('pointercancel', endPointer);
 
     window.addEventListener('resize', () => {
       this.resize();
     });
+  }
+
+  /** Two fingers: stop painting/panning and navigate instead. */
+  _beginPinch() {
+    this._painting = false;
+    const [a, b] = [...this._pointers.values()];
+    this._pinch = {
+      dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+    };
+    this.canvas.style.cursor = 'grabbing';
+  }
+
+  /** Pinch distance → zoom about the fingers; midpoint drift → pan. */
+  _updatePinch() {
+    const pts = [...this._pointers.values()];
+    if (pts.length < 2 || !this._pinch) return;
+    const [a, b] = pts;
+    const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+
+    this.panX += mid.x - this._pinch.mid.x;
+    this.panY += mid.y - this._pinch.mid.y;
+
+    const next = Math.max(0.3, Math.min(2.5, this.zoom * (dist / this._pinch.dist)));
+    // Keep the point under the fingers fixed while scaling.
+    const rect = this.canvas.getBoundingClientRect();
+    const px = mid.x - rect.left;
+    const py = mid.y - rect.top;
+    this.panX += (px - this.panX) * (1 - next / this.zoom);
+    this.panY += (py - this.panY) * (1 - next / this.zoom);
+    this.zoom = next;
+
+    this._pinch = { dist, mid };
+    this.render();
   }
 
   resize() {

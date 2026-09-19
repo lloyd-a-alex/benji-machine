@@ -12,6 +12,34 @@
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
 
+/**
+ * mulberry32 — a tiny seeded PRNG.
+ *
+ * Every stochastic generator in this file takes a `seed`, because a pattern tool
+ * whose output changes every click is not a design tool: you cannot go back to
+ * the motif you liked two minutes ago, and a screenshot of the gallery is not a
+ * reproducible artifact. Same seed, same card, on every machine, forever.
+ *
+ * @param {number} seed integer seed; 0 / undefined falls back to a fixed constant
+ * @returns {() => number} next() in [0, 1)
+ */
+export function makeRng(seed) {
+  let state = (Number.isFinite(seed) ? seed : 0) >>> 0;
+  if (state === 0) state = 0x9e3779b9;
+  return function next() {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** A fresh, non-reproducible seed — for when you *want* to roll the dice. */
+export function randomSeed() {
+  return (Math.floor(Math.random() * 0xffffffff) >>> 0) || 1;
+}
+
 export class MathPatternGenerators {
   /**
    * Gray-Scott Reaction-Diffusion PDE Solver on Toroidal Domain
@@ -21,7 +49,8 @@ export class MathPatternGenerators {
    *   du/dt = D_u * Delta(u) - u * v^2 + F * (1 - u)
    *   dv/dt = D_v * Delta(v) + u * v^2 - (F + k) * v
    */
-  static generateReactionDiffusion(rows, cols, preset = 'labyrinth', iterations = 180) {
+  static generateReactionDiffusion(rows, cols, preset = 'labyrinth', iterations = 180, seed = 0) {
+    const rand = makeRng(seed);
     const presets = {
       labyrinth: { Du: 0.2097, Dv: 0.105, F: 0.039, k: 0.058 },
       spots:     { Du: 0.2097, Dv: 0.105, F: 0.035, k: 0.065 },
@@ -49,7 +78,7 @@ export class MathPatternGenerators {
       for (let c = 0; c < cols; c++) {
         const d = Math.sqrt((r - midR) ** 2 + (c - midC) ** 2);
         if (d < 4 || (r % 6 === 0 && c % 6 === 0)) {
-          v[r * cols + c] = 0.8 + Math.random() * 0.2;
+          v[r * cols + c] = 0.8 + rand() * 0.2;
           u[r * cols + c] = 0.2;
         }
       }
@@ -158,12 +187,13 @@ export class MathPatternGenerators {
    * Uses periodic boundary distance metric to eliminate edge seams:
    *   d_torus(p1, p2) = sqrt( min(|dx|, W-|dx|)^2 + min(|dy|, H-|dy|)^2 )
    */
-  static generateToroidalVoronoi(rows, cols, numSeedPoints = 14, wallThickness = 1.2) {
+  static generateToroidalVoronoi(rows, cols, numSeedPoints = 14, wallThickness = 1.2, seed = 0) {
+    const rand = makeRng(seed);
     const seeds = [];
     for (let i = 0; i < numSeedPoints; i++) {
       seeds.push({
-        x: Math.random() * cols,
-        y: Math.random() * rows
+        x: rand() * cols,
+        y: rand() * rows
       });
     }
 
@@ -606,8 +636,13 @@ export class MathPatternGenerators {
   /**
    * Moiré Interference Pattern
    * Creates optical interference patterns from overlapping grids
+   *
+   * The identifier is ASCII on purpose. A live accent in a method name works in
+   * ES modules but breaks the moment the file passes through a minifier, a
+   * different filesystem normalisation form (NFC vs NFD), or a search that types
+   * "Moire". The accented spelling is kept as an alias so nothing old breaks.
    */
-  static generateMoiréPattern(rows, cols, angle1 = 0, angle2 = 0.1, frequency = 0.2) {
+  static generateMoirePattern(rows, cols, angle1 = 0, angle2 = 0.1, frequency = 0.2) {
     const matrix = [];
     
     for (let r = 0; r < rows; r++) {
@@ -629,5 +664,10 @@ export class MathPatternGenerators {
     }
     
     return matrix;
+  }
+
+  /** Legacy accented spelling — same function, kept so existing callers hold. */
+  static generateMoiréPattern(...args) {
+    return MathPatternGenerators.generateMoirePattern(...args);
   }
 };

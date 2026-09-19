@@ -818,19 +818,22 @@ export const PATTERN_PRESETS = [
     }
   },
 
-  // ─── Reversible Double-Bed Jacquard (for the ribber) ────────────────────────
+  // ─── Two-face (reversible) Fair Isle ────────────────────────────────────────
   // Engineered to sit inside a single 24-stitch punchcard AND tile edge-to-edge
-  // with no visible seam, with balanced A/B stitch counts so both faces read the
-  // same motif when knit as a double-bed (interlock / rib-jacquard) fabric.
+  // with no visible seam, with balanced A/B stitch counts so both faces read a
+  // motif. Honest caveat: on your SINGLE-bed machine these knit stranded, with
+  // floats trapped between the two faces — a genuinely reversible fabric. A true
+  // reversible rib/interlock additionally needs a second (double) needle bed.
+  // The `reversible_double_bed_*` ids stay for saved-project compatibility.
 
   {
     id: 'reversible_double_bed_chevron',
-    name: 'Reversible Double-Bed Chevron',
-    category: 'Reversible \u00b7 Ribber',
+    name: 'Two-Face Chevron (Reversible)',
+    category: 'Reversible \u00b7 Two-Face',
     rows: 24,
     cols: 24,
     mode: 'fair_isle',
-    description: 'Interlock-safe 2-colour chevron that fits the 24-stitch card and repeats seamlessly. Balanced counts make it read on both sides \u2014 perfect for a reversible beanie brim or scarf.',
+    description: 'Balanced 2-colour chevron that fits the 24-stitch card and repeats seamlessly, so both faces read a motif. Knits stranded on a single bed (floats trapped inside); a true reversible rib would need a second bed.',
     generate: (rows, cols) => {
       const W = 12, H = 12; // both divide 24 -> seamless tiling
       const matrix = [];
@@ -849,12 +852,12 @@ export const PATTERN_PRESETS = [
 
   {
     id: 'reversible_double_bed_diamond',
-    name: 'Reversible Double-Bed Diamond',
-    category: 'Reversible \u00b7 Ribber',
+    name: 'Two-Face Diamond Lattice (Reversible)',
+    category: 'Reversible \u00b7 Two-Face',
     rows: 24,
     cols: 24,
     mode: 'fair_isle',
-    description: 'Nested diamond lattice on an 8x8 repeat (x3 across the 24 needles). Colour-symmetric vertically, so the wrong side mirrors the right when worked double-bed.',
+    description: 'Nested diamond lattice on an 8x8 repeat (x3 across the 24 needles), colour-symmetric vertically so the wrong side mirrors the right. Stranded on a single bed; work it double-bed if you want rib instead of floats.',
     generate: (rows, cols) => {
       const S = 8;
       const matrix = [];

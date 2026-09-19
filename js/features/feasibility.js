@@ -1,5 +1,5 @@
 /**
- * KnitCAD — Feasibility Advisor.
+ * KNITCAT — Feasibility Advisor.
  *
  * A small expert system that reads the ACTUAL pattern in the editor and the
  * constraints of the SELECTED machine, then explains — in plain language — every
@@ -13,19 +13,25 @@
  *   fair_isle : a run of punched cells (1) is a carried float on the reverse
  *   slip      : a run of slipped cells   (0) is the float (yarn carried behind)
  *   tuck      : a long VERTICAL run of tucked cells (0) is the real risk (bulk)
+ *
+ * Needle beds matter more than anything else here, so the advisor reports them:
+ * a SINGLE-bed machine (Brother KH-830, Silver Reed SK-280, Toyota, Brother
+ * Chunky) transfers a loop from one needle to its neighbour in the SAME bed,
+ * which is exactly the model LaceCompiler schedules. A DOUBLE-bed machine
+ * (Passap Duo 80 / E6000, or a Brother with a ribber) moves loops BETWEEN two
+ * opposed beds instead, so its transfer timing cannot be read off a single-bed
+ * schedule. `profile.beds` is the data; the advisories below are the prose.
  */
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
+import { profileLimits } from '../machine/profiles.js';
 
-// A float longer than this many needles will snag / loop out on a knitting pass.
-const MAX_FLOAT = 7;
-// Longer than this even for a chunky gauge where the yarn bridges less far.
-const MAX_FLOAT_BULKY = 5;
-
+// Float and tuck limits are read from the machine profile and NOWHERE else.
+// This file used to carry its own copy (7 needles, 5 for chunky) while the
+// diagnostics panel said 9 — so the app contradicted itself about the very same
+// card, which is worse than saying nothing at all.
 function maxFloatFor(profile) {
-  // profiles expose needle spacing as pitchX (mm); bulkier gauges bridge less far.
-  const pitch = (profile && profile.pitchX) || 4.5;
-  return pitch >= 6 ? MAX_FLOAT_BULKY : MAX_FLOAT;
+  return profileLimits(profile).maxFloatNeedles;
 }
 
 function runsAbove(line, want, limit) {
@@ -42,7 +48,8 @@ const PHIL = {
   pareto: 'The Pareto Principle — a handful of trouble spots cause most of the dropped stitches.',
   postel: 'Postel’s Law — be conservative about what you send to the machine.',
   peakEnd: 'The Peak-End Rule — a clean edge is what people remember about a fabric.',
-  pragnanz: 'The Law of Prägnanz — a repeat that resolves simply reads as intentional.'
+  pragnanz: 'The Law of Prägnanz — a repeat that resolves simply reads as intentional.',
+  mapTerritory: 'The map is not the territory — a schedule built for one needle bed does not describe a two-bed machine.'
 };
 
 /**
@@ -59,13 +66,19 @@ export function createFeasibilityAdvisor(app) {
     if (!ed || !profile) return issues;
     const M = matrix();
     const rows = M.length, cols = M[0] ? M[0].length : 0;
-    const limit = maxFloatFor(profile);
+    const limits = profileLimits(profile);
+    const limit = limits.maxFloatNeedles;
+    const tuckLimit = limits.maxTuckLoops;
 
     // ── empty canvas ────────────────────────────────────────────────────────
     const any = M.some(r => r.some(v => mode === 'lace' ? v !== STITCH_TYPE.KNIT && v !== 'K' && v !== 0 : v === 1));
     if (!any && mode !== 'lace') {
       issues.push(mk('info', 'Blank card',
         'Nothing is punched, so the machine will just knit plain rows.',
+        PHIL.parsimony, null));
+    } else if (!any && mode === 'lace') {
+      issues.push(mk('info', 'No lace stitches yet',
+        'This card is all plain knit, so there is nothing for the lace carriage to transfer. Paint eyelets (yarnovers) or directional transfers to start the openwork.',
         PHIL.parsimony, null));
     }
 
@@ -75,7 +88,18 @@ export function createFeasibilityAdvisor(app) {
       issues.push(mk('error', `Too tall for ${profile.name}`,
         `This machine holds ${maxRows} rows; your card is ${rows}. The bottom would never be read.`,
         PHIL.postel,
-        { label: `Trim to ${maxRows} rows`, safe: true, run: () => ed.setDimensions(Math.min(maxRows, 240), cols) }));
+        { label: `Trim to ${maxRows} rows`, safe: true, run: () => ed.setDimensions(maxRows, cols) }));
+    }
+
+    // ── width over the needle bed ───────────────────────────────────────────
+    // The one limit no amount of patience gets around: a card wider than the bed
+    // has columns the carriage can never reach. Imported art and oversized
+    // presets hit this constantly.
+    if (cols > limits.maxNeedles) {
+      issues.push(mk('error', `Wider than the ${profile.name} bed`,
+        `This bed has ${limits.maxNeedles} needles; your card is ${cols} columns across. Everything past needle ${limits.maxNeedles} is never read.`,
+        PHIL.postel,
+        { label: `Trim to ${limits.maxNeedles} columns`, safe: true, run: () => ed.setDimensions(rows, limits.maxNeedles) }));
     }
 
     if (mode === 'fair_isle') {
@@ -97,16 +121,23 @@ export function createFeasibilityAdvisor(app) {
           { label: 'Knit a stitch to catch each float', safe: true, run: () => catchFloats(M, 0, limit) }));
       }
     } else if (mode === 'tuck') {
-      let tall = 0;
+      // Tuck holds a needle's loop over extra rows. The failure is VERTICAL (loop
+      // stacking into a lump), not the horizontal float that fair isle and slip
+      // care about — so measure the tallies, per column.
+      let worst = 0, columnsOver = 0;
       for (let c = 0; c < cols; c++) {
         let cur = 0;
-        for (let r = 0; r < rows; r++) { if (M[r][c] === 0) { cur++; if (cur > limit) tall++; else if (cur === limit + 1) tall++; } else cur = 0; }
+        let tall = 0;
+        for (let r = 0; r < rows; r++) {
+          if (M[r][c] === 0) { cur++; if (cur > tall) tall = cur; } else cur = 0;
+        }
+        if (tall > tuckLimit) { columnsOver++; worst = Math.max(worst, tall); }
       }
-      if (tall) {
-        issues.push(mk('warn', 'Long vertical tuck runs',
-          `Holding a needle in tuck for more than ${limit} rows builds a bulky lump that can pop off the bed.`,
+      if (columnsOver) {
+        issues.push(mk('warn', `${columnsOver} column${columnsOver > 1 ? 's' : ''} tuck for up to ${worst} rows`,
+          `Holding a needle in tuck for more than ${tuckLimit} rows stacks loops into a bulky lump that can pop off the bed.`,
           PHIL.pareto,
-          { label: 'Knit a row through long tucks', safe: true, run: () => breakTucks(M, limit) }));
+          { label: 'Knit a row through long tucks', safe: true, run: () => breakTucks(M, tuckLimit) }));
       }
     } else if (mode === 'lace') {
       // Surface the compiler's own physical diagnostics as actionable advice.
@@ -123,6 +154,23 @@ export function createFeasibilityAdvisor(app) {
           'The lace carriage does not feed yarn, so plain knit rows are inserted after every transfer pass — keep them.',
           PHIL.parsimony, null));
       }
+    }
+
+    // ── needle-bed model: single bed vs double bed ───────────────────────────
+    // The decompiler moves loops between neighbouring needles in ONE bed. If the
+    // selected machine has two opposed beds, say so plainly rather than letting
+    // the pass list imply it is that machine's real timing.
+    if (profile.beds === 2) {
+      issues.push(mk('warn', `${profile.name} has two needle beds`,
+        'A transfer on this machine moves a loop from the front bed to the back bed. The schedule below was built for a single bed, where transfers step sideways to the next needle — so treat it as a stranded single-bed drill, not as this machine’s true transfer timing.',
+        PHIL.mapTerritory,
+        // Deliberately NOT `safe`: switching machines is a preference, so it must
+        // never be swept up by "Fix all". The user clicks it themselves.
+        { label: 'Switch to Brother KH-830 (single bed)', safe: false, run: () => selectProfile('brother_standard_24') }));
+    } else if (mode === 'lace') {
+      issues.push(mk('info', 'Modelled as a single needle bed',
+        'Every transfer here hands a loop to its neighbour on the same bed — which is what a Brother KH-830 or Silver Reed lace carriage physically does. Double-bed machines (Passap, ribbers) hand loops across to a second bed instead.',
+        PHIL.mapTerritory, null));
     }
 
     // ── density ───────────────────────────────────────────────────────────────
@@ -151,6 +199,13 @@ export function createFeasibilityAdvisor(app) {
   }
 
   // ── safe mutation helpers (each mutates the live matrix, then refreshes) ──
+  function selectProfile(id) {
+    // Drive the same path a human would: change the <select>, fire 'change'.
+    const sel = document.getElementById('profile-select');
+    if (!sel) return;
+    sel.value = id;
+    sel.dispatchEvent(new Event('change'));
+  }
   function commit() {
     if (app.editor.saveState) app.editor.saveState();
     if (app.editor.render) app.editor.render();

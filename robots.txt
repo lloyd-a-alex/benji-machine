@@ -1,0 +1,9 @@
+# KNITCAT — knitting machine CAD/CAM & lace decompiler studio
+# https://lloyd-a-alex.github.io/benji-machine/
+# Everything here is public by design: allow all crawlers, and point them at the
+# sitemap so the app and the long-tail lace guide get discovered on their own.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://lloyd-a-alex.github.io/benji-machine/sitemap.xml

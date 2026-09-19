@@ -1,14 +1,14 @@
 /**
- * KnitCAD — Clothes Catalog & generic garment planner (browser-free + testable).
+ * KNITCAT — Clothes Catalog & generic garment planner (browser-free + testable).
  *
  * One place that knows how to turn body measurements + a measured gauge into a
  * real machine-knitting plan for every kind of garment — not just the beanie and
  * the tank top. Each garment is a small declarative recipe; the engine computes
  * cast-on, rib, body, and shaping and emits round-by-round / row-by-row steps.
  *
- * Advanced parameters (flagged `advanced:true`) are meant for the designer and
- * stay hidden from the main UI until the admin key unlocks them — the app decides
- * what to show, this file just describes what exists.
+ * Parameters flagged `advanced:true` are finer-fit controls. They are no longer
+ * hidden behind the designer key — the UI shows every knit control to everyone;
+ * the flag just groups the fiddly ones. This file only describes what exists.
  */
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));

@@ -3,18 +3,19 @@
  * Main Application Orchestrator & State Controller
  */
 
-import { MACHINE_PROFILES, calculateCardDimensions } from './machine/profiles.js';
+import { MACHINE_PROFILES, calculateCardDimensions, profileLimits, bedNeedleCapacity } from './machine/profiles.js';
 import { STITCH_TYPE } from './math/knit-topology.js';
 import { LaceCompiler, CARRIAGE_TYPE, DIRECTION } from './compiler/lace-decompiler.js';
 import { CanvasEditor } from './ui/canvas-editor.js';
 import { YarnSimulator } from './ui/yarn-simulator.js';
 import { ToolpathViewer } from './ui/toolpath-viewer.js';
-import { MathPatternGenerators } from './generators/math-patterns.js';
+import { MathPatternGenerators, randomSeed } from './generators/math-patterns.js';
 import { ImageProcessor } from './importers/image-processor.js';
 import { CncGcodeExporter } from './exporters/cnc-gcode.js';
 import { CadDxfExporter } from './exporters/cad-dxf.js';
 import { VectorSvgExporter } from './exporters/vector-svg.js';
 import { FormatsExporter } from './exporters/formats-dak.js';
+import { readProject } from './project/kcard.js';
 import { PATTERN_PRESETS } from './presets/preset-library.js';
 import { TankTopCanvas } from './ui/tank-top-canvas.js';
 import { BeanieEngine } from './tailor/beanie-engine.js';
@@ -26,6 +27,11 @@ import { initSound, fx } from './features/sound.js';
 import { initCommandPalette } from './features/command-palette.js';
 import { initAdmin } from './features/admin.js';
 import { createFeasibilityAdvisor } from './features/feasibility.js';
+import { initPwa } from './features/pwa.js';
+import { initDataPanel } from './features/data-panel.js';
+import { initShare, incomingShareDocument } from './features/share.js';
+import { readShareUrl, decodeCard, stripShareUrl } from './project/url-state.js';
+import { createFileBridge } from './features/fs-access.js';
 import { ClothesEngine, GARMENTS, CATEGORIES } from './tailor/clothes-catalog.js';
 
 class KnitApp {
@@ -36,6 +42,10 @@ class KnitApp {
     this.romanceMode = true; // Always on — this machine is made for Benji ♥
     this.punchcardViewMode = 'standard';
     this.notifications = new NotificationCenter('toast-container');
+    // Descriptive fields for the project document. The metadata editor writes them;
+    // autosave, versions and backups all carry the same object, so a restored card
+    // comes back with its name and notes rather than as an anonymous grid.
+    this.projectMeta = { name: null, author: null, notes: null };
 
     // Safety layer first: canvas polyfill + global error boundary so a single
     // failure anywhere can never silently freeze the whole app.
@@ -48,19 +58,19 @@ class KnitApp {
     try {
       this.initDOM();
     } catch (e) {
-      console.error('[KnitCAD] initDOM error:', e);
+      console.error('[KNITCAT] initDOM error:', e);
     }
 
     try {
       this.initComponents();
     } catch (e) {
-      console.error('[KnitCAD] initComponents error:', e);
+      console.error('[KNITCAT] initComponents error:', e);
     }
 
     try {
       this.initEvents();
     } catch (e) {
-      console.error('[KnitCAD] initEvents error:', e);
+      console.error('[KNITCAT] initEvents error:', e);
     }
 
     // Personalization + UX extras. Fully contained: if it ever fails, the core
@@ -77,6 +87,48 @@ class KnitApp {
     runGuarded('Clothes catalogue', () => { this.clothes = new ClothesEngine(); this._activeGarment = null; this._initClothesUI(); });
     runGuarded('Command palette', () => { this.palette = initCommandPalette({ getActions: () => this._paletteActions() }); });
 
+    // Install / offline / launched files. Must come after the editor exists, because
+    // a .kcard handed over by the operating system loads immediately.
+    runGuarded('PWA layer', () => {
+      this.pwa = initPwa({
+        notifier: this.notifications,
+        onIntent: intent => this._handleLaunchIntent(intent),
+        onFile: file => this.loadProjectFile(file)
+      });
+    }, { notifier: this.notifications });
+
+    // Autosave, crash recovery, versions, recents, backup. Opening IndexedDB is
+    // async, so the panel resolves later; `settle()` runs at the end of
+    // initComponents, once there is an editor to hand a recovered card to.
+    this.dataPromise = null;
+    runGuarded('Work & backup', () => {
+      this.dataPromise = initDataPanel({
+        notifier: this.notifications,
+        snapshot: () => this._projectSnapshot(),
+        applyDocument: (doc, label) => this.loadProjectText(doc, label)
+      }).catch(err => {
+        console.error('[KNITCAT] data panel unavailable:', err);
+        return null;
+      });
+    }, { notifier: this.notifications });
+
+    // Share links, QR codes and the native sheet. Needs no storage, so it goes up
+    // straight away; the File System Access bridge waits for the IndexedDB driver,
+    // because a file handle can only survive in a store that keeps live objects.
+    this.share = null;
+    this.fileBridge = null;
+    /** A `#p=…` payload handed over by the share target, waiting for an editor. */
+    this._incomingShareCode = null;
+    runGuarded('Share & links', () => {
+      this.share = initShare({
+        notifier: this.notifications,
+        snapshot: () => this._projectSnapshot(),
+        applyDocument: (doc, label) => this.loadProjectText(doc, label),
+        saveFile: () => this.saveProject(),
+        fileBridge: () => this.fileBridge
+      });
+    }, { notifier: this.notifications });
+
     // Show the Benji love popup ONCE per browser (not on every refresh).
     // It stays reachable again via the "Show love letter" command in the palette.
     if (!this._lovePopupSeen()) {
@@ -89,6 +141,8 @@ class KnitApp {
   }
 
   _lovePopupSeen() {
+    // Storage keys keep their historic `knitcad.` prefix on purpose: renaming them
+    // would silently wipe a returning reader's letter, theme and anniversary.
     try { return localStorage.getItem('knitcad.lovePopupSeen') === '1'; } catch (_) { return false; }
   }
   _markLovePopupSeen() {
@@ -131,9 +185,11 @@ class KnitApp {
       exportModal: document.getElementById('export-modal')
     };
 
-    // Populate profile selector
+    // Populate profile selector. The needle-bed count is spelled into every label:
+    // it is the single most consequential difference between these machines, and
+    // it used to be buried in the description (see js/machine/profiles.js).
     this.elements.profileSelect.innerHTML = Object.values(MACHINE_PROFILES)
-      .map(p => `<option value="${p.id}">${p.name}</option>`)
+      .map(p => `<option value="${p.id}">${p.name} \u00b7 ${p.beds === 2 ? 'double bed' : 'single bed'}</option>`)
       .join('');
   }
 
@@ -198,8 +254,24 @@ class KnitApp {
         
         // Initialize component-dependent event listeners
         this.initComponentEvents();
+
+        // Only now can a recovered card be handed to an editor that exists.
+        this.dataPromise?.then(async panel => {
+          this.dataPanel = panel || null;
+          if (panel) this._bindFileSystem(panel);
+          // A `#p=…` link in the address bar is an explicit request, so it outranks
+          // the quiet background resume — but the card that was on the screen must
+          // not be lost behind it, hence the version.
+          const incoming = this._consumeIncomingShare();
+          if (!panel) return null;
+          if (incoming.found && incoming.ok && panel.pendingAutosave()) {
+            await panel.keepVersion(panel.pendingAutosave(), 'Card from before the link you opened');
+          }
+          return panel.settle({ ignoreAutosave: incoming.found && incoming.ok });
+        }).catch(err => console.error('[KNITCAT] could not settle autosave:', err));
+        if (!this.dataPromise) this._consumeIncomingShare();
       } catch (e) {
-        console.error('[KnitCAD] Component initialization error:', e);
+        console.error('[KNITCAT] Component initialization error:', e);
       }
     };
 
@@ -214,7 +286,7 @@ class KnitApp {
   initComponentEvents() {
     // Status bar tracking - only if editor is ready
     if (this.editor && this.editor.canvas) {
-      this.editor.canvas.addEventListener('mousemove', () => {
+      this.editor.canvas.addEventListener('pointermove', () => {
         const hc = this.editor.hoverCell;
         if (hc && hc.r >= 0 && hc.c >= 0) {
           this.elements.statusCoords.textContent = `Row: ${hc.r + 1} | Needle: ${hc.c + 1}`;
@@ -224,40 +296,10 @@ class KnitApp {
       });
     }
 
-    // Keyboard shortcuts that depend on editor
-    window.addEventListener('keydown', e => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-      if (!this.editor) return;
-
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        if (e.shiftKey) this.editor.redo();
-        else this.editor.undo();
-        e.preventDefault();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-        this.editor.redo();
-        e.preventDefault();
-      } else if (e.key === 'p' || e.key === 'b') {
-        document.querySelector('[data-tool="pencil"]')?.click();
-      } else if (e.key === 'e') {
-        document.querySelector('[data-tool="eraser"]')?.click();
-      } else if (e.key === 'l') {
-        document.querySelector('[data-tool="line"]')?.click();
-      } else if (e.key === 'r') {
-        document.querySelector('[data-tool="rect"]')?.click();
-      } else if (e.key === 'c') {
-        document.querySelector('[data-tool="circle"]')?.click();
-      } else if (e.key === 'o') {
-        document.querySelector('[data-tool="rectOutline"]')?.click();
-      } else if (e.key === 'f') {
-        document.querySelector('[data-tool="fill"]')?.click();
-      } else if (e.key === 's') {
-        document.querySelector('[data-tool="select"]')?.click();
-      } else if (e.key === 'u') {
-        this.editor.undo();
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        this.editor.clear();
-      }
-    });
+    // Keyboard shortcuts deliberately live in ONE place (see initEvents). They
+    // used to be registered here too, which meant every press ran both handlers:
+    // Ctrl+Z undid two steps at once and Delete wiped the whole card instead of
+    // the selection. One listener, one behaviour.
   }
 
   initEvents() {
@@ -269,10 +311,12 @@ class KnitApp {
         this.compiler.setProfile(profile);
         this.editor.setDimensions(this.editor.rows, profile.columns);
         this.updateMachineSpecs();
+        this.applyProfileLimits();
         this.recompile();
       }
     });
     this.updateMachineSpecs();
+    this.applyProfileLimits();
 
     // Mode Buttons (Lace, Fair Isle, Tuck, Slip)
     this.elements.modeButtons.forEach(btn => {
@@ -350,8 +394,12 @@ class KnitApp {
     // Grid dimension inputs
     document.getElementById('input-rows')?.addEventListener('change', e => {
       if (!this.editor) return;
-      const rows = Math.max(8, Math.min(240, parseInt(e.target.value) || 24));
+      const { minRows, maxRows } = profileLimits(this.currentProfile);
+      const rows = Math.max(minRows, Math.min(maxRows, parseInt(e.target.value) || 24));
       this.editor.setDimensions(rows, this.editor.cols);
+      // Echo the clamp back into the box, otherwise it silently disagrees with
+      // the canvas (you type 500, it knits 240, the field still says 500).
+      e.target.value = rows;
     });
 
     // Modal Triggers
@@ -359,6 +407,9 @@ class KnitApp {
     document.getElementById('btn-open-image')?.addEventListener('click', () => this.openModal('image'));
     document.getElementById('btn-open-presets')?.addEventListener('click', () => this.openPresetsModal());
     document.getElementById('btn-open-export')?.addEventListener('click', () => this.openModal('export'));
+    // The eyelet-vs-transfer explainer is static HTML in index.html (crawlable +
+    // readable with JS off); this only shows it.
+    document.getElementById('btn-lace-guide')?.addEventListener('click', () => this.openModal('lace-guide'));
 
     // Modal Close buttons
     document.querySelectorAll('.modal-close').forEach(btn => {
@@ -370,6 +421,12 @@ class KnitApp {
     // Math pattern generation
     document.getElementById('btn-generate-math')?.addEventListener('click', () => {
       this.executeMathGenerator();
+      this.closeAllModals();
+    });
+    // Shuffle replaces the seed with a random one and applies it. The number lands
+    // in the field before the modal closes, so a result worth keeping is readable.
+    document.getElementById('btn-roll-math-seed')?.addEventListener('click', () => {
+      this.rollMathSeed();
       this.closeAllModals();
     });
 
@@ -509,7 +566,7 @@ class KnitApp {
       { id: 'tanktop-neck-w', key: 'neckWidthCm', valId: 'val-tanktop-neck-w', unit: 'cm' },
       { id: 'tanktop-neck-drop', key: 'frontNeckDropCm', valId: 'val-tanktop-neck-drop', unit: 'cm' },
       { id: 'tanktop-strap-w', key: 'strapWidthCm', valId: 'val-tanktop-strap-w', unit: 'cm' },
-      // Designer-only fit controls (hidden until the hidden key unlocks them).
+      // Extra fit controls.
       { id: 'tanktop-back-neck', key: 'backNeckDropCm', valId: 'val-tanktop-back-neck', unit: 'cm' },
       { id: 'tanktop-rib', key: 'ribbingHeightCm', valId: 'val-tanktop-rib', unit: 'cm' }
     ];
@@ -530,7 +587,7 @@ class KnitApp {
     // Tank Top Exporters
     document.getElementById('btn-tanktop-svg')?.addEventListener('click', () => this.exportTankTopSvg());
     document.getElementById('btn-tanktop-dxf')?.addEventListener('click', () => this.exportTankTopDxf());
-    // Designer-only ribbing style (1×1 / 2×2).
+    // Ribbing style (1×1 / 2×2).
     document.getElementById('tanktop-ribtype')?.addEventListener('change', e => {
       if (this.tankTopCanvas) {
         this.tankTopCanvas.setParams({ ribbingType: e.target.value });
@@ -568,15 +625,14 @@ class KnitApp {
       el?.addEventListener('change', () => this.renderBeanie());
       el?.addEventListener('input', () => this.renderBeanie());
     });
-    // Advanced fit sliders + unlock reveal should repaint the beanie too.
+    // Fit sliders repaint the beanie live.
     ['beanie-ease', 'beanie-fold', 'beanie-crown'].forEach(id => {
       document.getElementById(id)?.addEventListener('input', () => this.renderBeanie());
     });
-    window.addEventListener('knit:admin', () => { this.renderBeanie(); this.renderClothes?.(); });
     document.getElementById('btn-beanie-svg')?.addEventListener('click', () => this.exportBeanieSvg());
     document.getElementById('btn-beanie-reversible')?.addEventListener('click', () => {
       this.loadPreset('reversible_double_bed_chevron');
-      this.notifications.info('Loaded a seamless reversible double-bed repeat (fits 24 sts).');
+      this.notifications.info('Loaded a seamless 2-colour chevron — balanced counts so it reads on both sides. It knits stranded on your single bed; true reversible rib needs a ribber bed.');
       document.querySelector('.tab-btn[data-tab="editor"]')?.click();
     });
 
@@ -599,7 +655,7 @@ class KnitApp {
 
     // Status bar tracking - only if editor is ready
     if (this.editor && this.editor.canvas) {
-      this.editor.canvas.addEventListener('mousemove', () => {
+      this.editor.canvas.addEventListener('pointermove', () => {
         const hc = this.editor.hoverCell;
         if (hc && hc.r >= 0 && hc.c >= 0) {
           this.elements.statusCoords.textContent = `Row: ${hc.r + 1} | Needle: ${hc.c + 1}`;
@@ -609,38 +665,71 @@ class KnitApp {
       });
     }
 
-    // Keyboard Shortcuts
+    // Keyboard Shortcuts — the one and only global handler.
     window.addEventListener('keydown', e => {
+      // Tab is for moving between controls, always. Trap it inside an open dialog
+      // before anything else gets a chance to swallow it.
+      if (e.key === 'Tab' && this.trapModalFocus(e)) return;
+
       // Escape must always reach the modal closer, even from inside a field.
       if (e.key !== 'Escape' && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        if (e.shiftKey) this.editor.redo();
-        else this.editor.undo();
+      // A dialog is open: the page behind it is inert, so tool shortcuts must not
+      // fire while someone is typing in the export form.
+      if (e.key !== 'Escape' && document.querySelector('.modal-backdrop.active')) return;
+
+      // Compare lowercase. e.key is case-sensitive and carries Shift, so a raw
+      // 'z' test silently breaks undo for anyone with Caps Lock on — and Ctrl+Z
+      // is the one binding nobody tolerates losing.
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      const mod = e.ctrlKey || e.metaKey;
+
+      if (mod && k === 'z' && e.shiftKey) {
+        // Checked before plain Ctrl+Z: this is the redo everyone reaches for by instinct.
+        this.editor?.redo();
         e.preventDefault();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-        this.editor.redo();
+      } else if (mod && k === 'z') {
+        this.editor?.undo();
         e.preventDefault();
-      } else if (e.key === 'p' || e.key === 'b') {
-        document.querySelector('[data-tool="pencil"]')?.click();
-      } else if (e.key === 'e') {
-        document.querySelector('[data-tool="eraser"]')?.click();
-      } else if (e.key === 'l') {
-        document.querySelector('[data-tool="line"]')?.click();
-      } else if (e.key === 'r') {
-        document.querySelector('[data-tool="rect"]')?.click();
-      } else if (e.key === 'g') {
-        document.querySelector('[data-tool="fill"]')?.click();
-      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+      } else if (mod && k === 'y') {
+        this.editor?.redo();
+        e.preventDefault();
+      } else if (mod && k === 'c') {
         if (this.editor?.copySelection()) { e.preventDefault(); this.notifications.info('Copied selection.'); }
-      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) {
+      } else if (mod && k === 'x') {
         if (this.editor?.cutSelection()) { e.preventDefault(); this.notifications.info('Cut selection.'); }
-      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+      } else if (mod && k === 'v') {
         if (this.editor?.pasteClipboard()) { e.preventDefault(); this.notifications.info('Pasted selection.'); }
-      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+      } else if (mod && k === 'd') {
         // Ctrl+D duplicates the selection in place (offset by one cell).
         e.preventDefault();
         this.duplicateSelection?.();
+      } else if (mod) {
+        // Ctrl/Cmd combinations we do not claim belong to the browser — Ctrl+W,
+        // Ctrl+T, Ctrl+R and friends must keep working. Stopping the chain here
+        // also means a bare-letter shortcut can never fire behind a modifier.
+        return;
+      } else if (k === 'p' || k === 'b') {
+        document.querySelector('[data-tool="pencil"]')?.click();
+      } else if (k === 'e') {
+        document.querySelector('[data-tool="eraser"]')?.click();
+      } else if (k === 'l') {
+        document.querySelector('[data-tool="line"]')?.click();
+      } else if (k === 'r') {
+        document.querySelector('[data-tool="rect"]')?.click();
+      } else if (k === 'c') {
+        document.querySelector('[data-tool="circle"]')?.click();
+      } else if (k === 'o') {
+        document.querySelector('[data-tool="rectOutline"]')?.click();
+      } else if (k === 'i') {
+        document.querySelector('[data-tool="circleOutline"]')?.click();
+      } else if (k === 'g') {
+        // 'g' for fill — 'f' stays owned by the CNC toolpath viewer (fit to view).
+        document.querySelector('[data-tool="fill"]')?.click();
+      } else if (k === 's') {
+        document.querySelector('[data-tool="select"]')?.click();
+      } else if (k === 'u') {
+        this.editor?.undo();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (this.editor?.deleteSelection()) { e.preventDefault(); }
       } else if (e.key === '[') {
@@ -667,7 +756,16 @@ class KnitApp {
     });
   }
 
-  setPatternMode(mode) {
+  /**
+   * Switch patterning mode.
+   * @param {string} mode
+   * @param {{recompile?:boolean}} [options] pass `recompile: false` when the caller
+   *   is about to load a chart anyway — otherwise the card is compiled once for the
+   *   old (about to be replaced) matrix and once for the new one, and the first pass
+   *   is pure waste on every preset load and project import.
+   */
+  setPatternMode(mode, options = {}) {
+    const { recompile = true } = options;
     this.currentMode = mode;
     if (this.editor) {
       this.editor.setMode(mode);
@@ -681,26 +779,39 @@ class KnitApp {
       this.elements.colorPalette.style.display = 'flex';
     }
 
-    this.recompile();
+    if (recompile) this.recompile();
   }
 
   handlePatternChange() {
     this._cardDirty = true;
     fx('click');
     this.recompile();
+    this.dataPanel?.touch();
   }
 
   recompile() {
+    // Timing the compile is genuinely useful (it is the number that grows on big
+    // cards) and it costs one performance.now() pair. Surfaced in the diagnostics
+    // panel and the schedule header.
+    const t0 = performance.now();
     if (this.currentMode === 'lace') {
       this.compilationResult = this.compiler.compile(this.editor.matrix);
     } else {
       this.compilationResult = this.compiler.compileDirectPattern(this.editor.matrix, this.currentMode);
     }
+    this.lastCompileMs = performance.now() - t0;
 
     this.updateScheduleUI();
     this.updateDiagnosticsUI();
     this.updateStatusStats();
     this._cardDirty = false;
+
+    // The kinematics sim always tracks the live card, not just the row it happened
+    // to be given when the tab was opened. Cheap, and it keeps the animation
+    // honest while you edit on another tab.
+    if (this.brotherCanvas) {
+      this.brotherCanvas.setCard(this.compilationResult.cardMatrix, this.compilationResult.strokes);
+    }
 
     // Update active tab contents
     if (this.activeTab === 'yarn') {
@@ -755,8 +866,11 @@ class KnitApp {
       this.renderClothes();
     } else if (tab === 'brother') {
       this.brotherCanvas?.resize();
-      const firstCardRow = this.compilationResult?.cardMatrix?.[0] || [];
-      this.brotherCanvas?.setCardPattern(firstCardRow);
+      // Hand over the whole compiled card so the drum indexes row 2, 3, 4…
+      this.brotherCanvas?.setCard(
+        this.compilationResult?.cardMatrix || [],
+        this.compilationResult?.strokes || []
+      );
       this.brotherCanvas?.play();
     }
   }
@@ -820,8 +934,11 @@ class KnitApp {
     if (!diagList) return;
 
     const diags = (this.compilationResult?.diagnostics || []).slice();
-    // Fair Isle / slip / tuck: very long floats (unworked yarn carried behind)
-    // snag on fingers and pull the fabric in. Warn about them (advisory only).
+    // Wider than the bed is fatal, so it leads the list.
+    const bedError = this.analyzeBedWidth();
+    if (bedError) diags.unshift(bedError);
+    // Fair Isle / slip / tuck: each has its own stranded-yarn failure mode, and
+    // only the advisor knows which. Advisory, like everything here except bed width.
     const floatWarn = this.analyzeFloats();
     if (floatWarn) diags.push(floatWarn);
 
@@ -830,34 +947,96 @@ class KnitApp {
       return;
     }
 
+    // Three severities, three distinct glyphs. A warning used to render with the
+    // info icon, which made "this will snag on every finger" look optional.
+    const glyph = t => (t === 'error' ? '⛔' : t === 'warning' ? '⚠' : 'ℹ');
     diagList.innerHTML = diags.map(d => `
       <div class="diag-item diag-${d.type}">
-        <span class="diag-icon">${d.type === 'error' ? '⚠' : 'ℹ'}</span>
+        <span class="diag-icon">${glyph(d.type)}</span>
         <span class="diag-msg">${d.message}</span>
         ${d.row !== null && d.row !== undefined ? `<span class="diag-loc">[Row ${d.row + 1}${d.col !== null && d.col !== undefined ? `, Col ${d.col + 1}` : ''}]</span>` : ''}
       </div>
     `).join('');
   }
 
-  // Scan the current pattern matrix for the longest same-colour run (float) in a
-  // row. Returns an advisory warning when it exceeds the machine's safe limit.
+  // Scan the current pattern for stranded-yarn risks and report the worst one.
+  //
+  // What counts as a float is mode-dependent, and getting it wrong produces
+  // confident nonsense:
+  //   fair_isle — every needle knits one of two colours, so colour A floats
+  //             behind a run of colour B *and vice versa*. Both directions count.
+  //   slip      — punched needles knit and blanks are skipped, so the carried
+  //             yarn sits behind the BLANK run. Counting punched runs would flag
+  //             the solid blocks and miss the actual danger.
+  //   tuck      — a horizontal run of held needles is simply rib-like fabric, not
+  //             a float. The failure mode here is vertical: loops stacking on one
+  //             needle until it lifts out of the cam channel.
   analyzeFloats() {
     if (!this.editor || !CanvasEditor.isDirectMode(this.currentMode)) return null;
-    const maxSafe = 9; // needles a float may span before stitching it down is advised
+    const { maxFloatNeedles, maxTuckLoops } = profileLimits(this.currentProfile);
     const m = this.editor.matrix;
+    const rows = m.length;
+    const cols = rows ? m[0].length : 0;
+
+    if (this.currentMode === 'tuck') {
+      let worst = 0, worstRow = -1, worstCol = -1;
+      for (let c = 0; c < cols; c++) {
+        let run = 0;
+        for (let r = 0; r < rows; r++) {
+          run = m[r][c] === 1 ? run + 1 : 0;
+          if (run > worst) { worst = run; worstRow = r; worstCol = c; }
+        }
+      }
+      if (worst > maxTuckLoops) {
+        return {
+          type: 'warning',
+          message: `Needle ${worstCol + 1} is asked to hold ${worst} stacked tuck loops (this carriage comfortably carries about ${maxTuckLoops}). Loop the extra yarn with a transfer row, or shorten the column.`,
+          row: worstRow,
+          col: worstCol
+        };
+      }
+      return null;
+    }
+
+    // Which symbol actually carries the floating yarn behind it.
+    const floatSymbols = this.currentMode === 'slip' ? [0] : [0, 1];
+    const label = this.currentMode === 'slip' ? 'slipped' : 'stranded';
+
     let worst = 0, worstRow = -1;
-    for (let r = 0; r < m.length; r++) {
-      let run = 0;
-      for (let c = 0; c < m[r].length; c++) {
-        // A float is a stretch of one colour while the other colour is absent.
-        run = (m[r][c] === 1) ? run + 1 : 0;
-        if (run > worst) { worst = run; worstRow = r; }
+    for (let r = 0; r < rows; r++) {
+      for (const sym of floatSymbols) {
+        let run = 0;
+        for (let c = 0; c < m[r].length; c++) {
+          run = (m[r][c] === sym) ? run + 1 : 0;
+          if (run > worst) { worst = run; worstRow = r; }
+        }
       }
     }
-    if (worst > maxSafe) {
-      return { type: 'warning', message: `Long Fair Isle float of ${worst} stitches (row ${worstRow + 1}). Consider weaving floats longer than ${maxSafe} sts on the wrong side.`, row: worstRow, col: null };
+
+    if (worst > maxFloatNeedles) {
+      return {
+        type: 'warning',
+        message: `Long ${label} run of ${worst} needles on row ${worstRow + 1} — beyond about ${maxFloatNeedles} the carried yarn catches on fingers and pulls the fabric in. Weave it in, or break the run with a colour change.`,
+        row: worstRow,
+        col: null
+      };
     }
     return null;
+  }
+
+  // A pattern wider than the bed is not a warning, it is physically impossible:
+  // there is no needle to put the stitch on.
+  analyzeBedWidth() {
+    if (!this.editor) return null;
+    const { maxNeedles } = profileLimits(this.currentProfile);
+    const wide = this.editor.cols;
+    if (wide <= maxNeedles) return null;
+    return {
+      type: 'error',
+      message: `This pattern is ${wide} needles wide but the ${this.currentProfile.name} bed holds ${maxNeedles}. Narrow the pattern, or move the repeat onto the card and tile it.`,
+      row: null,
+      col: null
+    };
   }
 
   updateStatusStats() {
@@ -869,15 +1048,62 @@ class KnitApp {
     }
 
     this.elements.statusStats.textContent = `Pattern: ${this.editor.rows}r × ${this.editor.cols}c | Card Rows: ${cardRows} | Total Strokes: ${this.compilationResult.totalPasses} (${this.compilationResult.totalLacePasses} Lace, ${this.compilationResult.totalKnitPasses} Knit) | Punched Holes: ${punchedCount}`;
-    this.elements.statusProfile.textContent = `${this.currentProfile.name}`;
+    // The needle-bed count stays on show: it is the difference that changes what a
+    // "transfer" even means, and it used to be hidden in the profile description.
+    const bedLabel = this.currentProfile.beds === 2 ? 'double bed' : 'single bed';
+    this.elements.statusProfile.textContent = `${this.currentProfile.name} · ${bedLabel}`;
+    this.elements.statusProfile.title = this.currentProfile.description;
+  }
+
+  /**
+   * Push the selected machine's physical envelope into the dimension controls.
+   *
+   * The Rows box used to be pinned to max="240" in the markup no matter which
+   * profile was chosen, so the 600-row parametric/CNC bed could never actually be
+   * reached from the UI — and a machine with a higher ceiling just silently
+   * clamped what you typed. The bed width is reported too, because that is the
+   * one limit a knitter cannot work around with patience.
+   */
+  applyProfileLimits() {
+    const limits = profileLimits(this.currentProfile);
+    const rowsInput = document.getElementById('input-rows');
+    if (rowsInput) {
+      rowsInput.min = String(limits.minRows);
+      rowsInput.max = String(limits.maxRows);
+      const current = parseInt(rowsInput.value, 10);
+      if (!Number.isFinite(current) || current < limits.minRows || current > limits.maxRows) {
+        rowsInput.value = String(Math.min(Math.max(current || this.currentProfile.defaultRows, limits.minRows), limits.maxRows));
+      }
+      rowsInput.title = `Rows on this machine: ${limits.minRows}-${limits.maxRows}. Longer cards are joined in series.`;
+    }
+    if (this.editor && this.editor.rows > limits.maxRows) {
+      this.editor.setDimensions(limits.maxRows, this.editor.cols);
+    }
+    // An over-wide card is NOT auto-trimmed. Rows past the bottom of a long card
+    // are a nuisance; columns past the end of the bed are somebody's imported
+    // artwork, and silently amputating it when they change machine profile would
+    // be vandalism. The feasibility advisor flags it in red with a one-click trim.
+    if (this.editor && this.editor.cols > limits.maxNeedles) {
+      this.notifications?.warn?.(
+        `${this.editor.cols} columns won't fit the ${this.currentProfile.name}`,
+        { details: `The bed holds ${limits.maxNeedles} needles. Columns past that are never read by the carriage — open the Feasibility advisor for a one-click trim.`, duration: 9000 }
+      );
+    }
+    const colsNote = document.getElementById('spec-bed-width');
+    if (colsNote) {
+      colsNote.textContent = `${limits.maxNeedles} needles (${(this.currentProfile.bedLengthMm / 10).toFixed(0)} cm bed)`;
+      colsNote.title = `${limits.maxNeedles} needles at ${this.currentProfile.pitchX} mm pitch on a ${this.currentProfile.bedLengthMm} mm bed.`;
+    }
   }
 
   updateMachineSpecs() {
     const p = this.currentProfile;
     if (!p) return;
-    const setElem = (id, val) => {
+    const setElem = (id, val, tip) => {
       const el = document.getElementById(id);
-      if (el) el.textContent = val;
+      if (!el) return;
+      el.textContent = val;
+      if (tip !== undefined) el.title = tip;
     };
     setElem('spec-pitch-x', `${p.pitchX.toFixed(2)} mm`);
     setElem('spec-pitch-y', `${p.pitchY.toFixed(2)} mm`);
@@ -890,6 +1116,14 @@ class KnitApp {
     else if (p.carriageRules?.type === 'brother_bulky') carriageRuleName = 'Brother Bulky 9mm';
     else if (p.carriageRules?.type === 'toyota_simplex') carriageRuleName = 'Toyota Simplex';
     setElem('spec-carriage-rule', carriageRuleName);
+    // Bed count is the difference that changes what a "transfer" even means, so it
+    // is stated here rather than left inside the profile description.
+    setElem('spec-beds', p.beds === 2 ? 'Double bed (front + back)' : 'Single bed', p.beds === 2
+      ? 'Loops move between two opposed needle beds. Transfers designed for a single bed do not apply — the advisor flags this profile.'
+      : 'A transfer moves a loop to the neighbouring needle on the same bed, and only while the carriage travels that way.');
+    setElem('spec-max-float', `up to ${profileLimits(p).maxFloatNeedles} sts carried`,
+      'Longer stranded runs than this catch on fingers and pull the fabric in. Tuck and slip have their own limits, which the advisor checks.');
+    this.applyProfileLimits();
   }
 
   renderPunchcardRibbon() {
@@ -1075,8 +1309,13 @@ class KnitApp {
     const preset = PATTERN_PRESETS.find(p => p.id === presetId);
     if (!preset) return;
 
-    this.setPatternMode(preset.mode);
-    const newMatrix = preset.generate(preset.rows, this.currentProfile.columns);
+    // Switch mode without compiling: the matrix is about to be replaced, so a
+    // schedule built from whatever was on the card first would be thrown away.
+    this.setPatternMode(preset.mode, { recompile: false });
+    // Presets take a seed so the same preset gives the same motif twice; without it
+    // every click on "generate" rolled a new random pattern and you could never
+    // get back the one you had just liked.
+    const newMatrix = preset.generate(preset.rows, this.currentProfile.columns, preset.seed);
     this.editor.setMatrix(newMatrix);
   }
 
@@ -1130,19 +1369,46 @@ class KnitApp {
   }
 
   // Mathematical Generators
+  //
+  // Everything here is seeded. The seed sits in a field you can read, type and
+  // keep, so a motif you like is recoverable next week — and "shuffle" becomes the
+  // deliberate act of rolling a new one instead of an accident of Math.random()
+  // that quietly redecorated the card every time you clicked.
+  _mathSeed() {
+    const raw = String(document.getElementById('math-seed-input')?.value ?? '').trim();
+    if (raw === '') return 0;
+    if (/^-?\d+$/.test(raw)) return Math.abs(parseInt(raw, 10)) >>> 0;
+    // A word is a valid seed too: fold it to uint32 with FNV-1a so "benji"
+    // always produces the same scarf.
+    let h = 2166136261;
+    for (let i = 0; i < raw.length; i++) {
+      h ^= raw.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0) || 1;
+  }
+
+  /** Roll a fresh seed and regenerate. The old one stays in history (Ctrl+Z). */
+  rollMathSeed() {
+    const el = document.getElementById('math-seed-input');
+    if (el) el.value = String(randomSeed());
+    this.executeMathGenerator();
+  }
+
   executeMathGenerator() {
     const type = document.getElementById('math-gen-type')?.value || 'turing';
     const rows = this.editor.rows;
     const cols = this.editor.cols;
+    const seed = this._mathSeed();
     let binary = [];
 
     if (type === 'turing') {
       const preset = document.getElementById('math-turing-preset')?.value || 'labyrinth';
-      binary = MathPatternGenerators.generateReactionDiffusion(rows, cols, preset);
+      binary = MathPatternGenerators.generateReactionDiffusion(rows, cols, preset, 180, seed);
     } else if (type === 'wave') {
       binary = MathPatternGenerators.generateWaveInterference(rows, cols);
     } else if (type === 'voronoi') {
-      binary = MathPatternGenerators.generateToroidalVoronoi(rows, cols);
+      binary = MathPatternGenerators.generateToroidalVoronoi(rows, cols, 14, 1.2, seed);
     } else if (type === 'celtic') {
       binary = MathPatternGenerators.generateCelticKnot(rows, cols);
     } else if (type === 'wolfram') {
@@ -1159,7 +1425,7 @@ class KnitApp {
     } else if (type === 'phyllotaxis') {
       binary = MathPatternGenerators.generatePhyllotaxis(rows, cols);
     } else if (type === 'moire') {
-      binary = MathPatternGenerators.generateMoiréPattern(rows, cols);
+      binary = MathPatternGenerators.generateMoirePattern(rows, cols);
     }
 
     if (this.currentMode === 'lace') {
@@ -1259,6 +1525,45 @@ class KnitApp {
     }, 0);
   }
 
+  /**
+   * Keep the Tab key inside whichever dialog is open.
+   *
+   * The overlay dims the page but the page stays in the tab order, so one press
+   * past the last control dropped you into the header behind a modal you could
+   * see but not reach. This is the standard trap: wrap at both ends, and pull
+   * focus back in if it somehow escaped to something outside the dialog.
+   */
+  trapModalFocus(e) {
+    if (e.key !== 'Tab') return false;
+    const modal = document.querySelector('.modal-backdrop.active');
+    if (!modal) return false;
+    const focusables = Array.from(modal.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([type=hidden]), select, textarea, [tabindex]:not([tabindex="-1"])'
+    )).filter(el => el.getClientRects().length > 0);
+
+    if (focusables.length === 0) {
+      e.preventDefault();
+      modal.focus({ preventScroll: true });
+      return true;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    const outside = !modal.contains(active);
+
+    if (e.shiftKey && (active === first || outside)) {
+      e.preventDefault();
+      last.focus({ preventScroll: true });
+      return true;
+    }
+    if (!e.shiftKey && (active === last || outside)) {
+      e.preventDefault();
+      first.focus({ preventScroll: true });
+      return true;
+    }
+    return false;
+  }
+
   closeAllModals() {
     document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.remove('active'));
     // Return focus to whatever opened the dialog so keyboard flow is unbroken.
@@ -1339,43 +1644,328 @@ class KnitApp {
     this.downloadFile(csvStr, `card_matrix_${this.currentProfile.id}.csv`, 'text/csv');
   }
 
-  saveProject() {
-    const project = FormatsExporter.generateProjectJson({
+  /**
+   * The card as plain data: the shape shared by autosave, versions, backups and
+   * the .kcard exporter. Defined once so what is stored is unambiguously what is
+   * on the screen, in every mode.
+   */
+  _projectSnapshot() {
+    const ed = this.editor;
+    if (!ed) return {};
+    return {
       profileId: this.currentProfile.id,
       mode: this.currentMode,
-      rows: this.editor.rows,
-      cols: this.editor.cols,
-      stitchMatrix: this.editor.matrix,
+      rows: ed.rows,
+      cols: ed.cols,
+      stitchMatrix: ed.matrix,
+      name: this.projectMeta?.name || null,
+      notes: this.projectMeta?.notes || null,
+      meta: { ...(this.projectMeta || {}) }
+    };
+  }
+
+  /**
+   * The filename a save should use: the card's own name as a slug, or a stamped
+   * default. Kept in one place so the Save dialog, the download and the recent list
+   * cannot disagree about what this card is called.
+   */
+  _projectFilename(extension = '.kcard') {
+    const named = (this.projectMeta?.name || '').trim();
+    const slug = named
+      ? named.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48)
+      : '';
+    return `${slug || `knitwear_project_${Date.now()}`}${extension}`;
+  }
+
+  saveProject() {
+    const project = FormatsExporter.generateProjectJson({
+      ...this._projectSnapshot(),
       compilationResult: this.compilationResult
     });
-    this.downloadFile(project, `knitwear_project_${Date.now()}.kcard`, 'application/json');
+    const filename = this._projectFilename();
+    const bridge = this.fileBridge;
+    if (bridge?.bound) {
+      // Opening a file with the dialog bound it; saving goes straight back to it,
+      // no dialog, exactly like every desktop editor. Anything else falls through
+      // to the download, because losing the card is worse than a second copy.
+      return bridge.save(project, { suggestedName: bridge.boundName || filename, allowPicker: false })
+        .then(result => {
+          if (result.ok && result.mode === 'bound-file') {
+            this.dataPanel?.remember(result.name, this._projectSnapshot());
+            this.notifications.success(`Saved to ${result.name}.`, {
+              details: 'Same file, no dialog — that is what opening it with the dialog bought you.',
+              duration: 4000
+            });
+            return result;
+          }
+          this.notifications.warn('KNITCAT could not write to that file, so it downloaded a copy instead.', {
+            details: result.error || 'The browser refused the write.',
+            duration: 9000
+          });
+          this.downloadFile(project, filename, 'application/json');
+          this.dataPanel?.remember(filename, this._projectSnapshot());
+          return { ok: true, mode: 'download', name: filename };
+        })
+        .catch(err => {
+          this.downloadFile(project, filename, 'application/json');
+          this.notifications.error('The Save dialog failed, so the file was downloaded.', {
+            details: err?.message,
+            duration: 8000
+          });
+          return { ok: true, mode: 'download', name: filename };
+        });
+    }
+    this.downloadFile(project, filename, 'application/json');
+    // The card you just saved is now also on the "recent" list, with its content —
+    // a web page cannot remember a path it was never given.
+    this.dataPanel?.remember(filename, this._projectSnapshot());
+    return Promise.resolve({ ok: true, mode: 'download', name: filename });
+  }
+
+  /**
+   * Wire the File System Access API to the rest of the app, once the storage
+   * driver is known. Nothing appears in the UI unless the browser really has the
+   * pickers, so Firefox and Safari keep the plain download/upload path unchanged.
+   */
+  _bindFileSystem(panel) {
+    const bridge = createFileBridge({
+      driver: panel.driver,
+      notifier: this.notifications,
+      download: (text, filename) => this.downloadFile(text, filename, 'application/json')
+    });
+    this.fileBridge = bridge;
+    const openBtn = document.getElementById('btn-open-fsa');
+    const saveBtn = document.getElementById('btn-save-fsa');
+    if (!bridge.supports.save && !bridge.supports.open) return bridge;
+
+    if (openBtn && bridge.supports.open) {
+      openBtn.hidden = false;
+      openBtn.addEventListener('click', async () => {
+        const result = await bridge.open();
+        if (result.cancelled || result.unsupported) return;
+        if (!result.ok) {
+          this.notifications.error('That file could not be opened.', { details: result.error, duration: 8000 });
+          return;
+        }
+        this.loadProjectText(result.text, result.name);
+        this._showBoundFile(saveBtn, result.name);
+      });
+    }
+    if (saveBtn && bridge.supports.save) {
+      this._initialSaveLabel(saveBtn);
+      saveBtn.hidden = false;
+      saveBtn.addEventListener('click', async () => {
+        if (!bridge.bound) {
+          const picked = await bridge.pickSaveFile({ suggestedName: this._projectFilename() });
+          if (picked.ok) this._showBoundFile(saveBtn, picked.name);
+          return;
+        }
+        const result = await bridge.save(FormatsExporter.generateProjectJson({
+          ...this._projectSnapshot(),
+          compilationResult: this.compilationResult
+        }), { suggestedName: bridge.boundName, allowPicker: false });
+        this.notifications[result?.ok ? 'success' : 'error'](
+          result?.ok ? `Saved to ${result.name}.` : 'That file could not be written.',
+          { details: result?.error, duration: 6000 }
+        );
+      });
+    }
+    bridge.restore().then(info => {
+      if (info.bound) this._showBoundFile(saveBtn, info.name);
+      else if (info.remembered && saveBtn) saveBtn.hidden = true;
+    }).catch(() => { /* a handle that cannot be recalled simply means no binding */ });
+    return bridge;
+  }
+
+  _showBoundFile(button, name) {
+    if (!button) return;
+    button.hidden = false;
+    button.textContent = `Save to “${String(name).slice(0, 24)}”`;
+    button.title = 'Writes straight back to this file, with no dialog';
+  }
+
+  /** What the un-bound Save button should offer, given what the browser can do. */
+  _initialSaveLabel(button) {
+    if (!button) return;
+    button.textContent = this.fileBridge?.supports?.save ? 'Choose a file to save to…' : 'Save to file';
+  }
+
+  /** Apply a `#p=…` share link sitting in the address bar, if there is one. */
+  _consumeIncomingShare() {
+    // The share panel failed to build (a disabled JS feature, say). The card is
+    // still readable, so read it rather than dropping the visitor on a blank one.
+    const bareRead = href => {
+      const code = this._incomingShareCode || readShareUrl(href);
+      if (!code) return { found: false, ok: false };
+      const decoded = decodeCard(code);
+      if (!decoded.ok) return { found: true, ok: false, error: decoded.error };
+      return { found: true, ok: this.loadProjectText(incomingShareDocument(decoded.card), 'a shared link'), card: decoded.card };
+    };
+    try {
+      const href = typeof location !== 'undefined' ? location.href : '';
+      if (!this._incomingShareCode && !href.includes('#p=') && !/[?&]p=/.test(href)) return { found: false, ok: false };
+      const result = this.share && !this._incomingShareCode ? this.share.consumeIncoming(href) : bareRead(href);
+      this._incomingShareCode = null;
+      if (result.found && !result.ok) {
+        this.notifications.error('The link you opened is not a card this build can read.', {
+          details: result.error || 'It may be truncated, or from a newer version.',
+          duration: 10000
+        });
+      } else if (result.found && result.ok) {
+        // The link is done with: leaving it in the address bar means a refresh
+        // would ask about the shared card all over again.
+        stripShareUrl();
+      }
+      return result;
+    } catch (err) {
+      console.error('[KNITCAT] shared link could not be applied:', err);
+      return { found: false, ok: false };
+    }
   }
 
   loadProject(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target?.files?.[0];
+    if (file) this.loadProjectFile(file);
+  }
 
+  /** Public entry point for any File: the file input, a drag-drop, or an OS launch. */
+  loadProjectFile(file) {
     const reader = new FileReader();
-    reader.onload = evt => {
-      try {
-        const data = JSON.parse(evt.target.result);
-        if (data.profileId && MACHINE_PROFILES[data.profileId]) {
-          this.currentProfile = MACHINE_PROFILES[data.profileId];
-          this.elements.profileSelect.value = data.profileId;
-        }
-        if (data.mode) this.setPatternMode(data.mode);
-        if (data.stitchMatrix) this.editor.setMatrix(data.stitchMatrix);
-      } catch (err) {
-        this.notifications.error('Invalid project file format.', { details: err.message });
-      }
+    reader.onload = evt => this.loadProjectText(evt.target.result, file.name);
+    reader.onerror = () => {
+      this.notifications.error(`The browser would not hand ${file.name} over.`, {
+        details: 'Try re-choosing the file, or dragging it from the same folder.'
+      });
     };
     reader.readAsText(file);
+  }
+
+  /**
+   * Parse and adopt project JSON from any source — file, paste, shared link, or
+   * an installed-app launch. All the trust work happens in js/project/kcard.js:
+   * version gate, legacy migration, matrix validation, size ceilings. Anything it
+   * rejects is rejected with a sentence naming the exact field and cell, rather
+   * than half-loading a file and painting a blank canvas.
+   */
+  loadProjectText(text, label = 'pasted project') {
+    const result = readProject(text);
+    if (!result.ok) {
+      this.notifications.error('That is not a KNITCAT project this build can open.', {
+        details: [result.error, `Checked: ${label}`]
+      });
+      return false;
+    }
+
+    const data = result.project;
+    const notes = result.warnings.slice();
+    if (data.profileId && MACHINE_PROFILES[data.profileId]) {
+      this.currentProfile = MACHINE_PROFILES[data.profileId];
+      this.elements.profileSelect.value = data.profileId;
+      this.compiler.setProfile(this.currentProfile);
+      this.updateMachineSpecs();
+    } else if (data.profileId) {
+      notes.push(`Machine "${data.profileId}" is unknown to this build — kept ${this.currentProfile.name}.`);
+    }
+    // Mode first, chart second: the glyphs in a lace card mean nothing to a
+    // stranded chart and vice versa. `recompile: false` because the chart is not
+    // loaded yet — compiling now would schedule the previous project.
+    if (data.mode) this.setPatternMode(data.mode, { recompile: false });
+    this.editor.setMatrix(data.stitchMatrix);
+    // Metadata travels with the chart: a recovered or opened card comes back with
+    // its name and notes, not as an anonymous grid.
+    this.projectMeta = {
+      ...this.projectMeta,
+      ...(data.meta || {}),
+      name: data.name || this.projectMeta?.name || null,
+      notes: data.notes ?? this.projectMeta?.notes ?? null
+    };
+    // setMatrix() repaints the canvas but does not fire onChange, so without this
+    // the punched card, yarn sim and CNC view kept showing the OLD project.
+    this.recompile();
+
+    this.notifications.success(`Loaded ${label} — your card is back.`, {
+      details: notes,
+      duration: notes.length ? 9000 : 4500
+    });
+    // Record it as opened (content and all) and snapshot the restored state, so
+    // closing the tab immediately cannot lose what was only just recovered.
+    this.dataPanel?.remember(label, this._projectSnapshot());
+    this.dataPanel?.touch();
+    return true;
+  }
+
+  /**
+   * Act on a manifest shortcut or protocol-handler launch: ?tab=punchcard,
+   * ?open=math, ?mode=lace, ?import=<url or JSON text>.
+   *
+   * A URL is user-supplied by way of a link, so every token is treated as
+   * untrusted: names are matched against real elements, never interpolated into
+   * a selector unchecked.
+   */
+  _handleLaunchIntent(intent = {}) {
+    if (typeof intent.mode === 'string' && /^(lace|fair_isle|tuck|slip)$/.test(intent.mode)) {
+      this.setPatternMode(intent.mode);
+    }
+    if (typeof intent.tab === 'string' && /^[a-z0-9-]{1,24}$/i.test(intent.tab)) {
+      document.querySelector(`.tab-btn[data-tab="${intent.tab}"]`)?.click();
+    }
+    if (typeof intent.open === 'string' && /^[a-z0-9-]{1,24}$/i.test(intent.open)) {
+      if (intent.open === 'presets') this.openPresetsModal();
+      else this.openModal(intent.open);
+    }
+    if (typeof intent.import === 'string' && intent.import.trim()) {
+      this._importFromText(intent.import);
+    }
+    // The manifest registers KNITCAT as a share target, so another app can send a
+    // link or a blob of text here. Both shapes are handled without trusting them:
+    // a URL is fetched at most from whatever the visitor just clicked, and the card
+    // parser is the same validator a dropped file goes through.
+    const shared = [intent.url, intent.text]
+      .map(value => (typeof value === 'string' ? value.trim() : ''))
+      .find(Boolean);
+    if (shared) {
+      // Either the bare `#p=` payload, a whole share link, or something else worth
+      // fetching. Decided by shape, never by hoping the text happens to parse.
+      const looksLikeCode = /^[A-Za-z0-9_-]{8,}$/.test(shared);
+      const code = looksLikeCode ? shared : readShareUrl(shared);
+      if (code) {
+        this._incomingShareCode = code;
+        if (this.editor) this._consumeIncomingShare();
+        else this.notifications.info('That shared card will load as soon as the editor is ready.', { duration: 5000 });
+      } else {
+        this._importFromText(shared);
+      }
+    } else if (intent.title && !intent.tab && !intent.open) {
+      this.notifications.info('KNITCAT was opened as a share target, but nothing shareable arrived with it.', {
+        details: 'Share a link that contains a #p=… card, or the .kcard file itself.',
+        duration: 8000
+      });
+    }
+  }
+
+  /** `web+knitcat:<something>` — either a link to a .kcard or the JSON itself. */
+  async _importFromText(value) {
+    const text = value.trim();
+    try {
+      if (/^https?:\/\//i.test(text)) {
+        const response = await fetch(text);
+        if (!response.ok) throw new Error(`the server said ${response.status}`);
+        this.loadProjectText(await response.text(), text.split('/').pop() || 'shared card');
+        return;
+      }
+      this.loadProjectText(text, 'shared card');
+    } catch (err) {
+      this.notifications.error('That shared card could not be fetched.', {
+        details: `${err.message} — the link may need the other site to allow cross-origin reads.`,
+        duration: 8000
+      });
+    }
   }
 
   // Advanced Export Functions
   exportAYAB() {
     if (!this.compilationResult || !this.compilationResult.cardMatrix) {
-      this.notifications.warn('No pattern data to export.');
+      this.notifications.warn('Nothing to export yet — draw a pattern and the compiler will punch the card.', { duration: 6000 });
       return;
     }
     
@@ -1385,7 +1975,7 @@ class KnitApp {
 
   exportBrotherDisk() {
     if (!this.compilationResult || !this.compilationResult.cardMatrix) {
-      this.notifications.warn('No pattern data to export.');
+      this.notifications.warn('Nothing to export yet — draw a pattern and the compiler will punch the card.', { duration: 6000 });
       return;
     }
     
@@ -1448,11 +2038,8 @@ class KnitApp {
 
   // ---- Beanie tailor (self-contained; drives beanie-engine.js) ----
   _readBeanieParams() {
-    const admin = !!window.__knitAdmin;
-    const val = (id, fallback, opts = {}) => {
-      // Advanced (designer-only) inputs stay invisible; when locked we fall back
-      // to the neutral default so the visible plan never references them.
-      if (opts.advanced && !admin) return fallback;
+    const val = (id, fallback) => {
+      // Every knit control is visible and live for everyone (no designer gate).
       const el = document.getElementById(id);
       if (!el) return fallback;
       const n = parseFloat(el.value);
@@ -1466,9 +2053,9 @@ class KnitApp {
         crownSegments: val('beanie-segments', 6),
         ribbingType: document.getElementById('beanie-ribtype')?.value || '1x1',
         pomPom: document.getElementById('beanie-pom')?.checked ?? true,
-        negativeEaseCm: val('beanie-ease', 2, { advanced: true }),
-        foldBrimCm: val('beanie-fold', 0, { advanced: true }),
-        crownDepthPct: val('beanie-crown', 100, { advanced: true })
+        negativeEaseCm: val('beanie-ease', 2),
+        foldBrimCm: val('beanie-fold', 0),
+        crownDepthPct: val('beanie-crown', 100)
       },
       gauge: {
         stitchesPer10Cm: val('beanie-gauge-sts', 28),
@@ -1635,7 +2222,8 @@ class KnitApp {
     acts.push({ label: 'Image Dither', group: 'Design', keywords: 'image photo dither import picture atkinson floyd steinberg', run: click('#btn-open-image') });
     acts.push({ label: 'Settings', group: 'Settings', keywords: 'settings preferences accent colour name photo anniversary theme', run: () => this._openSettingsViaExtras() });
     acts.push({ label: 'Toggle theme (light / dark)', group: 'Settings', keywords: 'theme light dark appearance toggle', run: () => document.getElementById('kx-theme')?.click() });
-    acts.push({ label: 'About KnitCAD', group: 'Settings', keywords: 'about info story help who made this', run: () => document.querySelector('.brand-section .kx-hbtn')?.click() });
+    acts.push({ label: 'About KNITCAT', group: 'Settings', keywords: 'about info story help who made this knitcat knit cat', run: () => document.querySelector('.brand-section .kx-hbtn')?.click() });
+    acts.push({ label: 'Eyelets vs transfers explained', group: 'Advisor', keywords: 'eyelet yarnover transfer difference openwork single bed double bed hole lace why both', run: () => { document.querySelector('.tab-btn[data-tab="editor"]')?.click(); this.openModal('lace-guide'); } });
     acts.push({ label: 'Check machine feasibility', group: 'Advisor', keywords: 'feasibility check valid fix float snag machine advice', run: () => this.openFeasibility() });
     acts.push({ label: 'Show love letter', group: 'Romance', keywords: 'love letter ily benji popup heart romantic', run: () => this._showLovePopup() });
     acts.push({ label: 'Clear the canvas', group: 'Edit', keywords: 'clear erase reset blank canvas new empty', run: () => this.editor?.clear() });
@@ -1686,10 +2274,6 @@ class KnitApp {
     document.getElementById('btn-clothes-svg')?.addEventListener('click', () => this.exportClothesSvg());
     document.getElementById('btn-clothes-editor')?.addEventListener('click', () => this.sendClothesToEditor());
 
-    // Advanced (designer-only) parameters appear / vanish the moment the hidden
-    // key is typed — no reload, nothing obvious to anyone watching.
-    window.addEventListener('knit:admin', () => { this._buildClothesParamForm(); this.renderClothes(); });
-
     if (!this._activeGarment) this._selectGarment('beanie', { render: false });
   }
 
@@ -1733,14 +2317,13 @@ class KnitApp {
     const host = document.getElementById('clothes-params');
     const g = this._activeGarment;
     if (!host || !g) return;
-    const admin = !!window.__knitAdmin;
     const saved = this._clothesVals || {};
     host.innerHTML = '';
     g.params.forEach(pm => {
-      if (pm.advanced && !admin) return; // designer-only, invisible otherwise
+      // Every parameter shows for everyone — no designer gate on knit controls.
       if (pm.type === 'select') {
         const row = document.createElement('div');
-        row.className = 'param-slider-row' + (pm.advanced ? ' advanced-param' : '');
+        row.className = 'param-slider-row';
         const opts = (pm.options || []).map(o => `<option value="${o.value}">${o.label}</option>`).join('');
         row.innerHTML = `<div class="param-slider-header"><span>${pm.label}</span></div>`;
         const sel = document.createElement('select');
@@ -1754,7 +2337,7 @@ class KnitApp {
         return;
       }
       const row = document.createElement('div');
-      row.className = 'param-slider-row' + (pm.advanced ? ' advanced-param' : '');
+      row.className = 'param-slider-row';
       const val = saved[pm.key] != null ? saved[pm.key] : pm.default;
       row.innerHTML =
         `<div class="param-slider-header"><span>${pm.label}</span><span class="param-slider-val" data-val="${pm.key}">${val}${pm.unit ? ' ' + pm.unit : ''}</span></div>`;
@@ -1944,8 +2527,12 @@ class KnitApp {
     if (!plan || !this.editor) return;
     const part = plan.parts[0];
     if (!part) return;
-    const targetRows = Math.max(8, Math.min(240, Math.min(part.rows, 48)));
-    const targetCols = Math.max(8, Math.min(this.currentProfile.columns, Math.min(part.castOn, this.currentProfile.columns)));
+    // Never hand the editor a card this machine cannot knit, however the sizing
+    // worked out: minRows/maxRows come from the profile, not from a number typed
+    // into this function.
+    const limits = profileLimits(this.currentProfile);
+    const targetRows = Math.max(limits.minRows, Math.min(limits.maxRows, part.rows, 48));
+    const targetCols = Math.max(8, Math.min(this.currentProfile.columns, part.castOn));
     this.editor.setDimensions(targetRows, targetCols);
     // Lay a subtle 1×1 checkerboard cast-on guide (numeric modes) or a plain
     // knit field (lace, where cells are stitch glyphs) so the drop has structure.
@@ -1972,7 +2559,11 @@ class KnitApp {
     bd.className = 'kx-cmd-backdrop';
     document.body.appendChild(bd);
     const render = () => {
-      const label = v.status === 'feasible' ? '\u2713 Machine-feasible' : v.status === 'warn' ? '\u26a0 Needs attention' : '\u2715 Not feasible yet';
+      // verdict().status is 'feasible' | 'needs-attention' | 'not-feasible' — the
+      // badge classes in extras.js key off those exact strings.
+      const label = v.status === 'feasible' ? '\u2713 Machine-feasible'
+        : v.status === 'needs-attention' ? '\u26a0 Needs attention'
+        : '\u2715 Not feasible yet';
       const cards = v.issues.map((it, i) => `
         <div class="kx-feas-card kx-feas-${it.sev}">
           <div class="kx-feas-head"><span class="kx-feas-dot"></span><strong>${it.title}</strong></div>
@@ -1982,7 +2573,7 @@ class KnitApp {
         </div>`).join('');
       bd.innerHTML = `<div class="kx-feas" role="dialog" aria-modal="true" aria-label="Machine feasibility">
         <div class="kx-feas-top"><h2>Machine feasibility</h2><span class="kx-feas-badge kx-feas-${v.status}">${label}</span></div>
-        <p class="kx-feas-sub">Checked live against ${this.currentProfile.name}. Each fix only changes what it must.</p>
+        <p class="kx-feas-sub">Checked live against ${this.currentProfile.name}. A fix only changes what it has to \u2014 nothing is touched until you click it.</p>
         <div class="kx-feas-list">${cards}</div>
         <div class="kx-feas-foot">
           ${v.fixable ? `<button class="kx-btn kx-primary" id="kx-feas-all">Fix all safe issues (${v.fixable})</button>` : ''}
@@ -2033,13 +2624,13 @@ class KnitApp {
       const m = svgStr.match(/viewBox="[\d.\s-]+\s+([\d.]+)\s+([\d.]+)"/);
       const w = m ? parseFloat(m[1]) : 200, h = m ? parseFloat(m[2]) : 300;
       const stamp = `\n<text x="${(w - 3).toFixed(1)}" y="${(h - 2).toFixed(1)}" text-anchor="end" ` +
-        `font-family="sans-serif" font-size="4" fill="#94a3b8" fill-opacity="0.7">ily, Benji \u2665 \u00b7 KnitCAD</text>\n`;
+        `font-family="sans-serif" font-size="4" fill="#94a3b8" fill-opacity="0.7">ily, Benji \u2665 \u00b7 KNITCAT</text>\n`;
       return svgStr.replace('</svg>', stamp + '</svg>');
     } catch (e) { return svgStr; }
   }
 
   _stampWatermarkDxf(dxfStr) {
-    return `; ily, Benji \u2665 \u00b7 KnitCAD\n${dxfStr}`;
+    return `; ily, Benji \u2665 \u00b7 KNITCAT\n${dxfStr}`;
   }
 
   downloadFile(content, filename, mimeType) {
@@ -2065,8 +2656,8 @@ class KnitApp {
     
     if (hasErrors) {
       const errorCount = diags.filter(d => d.type === 'error').length;
-      this.notifications.error('Schedule verification failed.', {
-        details: [`${errorCount} error(s) found. See Diagnostics panel for details.`]
+      this.notifications.error('The verifier could not read this schedule.', {
+        details: [`${errorCount} error(s) found — the Diagnostics panel names each one.`]
       });
     } else {
       this.notifications.success('Schedule verified — all carriage passes are physically feasible.');
@@ -2104,7 +2695,7 @@ class KnitApp {
 
   exportScheduleCSV() {
     if (!this.compilationResult || this.compilationResult.strokes.length === 0) {
-      this.notifications.warn('No schedule data to export.');
+      this.notifications.warn('No carriage schedule yet — pick Lace mode and draw eyelets or transfers.');
       return;
     }
     
@@ -2161,7 +2752,7 @@ class KnitApp {
     const collisions = diags.filter(d => d.type === 'error' && d.message.toLowerCase().includes('collision'));
     
     if (collisions.length > 0) {
-      this.notifications.warn(`Found ${collisions.length} potential collision(s).`, {
+      this.notifications.warn(`${collisions.length} transfer${collisions.length > 1 ? 's' : ''} would collide on one pass.`, {
         details: collisions.map(c => c.message),
         duration: 8000
       });
@@ -2196,7 +2787,7 @@ class KnitApp {
   // Yarn Simulation Toolbar Functions
   forceYarnRelaxation() {
     if (!this.yarnSim || !this.yarnSim.topology) {
-      this.notifications.warn('Yarn simulator is not ready yet.');
+      this.notifications.warn('The yarn simulator is still warming up — give it a moment and try again.');
       return;
     }
     const topo = this.yarnSim.topology;
@@ -2207,7 +2798,11 @@ class KnitApp {
       topo.stepPhysics(4, 0.016, topo.damping);
     }
     topo.collisionEnabled = prevCollision;
-    this.yarnSim.animating = true;
+    // Perturbing the lattice has to restart the solver, not just flip a flag: the
+    // loop parks itself when the fabric settles. Infinity guarantees the sleep
+    // detector makes one real comparison before deciding to stop again.
+    this.yarnSim.prevStrainEnergy = Infinity;
+    this.yarnSim.wake();
     this.yarnSim.render();
     const ms = Math.round(performance.now() - t0);
     this.notifications.success(`Fabric relaxation complete (${ms} ms).`);
@@ -2228,7 +2823,8 @@ class KnitApp {
   toggleYarnGravity() {
     if (!this.yarnSim || !this.yarnSim.topology) return;
     this.yarnSim.topology.gravityEnabled = !this.yarnSim.topology.gravityEnabled;
-    this.yarnSim.animating = true;
+    this.yarnSim.prevStrainEnergy = Infinity;
+    this.yarnSim.wake();
 
     const gravityBtn = document.getElementById('btn-yarn-gravity');
     if (gravityBtn) {
@@ -2245,7 +2841,7 @@ class KnitApp {
 
   resetFabricMounting() {
     if (!this.yarnSim?.topology) {
-      this.notifications.warn('Yarn simulator is not ready yet.');
+      this.notifications.warn('The yarn simulator is still warming up — give it a moment and try again.');
       return;
     }
     this.yarnSim.resetMounting();
@@ -2295,7 +2891,8 @@ class KnitApp {
       restMultiplier: mat.restMultiplier,
       damping: mat.damping
     });
-    this.yarnSim.animating = true;
+    this.yarnSim.prevStrainEnergy = Infinity;
+    this.yarnSim.wake();
     this.yarnSim.render();
 
     ['btn-yarn-cotton', 'btn-yarn-wool', 'btn-yarn-silk'].forEach(id => {
@@ -2323,7 +2920,7 @@ class KnitApp {
 
   takeYarnScreenshot() {
     if (!this.yarnSim?.canvas) {
-      this.notifications.warn('Yarn canvas is not available.');
+      this.notifications.warn('The Yarn Physics tab is not open yet — switch to it and try again.');
       return;
     }
     const link = document.createElement('a');
@@ -2335,7 +2932,7 @@ class KnitApp {
 
   exportYarn3D() {
     if (!this.yarnSim?.topology) {
-      this.notifications.warn('No yarn simulation data to export.');
+      this.notifications.warn('Nothing knitted to export yet — the yarn view needs a pattern first.');
       return;
     }
     const obj = this.yarnSim.exportObj();
@@ -2346,7 +2943,7 @@ class KnitApp {
   // Punchcard Toolbar Functions
   verifyPunchcard() {
     if (!this.compilationResult || !this.compilationResult.cardMatrix) {
-      this.notifications.warn('No punchcard data to verify.');
+      this.notifications.warn('Nothing to verify yet — draw a pattern so there is a card to check.');
       return;
     }
     
@@ -2427,7 +3024,7 @@ class KnitApp {
 
   showPunchcardStats() {
     if (!this.compilationResult || !this.compilationResult.cardMatrix) {
-      this.notifications.warn('No punchcard data available.');
+      this.notifications.warn('No punchcard yet — draw a pattern and KNITCAT will compile one.');
       return;
     }
     
@@ -2465,7 +3062,7 @@ class KnitApp {
 
   analyzePunchcardDensity() {
     if (!this.compilationResult || !this.compilationResult.cardMatrix) {
-      this.notifications.warn('No punchcard data available.');
+      this.notifications.warn('No punchcard yet — draw a pattern and KNITCAT will compile one.');
       return;
     }
     
@@ -2520,7 +3117,7 @@ class KnitApp {
         this.notifications.info('Toolpath already near-optimal — no shorter route found.');
       }
     } else {
-      this.notifications.warn('Not enough punched holes to optimize a toolpath.');
+      this.notifications.warn('Too few holes to optimise — punch some cells first, then re-run the toolpath.');
     }
   }
 
@@ -2814,14 +3411,28 @@ class KnitApp {
     const heartsRain = document.getElementById('love-hearts-rain');
     
     if (!popup) {
-      console.warn('[KnitCAD] Love popup element not found');
+      console.warn('[KNITCAT] Love popup element not found');
       return;
     }
 
-    popup.style.display = 'flex';
-    popup.classList.remove('hidden');
+    // The inline controller in index.html owns open/close + the button wiring, so
+    // the dismiss path works even if this app layer never finishes booting.
+    const popupCtrl = window.knitcatLovePopup;
+    if (popupCtrl && typeof popupCtrl.show === 'function') {
+      popupCtrl.show();
+    } else {
+      popup.style.display = 'flex';
+      popup.classList.remove('hidden');
+    }
     this._markLovePopupSeen();
+    // The chime can't fire before the browser allows audio (autoplay policy),
+    // so keep nudging it until the context is actually running.
     fx('success');
+    let chimeTries = 0;
+    const chimeRetry = setInterval(() => {
+      if (window.knitcatAudio?.isReady?.()) { fx('success'); clearInterval(chimeRetry); }
+      else if (++chimeTries > 20) clearInterval(chimeRetry);
+    }, 150);
 
     const HEARTS = ['💗', '💖', '💓', '💕', '♥'];
     const OPTIMIZED_COUNT = 6;
@@ -2844,6 +3455,10 @@ class KnitApp {
       fragment.appendChild(h);
     }
     if (heartsRain) heartsRain.appendChild(fragment);
+
+    // Only hand-wire a fallback when the shared controller is unavailable (e.g. an
+    // older cached index.html); otherwise both layers would fight over the state.
+    if (popupCtrl && typeof popupCtrl.hide === 'function') return;
 
     const dismiss = () => {
       popup.classList.add('hidden');

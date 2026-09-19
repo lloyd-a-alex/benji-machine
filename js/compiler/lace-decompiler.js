@@ -14,6 +14,29 @@
  * 3. Carriage physical traverse continuity:
  *      Carriage position parity p_{k+1} = -p_k
  * 4. Automatic insertion of idle return passes & plain yarn rows
+ *
+ * ── Scope: this is a SINGLE-BED model ───────────────────────────────────────
+ * `currentBed` is one array of ONE needle bed, and every TransferOp moves a loop
+ * from needle `sourceCol` to needle `targetCol` INSIDE that array. That is the
+ * literal mechanics of a single-bed punchcard lace carriage (Brother LC-2 on a
+ * KH-830/KH-881, Silver Reed LC-1/LC-580): the transfer needles push the loop
+ * sideways onto the adjacent latch and leave the source needle empty.
+ *
+ * On a DOUBLE-BED machine (Passap Duo 80 / E6000, or any home machine with a
+ * ribber) a transfer instead carries the loop across to the OPPOSED bed, and
+ * returns it later — a different carriage, a different card and a different pass
+ * schedule. Compiling for one bed and claiming it describes the other would be
+ * wrong, so `profile.beds` is checked upstream by the feasibility advisor
+ * (see js/features/feasibility.js), which warns when the mismatch matters.
+ *
+ * ── Eyelets vs transfers are two routes to the SAME openwork ────────────────
+ * Both punch holes and both leave a needle empty; they differ in intent:
+ *   EYELET        an isolated yarnover: the hole is the point, no lean.
+ *   TRANSFER_*     the lean/draw is the point, the hole is a side effect.
+ * A machine cannot make a hole by adding yarn out of nowhere, so an eyelet with
+ * no companion decrease is compiled into an implicit one-needle transfer (see
+ * the STITCH_TYPE.EYELET branch below). Real designs mix them: eyelets set
+ * spacing, transfers pull the fabric into a shaped edge.
  */
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
@@ -116,6 +139,8 @@ export class LaceCompiler {
 
     // Track simulated needle bed state: array of number of loops on each needle
     // 1 = normal single loop, 0 = empty needle, 2 = double loop (decrease)
+    // NOTE: ONE flat array == ONE needle bed. A "transfer" here is a sideways
+    // move within this array, i.e. single-bed lace. See the header comment.
     let currentBed = new Array(cols).fill(1);
     let currentCarriageSide = 'LEFT'; // Standard starting position on the left
     let strokeCount = 0;
@@ -149,14 +174,21 @@ export class LaceCompiler {
             ));
           }
         } else if (stitch === STITCH_TYPE.EYELET) {
-          // In machine lace, an eyelet is formed by transferring the loop to an adjacent needle.
-          // By convention, if not specified, eyelet transfers to the right if c is even, left if odd,
-          // or user specifies companion decrease. Check if adjacent column is a decrease.
+          // An eyelet is the yarnover of hand knitting: a hole and nothing else.
+          // A machine feeds no yarn out of thin air, so the only way to vacate a
+          // needle is to MOVE its existing loop somewhere else — hence an eyelet
+          // is always paid for with a transfer, even when the design never
+          // mentions one. By convention, if not specified, eyelet transfers to
+          // the right if c is even, left if odd, or user specifies companion
+          // decrease. Check if adjacent column is a decrease.
           const hasLeftDecrease = (c > 0 && patternRow[c - 1] === STITCH_TYPE.TRANSFER_LEFT);
           const hasRightDecrease = (c < cols - 1 && patternRow[c + 1] === STITCH_TYPE.TRANSFER_RIGHT);
 
           if (!hasLeftDecrease && !hasRightDecrease) {
-            // Implicit eyelet: transfer needle c to needle c + 1 to leave needle c empty
+            // Implicit eyelet: transfer needle c to needle c + 1 to leave needle c
+            // empty. The transfer is invisible in the chart but real at the
+            // machine, which is exactly why eyelets and transfers are
+            // complementary rather than duplicated features.
             const target = (c + 1 < cols) ? c + 1 : c - 1;
             const dir = (target > c) ? DIRECTION.LEFT_TO_RIGHT : DIRECTION.RIGHT_TO_LEFT;
             transferOps.push(new TransferOp(

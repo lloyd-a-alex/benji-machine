@@ -1,12 +1,43 @@
 {
-  "name": "knitcad",
+  "name": "knitcat",
   "version": "1.0.0",
   "type": "module",
-  "description": "Antigravity KnitCAD — industrial knitting machine CAD/CAM studio",
+  "description": "KNITCAT — free browser knitting machine CAD/CAM: punchcard compiler, lace decompiler for directional yarn transfers and eyelets, Brother KH-830 / Silver Reed carriage simulation, DXF + G-code export.",
+  "keywords": [
+    "knitting-machine-cad",
+    "knitting-machine-cam",
+    "punchcard",
+    "punchcard-compiler",
+    "lace-decompiler",
+    "brother-kh-830",
+    "silver-reed",
+    "passap",
+    "yarn-transfer",
+    "eyelet",
+    "jacquard",
+    "fair-isle",
+    "knitwear-design",
+    "dxf-export",
+    "gcode",
+    "designaknit",
+    "ayab",
+    "laser-cutting"
+  ],
+  "homepage": "https://lloyd-a-alex.github.io/benji-machine/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lloyd-a-alex/benji-machine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lloyd-a-alex/benji-machine/issues"
+  },
+  "author": "Alex",
+  "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "start": "node server.js 3000",
     "dev": "node server.js 3000",
     "test": "node --test \"tests/*.test.mjs\"",
-    "build": "node scripts/bust-cache.mjs"
+    "build": "node scripts/bust-cache.mjs",
+    "cover": "pwsh -NoProfile -File scripts/make-og-cover.ps1"
   }
 }

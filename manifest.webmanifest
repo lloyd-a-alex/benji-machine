@@ -1,0 +1,99 @@
+{
+  "name": "KNITCAT — Knitting Machine CAD/CAM & Lace Decompiler",
+  "short_name": "KNITCAT",
+  "description": "Design punchcard knitting-machine patterns in the browser: lace decompiler for directional yarn transfers and eyelets, Brother KH-830 / Silver Reed carriage simulation, yarn physics, DXF and G-code export. Installs and runs offline.",
+  "id": "./",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#070a12",
+  "categories": ["productivity", "design", "utilities", "education"],
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "og-cover.png",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "A punchcard lace chart, its carriage-pass schedule and the 3D yarn simulation"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Punchcard preview",
+      "short_name": "Card",
+      "description": "Read the compiled card at 1:1 before you cut it",
+      "url": "./?tab=punchcard&source=pwa",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "CNC toolpath",
+      "short_name": "Toolpath",
+      "description": "Preview the drill or laser route and its rapid distance",
+      "url": "./?tab=cnc&source=pwa",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Math Studio",
+      "short_name": "Math",
+      "description": "Generate a seeded procedural pattern",
+      "url": "./?open=math&source=pwa",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "file_handlers": [
+    {
+      "action": "./",
+      "name": "Open a KNITCAT card",
+      "accept": {
+        "application/json": [".kcard"]
+      }
+    }
+  ],
+  "protocol_handlers": [
+    {
+      "protocol": "web+knitcat",
+      "url": "./?import=%s"
+    }
+  ],
+  "prefer_related_applications": false
+}

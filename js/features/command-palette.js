@@ -1,5 +1,5 @@
 /**
- * KnitCAD — command palette ("do what I typed").
+ * KNITCAT — command palette ("do what I typed").
  *
  * Press  Ctrl/⌘+K  or  /  (or click the ⌘ Search button) and type ANY relevant
  * word or phrase — "beanie", "shirt", "punchcard", "fair isle", "export svg",
@@ -166,7 +166,23 @@ function ensureStyles() {
   .kx-cmd-group{font-size:11px;text-transform:uppercase;letter-spacing:.05em;opacity:.5}
   .kx-cmd-empty{padding:16px;text-align:center;opacity:.6;font-size:13px}
   .kx-cmd-foot{display:flex;gap:16px;justify-content:flex-end;padding:8px 14px;border-top:1px solid #1c2f4d;font-size:11px;opacity:.5}
-  .kx-search-btn{white-space:nowrap}`;
+  .kx-search-btn{white-space:nowrap}
+  /* ── responsive: on a phone the palette is a full-screen finder, not a card ── */
+  @media (pointer:coarse){
+    .kx-cmd-backdrop{padding-top:0;align-items:stretch}
+    .kx-cmd-item{min-height:48px}
+  }
+  @media (max-width:640px){
+    .kx-cmd-backdrop{padding:0;justify-content:stretch}
+    .kx-cmd{width:100%;max-width:100%;height:100%;display:flex;flex-direction:column;border:0;border-radius:0}
+    .kx-cmd-input{font-size:16px;padding:14px calc(14px + env(safe-area-inset-right)) 14px
+      calc(14px + env(safe-area-inset-left))}
+    .kx-cmd-input{padding-top:calc(14px + env(safe-area-inset-top))}
+    .kx-cmd-list{flex:1 1 auto;max-height:none;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+    .kx-cmd-label{overflow-wrap:anywhere}
+    .kx-cmd-foot{padding-bottom:calc(8px + env(safe-area-inset-bottom))}
+  }
+  `;
   const el = document.createElement('style');
   el.id = 'kx-cmd-style';
   el.textContent = css;

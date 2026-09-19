@@ -6,11 +6,13 @@
  * - Laser cutters (GRBL, Marlin, LinuxCNC M3/M5 laser power modulation)
  * - CNC routers / milling machines (canned drill cycles G81, G83 peck drilling)
  * 
- * Includes 2-Opt Traveling Salesperson Problem (TSP) toolpath optimizer
- * to minimize rapid traverse distance across hundreds of hole coordinates.
+ * Ordering of the holes lives in ../math/tsp-path.js - the same code the CNC
+ * preview runs - so the rapid distance you see on screen is the rapid distance
+ * this program will actually produce.
  */
 
 import { calculateCardDimensions } from '../machine/profiles.js';
+import { optimizeToolpath, orderColumnSweep, pathLengthMm } from '../math/tsp-path.js';
 
 export class CncGcodeExporter {
   constructor(options = {}) {
@@ -81,10 +83,20 @@ export class CncGcodeExporter {
       }
     }
 
-    // 2. Path Optimization via 2-Opt TSP Heuristic
+    // 2. Path optimization.
+    //    The tractor sprocket strip is fixturing, not pattern. It used to be
+    //    thrown into the same TSP tour, so the optimiser could start mid-card on
+    //    a feed hole and shuffle the strip out of sequence. Punch it first as
+    //    straight column sweeps, then order the pattern holes with the shared
+    //    nearest-neighbour + 2-opt pass.
     let orderedHoles = holePoints;
     if (this.options.optimizePath && holePoints.length > 2) {
-      orderedHoles = this.optimizeHolePath2Opt(holePoints);
+      const sprocketPoints = holePoints.filter(p => p.type === 'sprocket');
+      const patternPoints = holePoints.filter(p => p.type !== 'sprocket');
+      const orderedPattern = patternPoints.length > 2
+        ? optimizeToolpath(patternPoints)
+        : patternPoints;
+      orderedHoles = [...orderColumnSweep(sprocketPoints), ...orderedPattern];
     }
 
     // 3. Assemble G-Code program
@@ -97,6 +109,8 @@ export class CncGcodeExporter {
     gcode.push(`; Profile: ${profile.name}`);
     gcode.push(`; Dimensions: ${dims.widthMm.toFixed(2)}mm x ${dims.heightMm.toFixed(2)}mm`);
     gcode.push(`; Holes to punch: ${orderedHoles.length}`);
+    gcode.push(`; Rapid traverse: ${pathLengthMm(orderedHoles).toFixed(1)}mm (from home)`);
+    gcode.push(`; Path optimization: ${this.options.optimizePath ? 'NN + 2-opt' : 'source order'}`);
     gcode.push(`; Machine Mode: ${this.options.machineType.toUpperCase()}`);
     gcode.push(`; =======================================================`);
     gcode.push(`G21          ; Metric system millimeters`);
@@ -175,76 +189,11 @@ export class CncGcodeExporter {
   }
 
   /**
-   * 2-Opt Traveling Salesperson Heuristic
-   * Reduces rapid non-cutting traverse distance by up to 60-70%.
+   * @deprecated The ordering lives in ../math/tsp-path.js now, shared with the
+   * CNC preview so the two can never disagree again. This is a thin delegation
+   * left in place for any caller that still reaches for it.
    */
   optimizeHolePath2Opt(points) {
-    const N = points.length;
-    if (N <= 2) return points;
-
-    // 1. Initial Greedy Nearest Neighbor tour
-    const visited = new Uint8Array(N);
-    const tour = [0];
-    visited[0] = 1;
-
-    for (let step = 1; step < N; step++) {
-      const last = points[tour[tour.length - 1]];
-      let bestDist = Infinity;
-      let bestIdx = -1;
-
-      for (let i = 0; i < N; i++) {
-        if (!visited[i]) {
-          const dx = points[i].x - last.x;
-          const dy = points[i].y - last.y;
-          const d = dx * dx + dy * dy;
-          if (d < bestDist) {
-            bestDist = d;
-            bestIdx = i;
-          }
-        }
-      }
-
-      tour.push(bestIdx);
-      visited[bestIdx] = 1;
-    }
-
-    // 2. 2-Opt Local Search Improvement
-    let improved = true;
-    let iterations = 0;
-    const maxIter = 50;
-
-    const dist = (i, j) => {
-      const p1 = points[tour[i]];
-      const p2 = points[tour[j]];
-      const dx = p1.x - p2.x;
-      const dy = p1.y - p2.y;
-      return Math.sqrt(dx * dx + dy * dy);
-    };
-
-    while (improved && iterations < maxIter) {
-      improved = false;
-      iterations++;
-
-      for (let i = 0; i < N - 2; i++) {
-        for (let j = i + 2; j < N - 1; j++) {
-          const delta = (dist(i, j) + dist(i + 1, j + 1)) - (dist(i, i + 1) + dist(j, j + 1));
-          if (delta < -1e-4) {
-            // Reverse segment between i+1 and j
-            let left = i + 1;
-            let right = j;
-            while (left < right) {
-              const temp = tour[left];
-              tour[left] = tour[right];
-              tour[right] = temp;
-              left++;
-              right--;
-            }
-            improved = true;
-          }
-        }
-      }
-    }
-
-    return tour.map(idx => points[idx]);
+    return optimizeToolpath(points);
   }
 }
