@@ -243,6 +243,17 @@ export class CanvasEditor {
     this.render();
   }
 
+  throttle(func, limit) {
+    let inThrottle;
+    return function(...args) {
+      if (!inThrottle) {
+        func.apply(this, args);
+        inThrottle = true;
+        setTimeout(() => inThrottle = false, limit);
+      }
+    };
+  }
+
   // Coordinate transforms
   screenToCell(screenX, screenY) {
     const rect = this.canvas.getBoundingClientRect();
@@ -262,16 +273,6 @@ export class CanvasEditor {
     return { x: screenX, y: screenY };
   }
 
-  // Mouse & Touch Event Handlers
-  setupEvents() {
-    const canvas = this.canvas;
-
-    canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-    // Performance optimization: throttled rendering
-    this.throttledRender = this.throttle(() => this.render(), 16); // ~60fps max
-  }
-
   throttle(func, limit) {
     let inThrottle;
     return function(...args) {
@@ -282,6 +283,15 @@ export class CanvasEditor {
       }
     };
   }
+
+  // Mouse & Touch Event Handlers
+  setupEvents() {
+    const canvas = this.canvas;
+
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+    // Performance optimization: throttled rendering
+    this.throttledRender = this.throttle(() => this.render(), 16); // ~60fps max
 
     canvas.addEventListener('mousedown', e => {
       const cell = this.screenToCell(e.clientX, e.clientY);

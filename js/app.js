@@ -55,7 +55,12 @@ class KnitApp {
     }
 
     // Show the Benji love popup on first load with delay to ensure DOM is ready
-    setTimeout(() => this._showLovePopup(), 500);
+    // Use requestIdleCallback for non-blocking initialization
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() => this._showLovePopup(), { timeout: 2000 });
+    } else {
+      setTimeout(() => this._showLovePopup(), 500);
+    }
   }
 
   initDOM() {
@@ -101,35 +106,37 @@ class KnitApp {
   }
 
   initComponents() {
-    // 1. Grid Canvas Editor
-    this.editor = new CanvasEditor(this.elements.editorCanvas, {
-      rows: 24,
-      cols: this.currentProfile.columns,
-      mode: this.currentMode,
-      onChange: () => this.handlePatternChange()
-    });
+    // Use requestIdleCallback to defer heavy initialization for faster startup
+    const initComponents = () => {
+      // 1. Grid Canvas Editor
+      this.editor = new CanvasEditor(this.elements.editorCanvas, {
+        rows: 24,
+        cols: this.currentProfile.columns,
+        mode: this.currentMode,
+        onChange: () => this.handlePatternChange()
+      });
 
-    // 2. Physical Yarn Simulator — always romantic pink for Benji ♥
-    this.yarnSim = new YarnSimulator(this.elements.yarnCanvas, {
-      rows: 24,
-      cols: this.currentProfile.columns
-    });
-    if (this.yarnSim && this.yarnSim.setYarnColors) {
-      this.yarnSim.setYarnColors('#fbcfe8', '#e11d48');
-    }
+      // 2. Physical Yarn Simulator — always romantic pink for Benji ♥
+      this.yarnSim = new YarnSimulator(this.elements.yarnCanvas, {
+        rows: 24,
+        cols: this.currentProfile.columns
+      });
+      if (this.yarnSim && this.yarnSim.setYarnColors) {
+        this.yarnSim.setYarnColors('#fbcfe8', '#e11d48');
+      }
 
-    // 3. CNC Toolpath Viewer
-    this.toolpathViewer = new ToolpathViewer(this.elements.toolpathCanvas, {
-      profile: this.currentProfile
-    });
+      // 3. CNC Toolpath Viewer
+      this.toolpathViewer = new ToolpathViewer(this.elements.toolpathCanvas, {
+        profile: this.currentProfile
+      });
 
-    // 4. Punchcard 2D Canvas context
-    this.punchcardCtx = this.elements.punchcardCanvas.getContext('2d');
+      // 4. Punchcard 2D Canvas context
+      this.punchcardCtx = this.elements.punchcardCanvas.getContext('2d');
 
-    // 5. Tank Top Tailoring CAD
-    const tankTopEl = document.getElementById('tanktop-canvas');
-    if (tankTopEl) {
-      this.tankTopCanvas = new TankTopCanvas(tankTopEl, {
+      // 5. Tank Top Tailoring CAD
+      const tankTopEl = document.getElementById('tanktop-canvas');
+      if (tankTopEl) {
+        this.tankTopCanvas = new TankTopCanvas(tankTopEl, {
         chestCircumferenceCm: 92,
         easeCm: 4,
         bodyLengthCm: 38,
@@ -146,6 +153,14 @@ class KnitApp {
     const brotherEl = document.getElementById('brother-canvas');
     if (brotherEl) {
       this.brotherCanvas = new BrotherSimCanvas(brotherEl);
+    }
+    };
+
+    // Defer initialization for faster startup
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() => initComponents(), { timeout: 1000 });
+    } else {
+      setTimeout(() => initComponents(), 100);
     }
   }
 
@@ -1688,35 +1703,29 @@ class KnitApp {
     popup.classList.remove('hidden');
 
     // Performance-optimized: Use CSS with minimal DOM elements
-    const HEARTS = ['💗', '💖', '💓', '💕', '♥', '🌸', '✨', '💝', '🌹', '💘'];
-    const OPTIMIZED_COUNT = 12; // Further reduced for better performance
+    const HEARTS = ['💗', '💖', '💓', '💕', '♥'];
+    const OPTIMIZED_COUNT = 6; // Minimized for instant startup
     
     // Clear existing particles
     if (heartsRain) {
       heartsRain.innerHTML = '';
     }
     
-    // Create optimized heart particles with CSS transforms
+    // Create optimized heart particles with CSS transforms (using DocumentFragment for performance)
+    const fragment = document.createDocumentFragment();
     for (let i = 0; i < OPTIMIZED_COUNT; i++) {
       const h = document.createElement('span');
       h.className = 'heart-particle';
       h.textContent = HEARTS[Math.floor(Math.random() * HEARTS.length)];
       h.style.left = `${Math.random() * 100}%`;
-      h.style.fontSize = `${10 + Math.random() * 12}px`;
-      h.style.animationDuration = `${3 + Math.random() * 3}s`;
-      h.style.animationDelay = `${Math.random() * 2}s`;
-      h.style.opacity = `${0.3 + Math.random() * 0.3}`;
+      h.style.fontSize = `${8 + Math.random() * 8}px`;
+      h.style.animationDuration = `${2 + Math.random() * 2}s`;
+      h.style.animationDelay = `${Math.random() * 1}s`;
+      h.style.opacity = `${0.4 + Math.random() * 0.2}`;
       h.style.willChange = 'transform, opacity'; // Performance hint
-      if (heartsRain) heartsRain.appendChild(h);
+      fragment.appendChild(h);
     }
-
-    // Add romantic floating sparkles effect
-    const sparkles = document.createElement('div');
-    sparkles.className = 'love-sparkles';
-    sparkles.innerHTML = Array(8).fill(0).map(() => 
-      `<div class="sparkle" style="left: ${Math.random() * 100}%; top: ${Math.random() * 100}%; animation-delay: ${Math.random() * 1.5}s;"></div>`
-    ).join('');
-    if (heartsRain) heartsRain.appendChild(sparkles);
+    if (heartsRain) heartsRain.appendChild(fragment);
 
     const dismiss = () => {
       popup.classList.add('hidden');
@@ -1731,7 +1740,9 @@ class KnitApp {
 
     // Close button with enhanced romantic feedback
     if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
+      closeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         closeBtn.style.transform = 'scale(0.95)';
         setTimeout(dismiss, 100);
       });
