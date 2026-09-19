@@ -35,10 +35,13 @@ export function cloneMatrix(matrix) {
 
 export function matrixInfo(matrix) {
   const rows = matrix.length;
-  const cols = rows ? matrix[0].length : 0;
+  // Widest row, not row 0: a card that has been clipped or spliced can be ragged,
+  // and a bounding box built from the first row silently drops stitches.
+  let cols = 0;
+  for (let r = 0; r < rows; r++) cols = Math.max(cols, (matrix[r] || []).length);
   let ragged = -1;
-  for (let r = 1; r < rows; r++) {
-    if (matrix[r].length !== cols) {
+  for (let r = 0; r < rows; r++) {
+    if ((matrix[r] || []).length !== cols) {
       ragged = r;
       break;
     }

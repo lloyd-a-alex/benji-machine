@@ -270,11 +270,15 @@ export function floodRegion(
   const rows = matrix.length;
   const cols = matrix[0] ? matrix[0].length : 0;
   const keys = new Set();
-  if (!isInside(startR, startC, rows, cols)) return { keys, size: 0, capped: false };
+  const capped = attempted => ({ keys: emptyKeys(), size: 0, capped: true, attempted });
+  if (!isInside(startR, startC, rows, cols)) return { keys, size: 0, capped: false, attempted: 0 };
   const seed = valueAt(matrix, startR, startC);
   const hood = neighbourList(connectivity);
   const queue = [[startR, startC]];
   keys.add(cellKey(startR, startC));
+  // The seed is counted too: a `limit` of 0 has to mean "select nothing", and a
+  // caller that only checked the loop would hand back a one-cell selection.
+  if (keys.size > limit) return capped(keys.size);
   while (queue.length) {
     const [r, c] = queue.shift();
     for (const [dr, dc] of hood) {
@@ -284,11 +288,14 @@ export function floodRegion(
       if (!isInside(nr, nc, rows, cols) || keys.has(key)) continue;
       if (!valuesMatch(valueAt(matrix, nr, nc), seed, { match, blank })) continue;
       keys.add(key);
-      if (keys.size > limit) return { keys: emptyKeys(), size: keys.size, capped: true };
+      // `size` always describes `keys`, so a caller can trust either one; the
+      // region it *would* have been is `attempted`, which is what the warning
+      // needs to say before it refuses to delete half the card.
+      if (keys.size > limit) return capped(keys.size);
       queue.push([nr, nc]);
     }
   }
-  return { keys, size: keys.size, capped: false };
+  return { keys, size: keys.size, capped: false, attempted: keys.size };
 }
 
 /** "Select every cell of this stitch type", over the whole card or a subset. */
@@ -317,12 +324,20 @@ export function selectWhere(matrix, predicate, { within = null } = {}) {
 }
 
 /** Shift-click a cell to add its whole region, or remove it when already there. */
-export function toggleKeys(keys, addition) {
-  const without = keysSubtract(keys, addition);
-  // A region that overlaps the current selection at all is treated as a
-  // subtraction — that is what a shift-click on an already-selected area means.
-  const removing = without.size !== keys.size;
-  return { keys: removing ? without : keysUnion(keys, addition), mode: removing ? 'removed' : 'added' };
+export function toggleKeys(keys, addition, { rows = Infinity, cols = Infinity } = {}) {
+  const incoming = clipKeys(addition, rows, cols);
+  const kept = keysSubtract(keys, incoming);
+  const gained = keysSubtract(incoming, keys);
+  // A toggle is a symmetric difference, even when the region only half overlaps:
+  // what was selected leaves and what was not arrives. Reporting "removed" and
+  // silently dropping the unselected half would make a shift-drag eat cells the
+  // pointer never touched.
+  const out = new Set(kept);
+  for (const key of gained) out.add(key);
+  const removed = keys.size - kept.size;
+  // The label names whichever half dominated, so the status line can read
+  // "removed 3 stitches from the selection" instead of a vague "updated".
+  return { keys: out, mode: removed > gained.size ? 'removed' : 'added', added: gained.size, removed };
 }
 
 // ─── lasso and freeform paths ────────────────────────────────────────────────

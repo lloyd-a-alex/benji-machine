@@ -25,6 +25,9 @@
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
 import { profileLimits } from '../machine/profiles.js';
+import {
+  knowledgeFor, phil, scoreIssues, riskLabel, techniqueSupported
+} from '../machine/machine-knowledge.js';
 
 // Float and tuck limits are read from the machine profile and NOWHERE else.
 // This file used to carry its own copy (7 needles, 5 for chunky) while the
@@ -173,7 +176,7 @@ export function createFeasibilityAdvisor(app) {
         PHIL.mapTerritory, null));
     }
 
-    // ── density ───────────────────────────────────────────────────────────────
+    // ── structure needs something to grip ────────────────────────────────────
     if (mode === 'fair_isle' || mode === 'slip' || mode === 'tuck') {
       const punched = M.reduce((a, r) => a + r.filter(v => v === 1).length, 0);
       const ratio = rows * cols ? punched / (rows * cols) : 0;
@@ -182,20 +185,217 @@ export function createFeasibilityAdvisor(app) {
         PHIL.pragnanz, { label: 'Thin it out (skip every 4th column)', safe: true, run: () => thin(M, 4) }));
     }
 
-    if (!issues.length) {
-      issues.push(mk('ok', 'This card is machine-feasible ♥',
-        `Checked against ${profile.name}: no long floats, no impossible passes, within the needle bed. Knit it with confidence.`,
-        PHIL.pragnanz, null));
+    // ── the exhaustive expert pass ───────────────────────────────────────────
+    // Beyond the handful of hard mechanical limits above, read every softer
+    // signal the card emits — colourwork budget, edge anchors, repeat hygiene,
+    // openwork balance, yarn-vs-gauge — and add the ones worth knowing about.
+    // These are advisory (info) by design: they refine the reading without ever
+    // gate-keeping a knit that the physics above already cleared.
+    try { extrasPass(M, { rows, cols, mode, profile, limits, issues }); } catch (_) { /* never throw */ }
+
+    // A card is "clean" when nothing rose to error or warning. Info notes are
+    // allowed to coexist with the all-clear, so we key off severity, not length.
+    const hasError = issues.some(i => i.sev === 'error');
+    const hasWarn = issues.some(i => i.sev === 'warn');
+    if (!hasError && !hasWarn) {
+      issues.unshift(mk('ok', 'This card is machine-feasible ♥',
+        `Checked against ${profile.name}: no long floats, no impossible passes, within the needle bed. ${countAdvice(issues)} soft note${countAdvice(issues) === 1 ? '' : 's'} below are just craft tips.`,
+        PHIL.pragnanz, null, { category: 'verdict' }));
     }
     return issues;
   }
 
+  // ── the deep pass: everything that is worth saying but not worth blocking on ─
+  function extrasPass(M, ctx) {
+    const { rows, cols, mode, profile, limits, issues } = ctx;
+    const know = knowledgeFor(profile);
+    if (!rows || !cols) return;
+
+    // 1. Craft context: what THIS carriage wants, read from the knowledge base.
+    const note = know.notesForMode && know.notesForMode[mode];
+    if (note) {
+      issues.push(mk('info', `${profile.gauge} · ${capital(mode)} on a ${know.brand}`,
+        note, phil('gauge'), null, { category: 'context' }));
+    }
+
+    // 2. Yarn weight the gauge is actually happy with (from the knowledge base).
+    if (know.yarnWeights && know.yarnWeights.length && know.yarnWeights[0] !== 'any') {
+      issues.push(mk('info', 'Yarn this gauge likes',
+        `${know.yarnWeights.join(', ')} — ${know.yarnGauge}. A weight far off this range makes every float and tuck judgement below less reliable.`,
+        phil('gauge'), null, { category: 'material' }));
+    }
+
+    // 3. Colourwork budget (fair isle / slip): how close runs sit UNDER the cap.
+    if (mode === 'fair_isle' || mode === 'slip') {
+      const want = mode === 'slip' ? 0 : 1;
+      let near = 0, isolated = 0, total = 0;
+      for (const row of M) {
+        let run = 0;
+        for (let c = 0; c <= row.length; c++) {
+          const is = c < row.length && row[c] === want;
+          if (is) { run++; total++; continue; }
+          if (run) {
+            if (run > limits.maxFloatNeedles - 2 && run <= limits.maxFloatNeedles) near++;
+            if (run === 1) isolated++;
+            run = 0;
+          }
+        }
+      }
+      if (near) {
+        issues.push(mk('info', `${near} run${near > 1 ? 's' : ''} sit right at the catch line`,
+          `Within two needles of the ${limits.maxFloatNeedles}-needle bridge. Fine today, one edit away from snagging — worth an eyeball if you keep editing.`,
+          phil('hickey'), null, { category: 'stranding' }));
+      }
+      if (total && isolated / total > 0.5) {
+        issues.push(mk('info', 'Mostly single, isolated stitches',
+          `Over half the ${mode === 'slip' ? 'slipped' : 'punched'} cells stand alone. A scatter of lone stitches tugs on the carried yarn from both sides and reads as noise, not motif.`,
+          phil('pragnanz'), null, { category: 'stranding' }));
+      }
+      const punched = M.reduce((a, r) => a + r.filter(v => v === 1).length, 0);
+      const ratio = punched / (rows * cols);
+      if (Math.abs(ratio - 0.5) > 0.35 && ratio > 0.05 && ratio < 0.95) {
+        issues.push(mk('info', `Strong ${ratio > 0.5 ? 'B (punched)' : 'A (blank)'} colour dominance`,
+          `Only ${Math.round(Math.min(ratio, 1 - ratio) * 100)}% one colour across the field. Dominant-ground colourwork is a real style, but know that the minority colour is the one carrying every ${mode === 'slip' ? 'slip' : 'stranded'} run.`,
+          phil('colorwork'), null, { category: 'stranding' }));
+      }
+    }
+
+    // 4. Edge anchors: a fully-blank outer column has nothing to hold the fabric.
+    if (mode !== 'lace') {
+      const firstAllBlank = M.every(r => r[0] === 0);
+      const lastAllBlank = M.every(r => r[cols - 1] === 0);
+      if ((firstAllBlank || lastAllBlank) && cols > 2) {
+        issues.push(mk('info', 'Edge ' + (firstAllBlank && lastAllBlank ? 'columns are' : 'column is') + ' entirely blank',
+          'A blank selvedge column gives the cast-on nothing punched to grip, so the edges can curl or ladder. A column of knit at each edge is cheap insurance.',
+          phil('margin'), null, { category: 'structure' }));
+      }
+    }
+
+    // 5. Repeat hygiene: does the card close on a clean horizontal repeat?
+    const rep = smallestRepeat(M, cols);
+    if (cols >= 6 && rep && rep.repeat && cols % rep.repeat !== 0) {
+      issues.push(mk('info', 'Repeat does not divide the card width',
+        `The motif looks ${rep.repeat} needles wide but the card is ${cols}; tiling it will cut the pattern mid-motif at the seam. Snap the width to a multiple of ${rep.repeat}.`,
+        phil('pragnanz'), null, { category: 'structure' }));
+    }
+
+    // 6. Lace: openwork needs its increases and decreases to balance out.
+    if (mode === 'lace') {
+      let yo = 0, dec = 0;
+      for (const row of M) for (const v of row) {
+        if (v === STITCH_TYPE.EYELET) yo++;
+        else if (v === STITCH_TYPE.TRANSFER_LEFT || v === STITCH_TYPE.TRANSFER_RIGHT ||
+                 v === STITCH_TYPE.TRANSFER_DOUBLE_L || v === STITCH_TYPE.TRANSFER_DOUBLE_R) dec++;
+      }
+      if (yo && dec && Math.abs(yo - dec) > Math.max(2, 0.15 * (yo + dec))) {
+        issues.push(mk('info', `Openwork is unbalanced (${yo} yarnovers vs ${dec} transfers)`,
+          'Each yarnover adds a stitch, each transfer takes one away. A surplus widens the fabric row after row (a ruffle); a deficit narrows it toward nothing. Pair them to hold the stitch count.',
+          phil('structure'), null, { category: 'lace' }));
+      }
+    }
+  }
+
   function verdict() {
     const issues = analyze();
+    const profile = app.currentProfile;
     const hasError = issues.some(i => i.sev === 'error');
     const hasWarn = issues.some(i => i.sev === 'warn');
     const status = hasError ? 'not-feasible' : hasWarn ? 'needs-attention' : 'feasible';
-    return { issues, status, fixable: issues.filter(i => i.fix && i.fix.safe).length };
+    const score = scoreIssues(issues);
+    const breakdown = {
+      error: issues.filter(i => i.sev === 'error').length,
+      warn: issues.filter(i => i.sev === 'warn').length,
+      info: issues.filter(i => i.sev === 'info').length,
+      ok: issues.filter(i => i.sev === 'ok').length
+    };
+    return {
+      issues,
+      status,
+      fixable: issues.filter(i => i.fix && i.fix.safe).length,
+      score,
+      risk: riskLabel(score),
+      breakdown,
+      machine: describeMachine(profile, app.currentMode),
+      narrative: synthesize(issues, { profile, mode: app.currentMode, score, status })
+    };
+  }
+
+  // ── helpers for the deep pass and the verdict extras ─────────────────────────
+  function capital(s) { return s ? s[0].toUpperCase() + s.slice(1).replace('_', ' ') : s; }
+  function countAdvice(issues) { return issues.filter(i => i.sev === 'info').length; }
+
+  /**
+   * Smallest horizontal period P (1<=P<=cols) whose tile reproduces every column.
+   * Returns { repeat } or null when nothing smaller than the whole width fits.
+   * Cheap: bails as soon as a candidate mismatches, and only tries divisors-ish
+   * candidates up to half the width.
+   */
+  function smallestRepeat(M, cols) {
+    if (!cols) return { repeat: 0 };
+    for (let p = 1; p <= Math.floor(cols / 2); p++) {
+      let ok = true;
+      outer: for (const row of M) {
+        for (let c = p; c < row.length; c++) {
+          if (row[c] !== row[c - p]) { ok = false; break outer; }
+        }
+      }
+      if (ok) return { repeat: p };
+    }
+    return { repeat: cols }; // no smaller repeat than the card itself
+  }
+
+  /** A compact, human machine briefing pulled from the knowledge base. */
+  function describeMachine(profile, mode) {
+    if (!profile) return null;
+    const know = knowledgeFor(profile);
+    const limits = profileLimits(profile);
+    return {
+      name: profile.name,
+      brand: know.brand,
+      family: know.family,
+      era: know.era,
+      aka: know.aka || [],
+      gauge: profile.gauge,
+      beds: limits.beds,
+      carriage: know.carriage,
+      yarnWeights: know.yarnWeights || [],
+      yarnGauge: know.yarnGauge,
+      strengths: know.strengths || [],
+      caveats: know.caveats || [],
+      modeSupported: techniqueSupported(profile, mode),
+      limits
+    };
+  }
+
+  /**
+   * Compose a plain-language "expert reading" from the findings. This is the
+   * narrative that makes the advisor feel considered rather than like a linter:
+   * it names the machine, the mode, the headline concern and the governing
+   * principle, then closes with the single most useful next step.
+   */
+  function synthesize(issues, ctx) {
+    const { profile, mode, score, status } = ctx;
+    const know = knowledgeFor(profile);
+    const errs = issues.filter(i => i.sev === 'error');
+    const warns = issues.filter(i => i.sev === 'warn');
+    const infos = issues.filter(i => i.sev === 'info');
+    const risk = riskLabel(score);
+    const bits = [];
+    bits.push(`Against the ${profile ? profile.name : 'selected machine'} (${know.brand}, ${profile ? profile.gauge : 'gauge?'}) in ${capital(mode)} mode this card scores ${score}/100 — ${risk.label.toLowerCase()}, ${risk.blurb}.`);
+    if (errs.length) {
+      bits.push(`${errs.length} blocker${errs.length > 1 ? 's' : ''} must be resolved first: ${errs.slice(0, 3).map(e => `"${e.title}"`).join(', ')}.`);
+    } else if (warns.length) {
+      bits.push(`No hard blockers, but ${warns.length} mechanical${warns.length > 1 ? 's' : ''} risk${warns.length === 1 ? '' : 's'} to weigh: ${warns.slice(0, 3).map(w => `"${w.title}"`).join(', ')}.`);
+    } else {
+      bits.push('Nothing here breaks the machine.');
+    }
+    if (know.caveats && know.caveats[0]) bits.push(`Worth remembering about this bed: ${know.caveats[0]}.`);
+    // Lead the next step with the highest-severity actionable fix available.
+    const next = errs.find(i => i.fix && i.fix.safe) || warns.find(i => i.fix && i.fix.safe);
+    if (next) bits.push(`Fastest improvement: “${next.fix.label}” — ${status === 'not-feasible' ? 'it clears a blocker' : 'it sharpens the fabric'}.`);
+    else if (infos.length) bits.push(`The rest are craft notes (${infos.length}) rather than fixes — read them, then cast on.`);
+    else bits.push('Knit it with confidence.');
+    return bits.join(' ');
   }
 
   // ── safe mutation helpers (each mutates the live matrix, then refreshes) ──
@@ -247,9 +447,9 @@ export function createFeasibilityAdvisor(app) {
     commit();
   }
 
-  function mk(sev, title, problem, philosophy, fix) {
-    return { sev, title, problem, philosophy, fix };
+  function mk(sev, title, problem, philosophy, fix, extra) {
+    return Object.assign({ sev, title, problem, philosophy, fix: fix || null }, extra || {});
   }
 
-  return { analyze, verdict, maxFloatFor };
+  return { analyze, verdict, maxFloatFor, describeMachine };
 }

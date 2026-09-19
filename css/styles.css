@@ -101,7 +101,9 @@ header#main-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 48px;
+  min-height: 48px;
+  flex-wrap: wrap;
+  row-gap: 6px;
   padding: 0 16px;
   background-color: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
@@ -211,12 +213,17 @@ header#main-header {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .btn-action {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
+  flex: 0 0 auto;
   background-color: var(--bg-surface-elevated);
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
@@ -260,10 +267,30 @@ header#main-header {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 10px 0;
+  padding: 10px 0 18px;
   gap: 16px;
   z-index: 10;
+  /* The palette has grown well past one screenful (Draw alone is 10 tools, and
+     the touch tier makes every button 44px). Without this the Transform and View
+     groups fall off the bottom and are simply unreachable. Scroll in place. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
 }
+
+#left-toolbar::-webkit-scrollbar { width: 6px; }
+#left-toolbar::-webkit-scrollbar-track { background: transparent; }
+#left-toolbar::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 999px;
+}
+#left-toolbar::-webkit-scrollbar-thumb:hover { background: var(--accent-cyan); }
+
+/* Keep the group captions from being clipped by the rounded tool buttons when
+   the column is packed tight. */
+#left-toolbar .tool-group { flex: 0 0 auto; }
 
 /* Hide left toolbar when context-specific toolbars are active */
 #left-toolbar.hidden {
@@ -1067,15 +1094,34 @@ button, [role="button"], label, a, input[type="range"], input[type="checkbox"], 
   border-radius: var(--radius-md);
   font-size: 11px;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .diag-item {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   font-size: 11px;
   line-height: 1.4;
+}
+
+/* The icon owns its column; the message takes the remaining width and wraps
+   under itself rather than shoving the location marker off the edge. Without
+   min-width:0 a long flex child refuses to shrink and the two text spans
+   overlap — the "everything is colliding" report. */
+.diag-icon {
+  flex: 0 0 auto;
+  width: 1.1em;
+  text-align: center;
+}
+
+.diag-msg {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .diag-warning {
@@ -1090,27 +1136,43 @@ button, [role="button"], label, a, input[type="range"], input[type="checkbox"], 
   color: var(--accent-rose);
 }
 
+.diag-info {
+  background-color: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--accent-cyan);
+}
+
 .diag-loc {
+  flex: 0 0 auto;
+  margin-left: auto;
   font-family: var(--font-mono);
   font-weight: bold;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .property-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: baseline;
+  gap: 6px 12px;
   margin-bottom: 8px;
   font-size: 11px;
 }
 
 .property-label {
   color: var(--text-secondary);
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .property-value {
   font-family: var(--font-mono);
   color: var(--text-primary);
   font-weight: 600;
+  flex: 0 1 auto;
+  text-align: right;
+  min-width: 0;
 }
 
 /* Quick Export Buttons */

@@ -102,6 +102,8 @@ test('the wand picks a region, and refuses to pick the whole card by accident', 
   const capped = floodRegion(matrix, 0, 0, { limit: 2 });
   assert.equal(capped.capped, true);
   assert.equal(capped.size, 0, 'a capped selection must not be applied at all');
+  assert.equal(capped.attempted, 3, 'but the warning can still say how big it was getting');
+  assert.equal(floodRegion(matrix, 0, 0, { limit: 0 }).size, 0, 'a limit of zero is not "the seed only"');
   assert.equal(floodRegion(matrix, 9, 9).size, 0, 'off the card');
 
   const lace = [
@@ -112,8 +114,13 @@ test('the wand picks a region, and refuses to pick the whole card by accident', 
   assert.equal(selectWhere(lace, v => v !== STITCH_TYPE.KNIT).size, 3);
   assert.equal(selectWhere(lace, v => v !== STITCH_TYPE.KNIT, { within: new Set(['0,1']) }).size, 1);
   const start = rectKeys({ r1: 0, c1: 0, r2: 1, c2: 1 });
+  assert.deepEqual([...toggleKeys(start, new Set(['0,1'])).keys], ['0,0', '1,0', '1,1'], 'shift-click something already selected and it leaves');
   assert.equal(toggleKeys(start, new Set(['0,1'])).mode, 'removed');
-  assert.equal(toggleKeys(start, new Set(['1,0'])).mode, 'added');
+  assert.equal(toggleKeys(start, new Set(['2,2'])).mode, 'added');
+  const half = toggleKeys(start, new Set(['0,1', '2,2']));
+  assert.deepEqual([...half.keys], ['0,0', '1,0', '1,1', '2,2'], 'a half-overlapping toggle is a symmetric difference, not a subtraction');
+  assert.deepEqual([half.added, half.removed], [1, 1]);
+  assert.equal(toggleKeys(start, new Set(['9,9']), { rows: 4, cols: 4 }).added, 0, 'off the card');
 });
 
 test('a lasso selects by cell centre', () => {
@@ -183,9 +190,11 @@ test('regions, alignment and distribution do the arithmetic a CAD user expects',
   const moved = distributeOffsets(spaced, 'h');
   assert.deepEqual([moved[0].dc, moved[2].dc], [0, 0], 'the outer ones hold still');
   const second = spaced[1].c1 + moved[1].dc;
-  const gapA = second - 1 - 1;
-  const gapB = 10 - (second + 1) - 1;
+  const secondEnd = second + (spaced[1].c2 - spaced[1].c1);
+  const gapA = second - spaced[0].c2 - 1;
+  const gapB = spaced[2].c1 - secondEnd - 1;
   assert.ok(Math.abs(gapA - gapB) <= 1, `gaps ${gapA} and ${gapB} should be even`);
+  assert.equal(gapA + gapB, 7, 'all the free space went into the two gaps');
   assert.equal(distributeOffsets(spaced.slice(0, 2), 'h').every(d => !d.dr && !d.dc), true);
 
   assert.deepEqual(snapValue(4.2, [4, 5], { threshold: 0.5 }), { value: 4, snapped: true, guide: 4 });
@@ -353,7 +362,7 @@ test('transpose swaps needles and rows and mirrors the lean', () => {
   const anti = transformMatrix(base, 'antitranspose');
   assert.deepEqual(anti.matrix, [[6, 3], [5, 2], [4, 1]]);
   const lace = transformMatrix([[STITCH_TYPE.TRANSFER_LEFT, STITCH_TYPE.KNIT]], 'transpose', { mode: 'lace' });
-  assert.equal(lace.matrix[1][0], STITCH_TYPE.TRANSFER_RIGHT, 'a diagonal reflection turns \\ into /');
+  assert.equal(lace.matrix[0][0], STITCH_TYPE.TRANSFER_RIGHT, 'a diagonal reflection turns \\ into /');
 });
 
 test('a region flips inside the marquee and stays put outside it', () => {
@@ -366,7 +375,7 @@ test('a region flips inside the marquee and stays put outside it', () => {
   assert.deepEqual(flipRegion(base, { r1: 0, c1: 0, r2: 1, c2: 1 }, 'v', { mode: 'fair_isle' }).matrix, [[3, 4, 9], [1, 2, 9]]);
   assert.equal(flipRegion(base, null, 'h').ok, false);
   const clipped = flipRegion(base, { r1: 0, c1: 0, r2: 9, c2: 9 }, 'h', { mode: 'fair_isle' });
-  assert.deepEqual(clipped.matrix, [[2, 1, 9], [4, 3, 9]], 'a marquee bigger than the card is the card');
+  assert.deepEqual(clipped.matrix, [[9, 2, 1], [9, 4, 3]], 'a marquee bigger than the card is the whole card, so the guard column crosses over too');
 });
 
 test('invert works on the punchcard reading, not on JavaScript truthiness', () => {
@@ -375,7 +384,7 @@ test('invert works on the punchcard reading, not on JavaScript truthiness', () =
     [STITCH_TYPE.TRANSFER_LEFT, STITCH_TYPE.PURL]
   ];
   const inverted = invertRegion(lace, null, { mode: 'lace' });
-  assert.deepEqual(inverted.matrix, [[STITCH_TYPE.EYELET, STITCH_TYPE.KNIT], [STITCH_TYPE.EYELET, STITCH_TYPE.EYELET]]);
+  assert.deepEqual(inverted.matrix, [[STITCH_TYPE.EYELET, STITCH_TYPE.KNIT], [STITCH_TYPE.KNIT, STITCH_TYPE.EYELET]]);
   assert.deepEqual(invertRegion(inverted.matrix, null, { mode: 'lace' }).matrix, [
     [STITCH_TYPE.KNIT, STITCH_TYPE.EYELET],
     [STITCH_TYPE.EYELET, STITCH_TYPE.KNIT]
@@ -435,7 +444,7 @@ test('motifs survive capture, transform and stamping', () => {
   const replaced = stampMotif(canvas, motif, { r: 0, c: 0, mode: 'fair_isle', masked: false });
   assert.deepEqual(replaced.matrix, [[1, 0, 0], [1, 1, 0]]);
   const off = stampMotif(canvas, motif, { r: 1, c: 1, mode: 'fair_isle' });
-  assert.equal(off.clipped, 1);
+  assert.equal(off.clipped, 2, 'the motif\'s second row falls off the bottom of the card');
   assert.equal(pasteCells(canvas, [[7]], { r: 0, c: 0, mode: 'fair_isle' }).ok, true);
 });
 

@@ -40,6 +40,7 @@
  */
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
+import { PASS_PURPOSE, carriageMechanics, planLaceOperation, summariseStrokes } from '../machine/carriage-passes.js';
 
 export const CARRIAGE_TYPE = {
   LACE: 'LACE',       // Transfer carriage (Brother LC-2, etc.)
@@ -98,6 +99,8 @@ export class LaceCompilationResult {
     this.totalKnitPasses = 0;
     this.diagnostics = [];      // Warnings & error messages
     this.rowMapping = [];       // Maps original pattern rows to punchcard card rows
+    this.assumptions = [];      // Mechanics this tool had to assume about your machine
+    this.passPlan = null;       // js/machine/carriage-passes.js view of the same schedule
   }
 
   addWarning(msg, row = null, col = null) {
@@ -115,11 +118,19 @@ export class LaceCompilationResult {
  */
 export class LaceCompiler {
   constructor(machineProfile) {
-    this.profile = machineProfile;
+    this.setProfile(machineProfile);
   }
 
   setProfile(profile) {
     this.profile = profile;
+    // One place decides how many passes a lace row costs, and it is the same place
+    // the inspector and the printed notes read from.
+    this.mechanics = carriageMechanics(profile || {});
+  }
+
+  /** Record a mechanics assumption once, not once per row. */
+  _noteAssumption(result, message) {
+    if (!result.assumptions.includes(message)) result.assumptions.push(message);
   }
 
   /**
@@ -136,6 +147,16 @@ export class LaceCompiler {
 
     const carriageRule = this.profile.carriageRules?.type || 'brother_separated';
     const isBrotherSeparated = carriageRule === 'brother_separated' || carriageRule === 'brother_bulky' || carriageRule === 'toyota_simplex';
+
+    if (this.mechanics.beds === 2) {
+      // A loop that crosses to the opposite bed and comes back racked is a different
+      // machine's physics: two rows per hole, one rack value per row, and no
+      // neighbour-to-neighbour cam at all. Saying so beats emitting a single-bed card
+      // and letting the knitter discover the difference in the fabric.
+      result.addWarning(
+        'This schedule is the single-bed model: it moves loops between neighbouring needles. On a two-bed machine a hole is made by crossing to the opposed bed and racking back one point, which costs two rows and allows one rack direction per row.'
+      );
+    }
 
     // Track simulated needle bed state: array of number of loops on each needle
     // 1 = normal single loop, 0 = empty needle, 2 = double loop (decrease)
@@ -217,6 +238,8 @@ export class LaceCompiler {
         const dir = (currentCarriageSide === 'LEFT') ? DIRECTION.LEFT_TO_RIGHT : DIRECTION.RIGHT_TO_LEFT;
         
         const stroke = new CarriageStroke(strokeCount++, CARRIAGE_TYPE.KNIT, dir, cardRowCounter);
+        stroke.patternRow = r;
+        stroke.purpose = PASS_PURPOSE.KNIT;
         stroke.notes = `Plain knit row ${r + 1}`;
         stroke.needleBedState = [...currentBed];
         result.strokes.push(stroke);
@@ -246,15 +269,22 @@ export class LaceCompiler {
         // To transfer to the RIGHT (L->R), carriage must move Left to Right.
         // To transfer to the LEFT (R->L), carriage must move Right to Left.
         
-        // Pass scheduling loop:
+        // Pass scheduling loop.
+        //
+        // One lace operation is one direction of travel, and it is three passes of
+        // the L carriage: select the needles, transfer them on the return pass (a
+        // Brother's transfer cams push in the direction the carriage is going), then
+        // one more pass to complete the function and release them. The planner adds a
+        // short blank traverse when the arithmetic would leave the carriage on the
+        // right, because the lace carriage always finishes parked on the left for the
+        // K carriage. See js/machine/carriage-passes.js.
         let pendingOps = [...transferOps];
         let passIteration = 0;
 
         while (pendingOps.length > 0 && passIteration < 16) {
           passIteration++;
-          const requiredDirection = (currentCarriageSide === 'LEFT') ? DIRECTION.LEFT_TO_RIGHT : DIRECTION.RIGHT_TO_LEFT;
-          
-          // Filter candidate ops that match carriage velocity direction
+          // Everything in this operation leans the same way, because a pass cannot.
+          const requiredDirection = pendingOps[0].direction;
           const candidateOps = pendingOps.filter(op => op.direction === requiredDirection);
 
           // Check spatial non-collision among candidates
@@ -277,50 +307,67 @@ export class LaceCompiler {
             occupiedTargets.add(op.targetCol);
           }
 
-          // Create punchcard row for this carriage pass
-          // On Brother lace cards: A hole selects a needle for transfer!
-          const cardHoles = new Array(cols).fill(false);
-          for (const op of selectedOps) {
-            cardHoles[op.sourceCol] = true;
+          if (!selectedOps.length) {
+            // Only colliding ops of the wrong shape are left, and no pass can take them.
+            result.addError(`Could not resolve lace transfer dependencies within 16 passes at row ${r + 1}. Cyclic dependency detected.`, r);
+            break;
           }
 
-          const stroke = new CarriageStroke(strokeCount++, CARRIAGE_TYPE.LACE, requiredDirection, cardRowCounter);
-          stroke.transfers = selectedOps;
-          stroke.punchcardHoles = selectedOps.map(op => op.sourceCol);
+          const plan = planLaceOperation(
+            selectedOps.map(op => ({ from: op.sourceCol, to: op.targetCol })),
+            { mechanics: this.mechanics, startSide: currentCarriageSide, cardRow: cardRowCounter }
+          );
+          for (const message of plan.warnings) result.addWarning(message, r);
+          for (const message of plan.assumptions) this._noteAssumption(result, message);
 
-          // Apply transfers to simulated needle bed
-          for (const op of selectedOps) {
-            if (currentBed[op.sourceCol] > 0) {
-              currentBed[op.sourceCol]--;
-              currentBed[op.targetCol]++;
-            } else {
-              result.addWarning(`Carriage attempted transfer from already empty needle col ${op.sourceCol}`, r, op.sourceCol);
+          for (const pass of plan.passes) {
+            const stroke = new CarriageStroke(strokeCount++, CARRIAGE_TYPE.LACE, pass.direction, pass.cardRow);
+            stroke.patternRow = r;
+            stroke.purpose = pass.purpose;
+            stroke.startSide = pass.startSide;
+            stroke.endsOn = pass.endsOn;
+            // On a Brother lace card the punches are what tip the needles out, so the
+            // holes belong on the selecting row and the rows after it are blank. That is
+            // why a real lace card looks like one punched row with three empty ones.
+            stroke.punchcardHoles = [...pass.holes];
+            stroke.transfers = pass.purpose === PASS_PURPOSE.TRANSFER ? selectedOps : [];
+            stroke.selections = pass.purpose === PASS_PURPOSE.SELECT ? selectedOps.map(op => op.sourceCol) : [];
+
+            if (pass.purpose === PASS_PURPOSE.TRANSFER) {
+              // Apply the transfers to the simulated needle bed on the pass that really
+              // moves loops, and nowhere else.
+              for (const op of selectedOps) {
+                if (currentBed[op.sourceCol] > 0) {
+                  currentBed[op.sourceCol]--;
+                  currentBed[op.targetCol]++;
+                } else {
+                  result.addWarning(`Carriage attempted transfer from already empty needle col ${op.sourceCol}`, r, op.sourceCol);
+                }
+              }
             }
-          }
 
-          stroke.needleBedState = [...currentBed];
-          if (selectedOps.length > 0) {
-            stroke.notes = `L-Carriage ${requiredDirection === DIRECTION.LEFT_TO_RIGHT ? 'L→R' : 'R←L'}: Transfer ${selectedOps.length} stitches (${selectedOps.map(o => `${o.sourceCol}→${o.targetCol}`).join(', ')})`;
-          } else {
-            stroke.notes = `L-Carriage return stroke (${requiredDirection === DIRECTION.LEFT_TO_RIGHT ? 'L→R' : 'R←L'}) to reposition carriage`;
+            stroke.needleBedState = [...currentBed];
+            stroke.notes = pass.note;
+            result.strokes.push(stroke);
+            result.cardMatrix.push(new Array(cols).fill(false).map((hole, col) => pass.holes.includes(col)));
+            cardRowCounter++;
           }
-
-          result.strokes.push(stroke);
-          result.cardMatrix.push(cardHoles);
-          cardRowCounter++;
 
           // Remove completed ops
           pendingOps = pendingOps.filter(op => !selectedOps.includes(op));
-          currentCarriageSide = (currentCarriageSide === 'LEFT') ? 'RIGHT' : 'LEFT';
+          currentCarriageSide = plan.endsOn;
         }
 
-        if (pendingOps.length > 0) {
+        if (pendingOps.length > 0 && result.success) {
           result.addError(`Could not resolve lace transfer dependencies within 16 passes at row ${r + 1}. Cyclic dependency detected.`, r);
         }
 
-        // Return L-Carriage to parked side (LEFT side) if needed
+        // Belt and braces: the planner parks the carriage itself, and a schedule that
+        // left the L carriage on the right would hand the K carriage a machine it cannot
+        // start, so check rather than trust.
         if (currentCarriageSide !== 'LEFT') {
           const stroke = new CarriageStroke(strokeCount++, CARRIAGE_TYPE.LACE, DIRECTION.RIGHT_TO_LEFT, cardRowCounter);
+          stroke.purpose = PASS_PURPOSE.RETURN;
           stroke.notes = 'L-Carriage idle return to left park position';
           stroke.needleBedState = [...currentBed];
           result.strokes.push(stroke);
@@ -334,6 +381,8 @@ export class LaceCompiler {
         for (let p = 0; p < plainRowsCount; p++) {
           const kDir = (p % 2 === 0) ? DIRECTION.LEFT_TO_RIGHT : DIRECTION.RIGHT_TO_LEFT;
           const kStroke = new CarriageStroke(strokeCount++, CARRIAGE_TYPE.KNIT, kDir, cardRowCounter);
+          kStroke.patternRow = r;
+          kStroke.purpose = PASS_PURPOSE.KNIT;
           kStroke.notes = `K-Carriage knit plain row with yarn (${kDir === DIRECTION.LEFT_TO_RIGHT ? 'L→R' : 'R←L'})`;
           
           // Needles replenished with new yarn loops
@@ -354,6 +403,8 @@ export class LaceCompiler {
           const cardHoles = new Array(cols).fill(false);
           for (const op of rightOps) cardHoles[op.sourceCol] = true;
           const stroke = new CarriageStroke(strokeCount++, CARRIAGE_TYPE.COMBINED, DIRECTION.LEFT_TO_RIGHT, cardRowCounter);
+          stroke.patternRow = r;
+          stroke.purpose = PASS_PURPOSE.TRANSFER;
           stroke.transfers = rightOps;
           stroke.notes = `Silver Reed Lace LC: Knit & Transfer Right (${rightOps.length} stitches)`;
           result.strokes.push(stroke);
@@ -365,6 +416,8 @@ export class LaceCompiler {
           const cardHoles = new Array(cols).fill(false);
           for (const op of leftOps) cardHoles[op.sourceCol] = true;
           const stroke = new CarriageStroke(strokeCount++, CARRIAGE_TYPE.COMBINED, DIRECTION.RIGHT_TO_LEFT, cardRowCounter);
+          stroke.patternRow = r;
+          stroke.purpose = PASS_PURPOSE.TRANSFER;
           stroke.transfers = leftOps;
           stroke.notes = `Silver Reed Lace LC: Knit & Transfer Left (${leftOps.length} stitches)`;
           result.strokes.push(stroke);
@@ -383,6 +436,9 @@ export class LaceCompiler {
     result.totalPasses = result.strokes.length;
     result.totalLacePasses = result.strokes.filter(s => s.carriageType === CARRIAGE_TYPE.LACE).length;
     result.totalKnitPasses = result.strokes.filter(s => s.carriageType === CARRIAGE_TYPE.KNIT).length;
+    // Counted from the strokes that were actually emitted, so the summary can never
+    // disagree with the card.
+    result.passSummary = summariseStrokes(result.strokes);
 
     return result;
   }
