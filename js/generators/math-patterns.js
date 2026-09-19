@@ -630,3 +630,4 @@ export class MathPatternGenerators {
     
     return matrix;
   }
+}

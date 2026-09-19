@@ -36,7 +36,7 @@ export class CanvasEditor {
     this.panY = 60;
 
     // Interaction state
-    this.activeTool = 'pencil'; // 'pencil', 'eraser', 'line', 'rect', 'circle', 'fill', 'select'
+    this.activeTool = 'pencil'; // 'pencil', 'eraser', 'line', 'rect', 'circle', 'fill', 'select', 'pan'
     this.activeStitch = STITCH_TYPE.EYELET; // Current stitch for painting in lace mode
     this.activeColor = 1; // 0 = main yarn A, 1 = contrast yarn B
 
@@ -45,6 +45,10 @@ export class CanvasEditor {
     this.lastMousePos = { x: 0, y: 0 };
     this.dragStartCell = null;
     this.hoverCell = { r: -1, c: -1 };
+    
+    // Performance optimization
+    this.renderThrottle = 0;
+    this.lastRenderTime = 0;
 
     // Selection
     this.selection = null; // { r1, c1, r2, c2 }
@@ -203,6 +207,42 @@ export class CanvasEditor {
     this.onChange();
   }
 
+  setActiveTool(tool) {
+    this.activeTool = tool;
+    
+    // Update UI button states
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+      btn.classList.remove('active');
+      if (btn.dataset.tool === tool) {
+        btn.classList.add('active');
+      }
+    });
+    
+    // Update cursor
+    if (tool === 'pan') {
+      this.canvas.style.cursor = 'grab';
+    } else {
+      this.canvas.style.cursor = 'crosshair';
+    }
+  }
+
+  fitToView() {
+    const rect = this.canvas.getBoundingClientRect();
+    const availableWidth = rect.width - 40;
+    const availableHeight = rect.height - 40;
+    
+    // Calculate optimal zoom to fit the grid
+    const zoomX = availableWidth / this.cols;
+    const zoomY = availableHeight / this.rows;
+    this.zoom = Math.min(zoomX, zoomY);
+    
+    // Center the grid
+    this.panX = (rect.width - this.cols * this.zoom) / 2;
+    this.panY = (rect.height - this.rows * this.zoom) / 2;
+    
+    this.render();
+  }
+
   // Coordinate transforms
   screenToCell(screenX, screenY) {
     const rect = this.canvas.getBoundingClientRect();
@@ -228,11 +268,26 @@ export class CanvasEditor {
 
     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
+    // Performance optimization: throttled rendering
+    this.throttledRender = this.throttle(() => this.render(), 16); // ~60fps max
+  }
+
+  throttle(func, limit) {
+    let inThrottle;
+    return function(...args) {
+      if (!inThrottle) {
+        func.apply(this, args);
+        inThrottle = true;
+        setTimeout(() => inThrottle = false, limit);
+      }
+    };
+  }
+
     canvas.addEventListener('mousedown', e => {
       const cell = this.screenToCell(e.clientX, e.clientY);
       this.lastMousePos = { x: e.clientX, y: e.clientY };
 
-      if (e.button === 1 || e.altKey || (e.button === 0 && e.spaceKey)) {
+      if (e.button === 1 || e.altKey || this.activeTool === 'pan' || (e.button === 0 && e.shiftKey)) {
         // Pan tool
         this.isPanning = true;
         canvas.style.cursor = 'grabbing';
@@ -282,7 +337,7 @@ export class CanvasEditor {
           this.render();
         }
       } else {
-        this.render();
+        this.throttledRender();
       }
     });
 
