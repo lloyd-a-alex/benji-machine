@@ -34,6 +34,34 @@ const CSS = `
 .kx-data-row .btn-action{flex:1 1 auto;font-size:11px;padding:7px 9px}
 .kx-data-note{font-size:10px;color:var(--text-muted,#64748b);line-height:1.5}
 .kx-data-toggle{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-secondary,#94a3b8)}
+/* Autosave status card — a living indicator, not a grey pill. One orb carries the
+   whole story: steady green = safe, spinning ring = syncing, pulsing rose = failed,
+   amber = ready-but-untouched, dim = off. A sheen sweeps the card while it writes. */
+.kx-save-card{position:relative;overflow:hidden;display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:12px;
+  border:1px solid var(--border-subtle,#1e293b);color:var(--text-muted,#64748b);
+  background:linear-gradient(180deg,var(--bg-panel,#131d33),color-mix(in srgb,var(--bg-panel,#131d33) 72%,#000));
+  box-shadow:0 6px 18px -12px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.04);transition:border-color .25s,color .25s}
+.kx-save-card:focus-visible{outline:2px solid var(--accent-cyan,#38bdf8);outline-offset:2px}
+.kx-save-orb{position:relative;flex:0 0 auto;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;
+  background:radial-gradient(circle at 30% 30%,#ffffff55,transparent 60%),currentColor;transition:box-shadow .25s}
+.kx-save-orb i{position:absolute;inset:-4px;border-radius:50%;border:2px solid transparent}
+.kx-save-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
+.kx-save-primary{font-size:12px;font-weight:700;letter-spacing:.01em;color:var(--text-primary,#f8fafc);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kx-save-meta{font-size:10px;color:var(--text-muted,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kx-save-badge{flex:0 0 auto;font-size:9px;font-weight:800;letter-spacing:.12em;padding:3px 7px;border-radius:999px;border:1px solid currentColor;opacity:.92}
+.kx-save-card[data-state="ok"]{color:var(--accent-emerald,#34d399);border-color:color-mix(in srgb,var(--accent-emerald,#34d399) 45%,transparent)}
+.kx-save-card[data-state="ok"] .kx-save-orb{box-shadow:0 0 10px -1px color-mix(in srgb,var(--accent-emerald,#34d399) 70%,transparent)}
+.kx-save-card[data-state="busy"]{color:var(--accent-cyan,#38bdf8);border-color:color-mix(in srgb,var(--accent-cyan,#38bdf8) 50%,transparent)}
+.kx-save-card[data-state="busy"] .kx-save-orb i{border-top-color:currentColor;border-right-color:currentColor;animation:kx-save-spin .8s linear infinite}
+.kx-save-card[data-state="busy"]::after{content:"";position:absolute;inset:0;pointer-events:none;transform:translateX(-100%);
+  background:linear-gradient(105deg,transparent 30%,color-mix(in srgb,var(--accent-cyan,#38bdf8) 20%,transparent) 50%,transparent 70%);animation:kx-save-sweep 1.6s ease-in-out infinite}
+.kx-save-card[data-state="bad"]{color:var(--accent-rose,#f43f5e);border-color:color-mix(in srgb,var(--accent-rose,#f43f5e) 55%,transparent)}
+.kx-save-card[data-state="bad"] .kx-save-orb{animation:kx-save-pulse 1.3s ease-in-out infinite}
+.kx-save-card[data-state="idle"]{color:var(--accent-amber,#fbbf24);border-color:color-mix(in srgb,var(--accent-amber,#fbbf24) 40%,transparent)}
+@keyframes kx-save-spin{to{transform:rotate(360deg)}}
+@keyframes kx-save-pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent-rose,#f43f5e) 55%,transparent)}50%{box-shadow:0 0 0 6px transparent}}
+@keyframes kx-save-sweep{0%{transform:translateX(-100%)}60%,100%{transform:translateX(100%)}}
+@media (prefers-reduced-motion:reduce){.kx-save-card[data-state="busy"]::after,.kx-save-orb i,.kx-save-card[data-state="bad"] .kx-save-orb{animation:none}}
 .kx-version-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;
   max-height:min(46vh,420px);overflow:auto}
 .kx-version{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border-subtle,#1e293b);
@@ -141,6 +169,9 @@ export async function initDataPanel(context = {}) {
   // ── panel ──────────────────────────────────────────────────────────────────
   const sidebar = document.getElementById('right-sidebar');
   let chip = null;
+  let chipPrimary = null;
+  let chipMeta = null;
+  let chipBadge = null;
   if (sidebar) {
     const panel = document.createElement('div');
     panel.className = 'sidebar-panel';
@@ -148,9 +179,16 @@ export async function initDataPanel(context = {}) {
     panel.innerHTML = `
       <div class="sidebar-title">
         <span>Work &amp; Backup</span>
-        <span class="kx-data-chip" id="kx-autosave-chip" role="status" aria-live="polite">starting</span>
       </div>
       <div class="kx-data">
+        <div class="kx-save-card" id="kx-autosave-chip" role="status" aria-live="polite" tabindex="0" data-state="idle">
+          <span class="kx-save-orb" aria-hidden="true"><i></i></span>
+          <span class="kx-save-text">
+            <span class="kx-save-primary">Starting autosave</span>
+            <span class="kx-save-meta">arming on-device safety</span>
+          </span>
+          <span class="kx-save-badge">READY</span>
+        </div>
         <div class="kx-data-row">
           <button type="button" class="btn-action" id="kx-btn-checkpoint"
             title="Keep this version — nothing is ever overwritten, so you can come back to it">Checkpoint</button>
@@ -175,6 +213,11 @@ export async function initDataPanel(context = {}) {
       </div>`;
     sidebar.insertBefore(panel, sidebar.lastElementChild);
     chip = panel.querySelector('#kx-autosave-chip');
+    if (chip) {
+      chipPrimary = chip.querySelector('.kx-save-primary');
+      chipMeta = chip.querySelector('.kx-save-meta');
+      chipBadge = chip.querySelector('.kx-save-badge');
+    }
 
     panel.querySelector('#kx-btn-checkpoint').addEventListener('click', () => checkpoint());
     panel.querySelector('#kx-btn-versions').addEventListener('click', () => openVersions());
@@ -243,42 +286,49 @@ export async function initDataPanel(context = {}) {
   }
 
   // ── status ─────────────────────────────────────────────────────────────────
+  /** Paint the status card. Word counts stay put; meaning gets denser. */
+  function setSave(state, primary, meta, badge) {
+    if (!chip) return;
+    chip.dataset.state = state;
+    if (chipPrimary) chipPrimary.textContent = primary;
+    if (chipMeta) chipMeta.textContent = meta;
+    if (chipBadge) chipBadge.textContent = badge;
+  }
+
   function renderStatus(status = service.status()) {
     const note = document.getElementById('kx-data-note');
     if (!chip) return;
-    const label = chip;
-    label.classList.remove('kx-data-chip--ok', 'kx-data-chip--busy', 'kx-data-chip--bad');
     if (!enabled) {
-      label.textContent = 'off';
-      label.title = 'Autosave is switched off — remember to save a project file';
-      if (note) note.textContent = 'Autosave is off, so nothing is kept unless you save it.';
+      chip.removeAttribute('title');
+      setSave('off', 'Autosave off', 'nothing kept automatically', 'OFF');
+      if (note) note.textContent = 'Off — only Checkpoint and Save Project guard this card now.';
       return;
     }
     if (status.saving) {
-      label.classList.add('kx-data-chip--busy');
-      label.textContent = 'saving';
+      setSave('busy', 'Saving…', 'writing your latest strokes', 'SYNC');
       return;
     }
     if (status.failing) {
-      label.classList.add('kx-data-chip--bad');
-      label.textContent = 'save failed';
-      label.title = status.lastError || 'the browser refused the write';
-      if (note) note.textContent = 'The browser refused to store anything. Use "Save Project" — autosave cannot protect this card.';
+      chip.title = status.lastError || 'the browser refused the write';
+      setSave('bad', 'Save failed', 'browser refused the write', 'ALERT');
+      if (note) note.textContent = 'Write refused — use "Save Project"; autosave cannot guard this card.';
       return;
     }
     if (!status.lastSavedAt) {
-      label.textContent = 'not saved yet';
-      if (note) note.textContent = 'Your first change is stored locally within two seconds.';
+      chip.removeAttribute('title');
+      setSave('idle', 'Not saved yet', 'first edit stores in ~2s', 'READY');
+      if (note) note.textContent = 'Your first edit is kept on this device within about two seconds.';
       return;
     }
     restoredAt = status.lastSavedAt;
-    label.classList.add('kx-data-chip--ok');
-    label.textContent = `saved ${relativeTime(new Date(status.lastSavedAt).toISOString())}`;
-    label.title = `Autosaved to ${status.kind}`;
+    const when = relativeTime(new Date(status.lastSavedAt).toISOString());
+    const memory = status.kind === 'memory';
+    setSave('ok', `Saved ${when}`, memory ? 'this tab only — memory' : `on-device \u00b7 ${status.kind}`, memory ? 'TEMP' : 'SAFE');
+    chip.title = `Autosaved to ${status.kind} \u00b7 ${when}`;
     if (note) {
-      note.textContent = status.kind === 'memory'
-        ? 'This browser will not let KNITCAT store anything, so autosave lasts only this session. Save a project file before you close the tab.'
-        : `Kept on this device in ${status.kind}. Nothing is uploaded anywhere.`;
+      note.textContent = memory
+        ? 'Blocked by this browser, so autosave lasts only this tab. Save a project file before closing.'
+        : `Kept on this device in ${status.kind}. Uploaded nowhere, ever.`;
     }
   }
 

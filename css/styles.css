@@ -131,9 +131,13 @@ header#main-header {
   align-items: center;
   justify-content: space-between;
   min-height: 52px;
-  /* One line on desktop: never wrap the love text onto a second row. The tablet /
-     phone tiers (<=900px) intentionally switch back to wrap. */
-  flex-wrap: nowrap;
+  /* Wrap, never overlap or scroll-hide. A nowrap flex header could not shrink,
+     so at 100% zoom the action cluster (Search/Export) pinned right and the
+     centre mode selector was squeezed until Lace/Fair Isle/Tuck/Slip scrolled
+     out from under Search — the "hidden behind the search button" bug. Allowing
+     the bar to wrap puts the actions on a second line when space is tight, so
+     every mode button stays fully visible. Wide screens still read as one line. */
+  flex-wrap: wrap;
   row-gap: 6px;
   padding: 0 16px;
   /* A soft top-lit surface reads as depth rather than a flat slab, and the
@@ -182,14 +186,12 @@ header#main-header {
   display: flex;
   align-items: center;
   gap: 16px;
-  /* At 100% the mode segmented control used to collide with the Search cluster:
-     a nowrap flex header can't shrink, so the two groups just overlapped. Let
-     the centre yield — it scrolls in place (bar hidden) below its children's
-     natural width, so Lace/Fair Isle/Tuck/Slip never land on top of Search. */
+  /* Give the centre group its natural width and let the header wrap around it:
+     the four modes must never scroll out of view to make room for Search, so
+     overflow is visible and shrinking is the whole row's job (flex-wrap above). */
   min-width: 0;
   flex: 0 1 auto;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: visible;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
