@@ -1251,7 +1251,9 @@
 
       <!-- Right Sidebar: Diagnostics, Specs & Quick Actions -->
       <aside id="right-sidebar">
-        <!-- Design health + fleet fit: the one number, with the deep tools behind it -->
+        <!-- Design Health is now the ONE advisory card: the live machine check,
+             the fleet fit and the expert fixes all read from the same verdict as
+             the modal, so the sidebar and the report can never disagree. -->
         <div class="sidebar-panel" id="kx-health-panel">
           <div class="sidebar-title">
             <span>Design Health</span>
@@ -1263,19 +1265,13 @@
             <span class="kx-health-break" id="kx-health-break"></span>
             <span class="kx-health-fit" id="kx-health-fit" title="How many machines in the fleet take this card as-is"></span>
           </div>
-          <div class="kx-health-acts">
-            <button type="button" class="btn-action" id="btn-health-advisor" title="Full expert reading with one-click fixes">Advisor</button>
-            <button type="button" class="btn-action btn-primary" id="btn-health-universe" title="How close is this card to working on every machine?">Machine universe</button>
-          </div>
-        </div>
-
-        <!-- Physical Machine Diagnostics -->
-        <div class="sidebar-panel">
-          <div class="sidebar-title">
-            <span>Machine Feasibility Check</span>
-          </div>
+          <div class="kx-health-list-head">Live machine check <span class="kx-health-list-hint">click a row to light it up on the card</span></div>
           <div class="diagnostics-list" id="diagnostics-list">
             <div class="diag-ok">✓ No carriage conflicts detected.</div>
+          </div>
+          <div class="kx-health-acts">
+            <button type="button" class="btn-action" id="btn-health-advisor" title="Full expert reading with one-click fixes">Full advisor</button>
+            <button type="button" class="btn-action btn-primary" id="btn-health-universe" title="How close is this card to working on every machine?">Machine universe</button>
           </div>
         </div>
 

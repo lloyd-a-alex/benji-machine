@@ -1451,6 +1451,19 @@ button, [role="button"], label, a, input[type="range"], input[type="checkbox"], 
   margin-top: 8px;
 }
 
+/* Saving your project is the one action in this hub that is not a throwaway
+   export, so it takes its own full-width row and centres its label. Left in the
+   auto-fit grid it wrapped/overflowed above a narrow column at wider sidebar
+   widths ("the text goes above the button"); grid-column:1/-1 spans the hub and
+   justify-content:center puts "Save Project" dead-centre across the sidebar. */
+#btn-export-json {
+  grid-column: 1 / -1;
+  justify-content: center;
+  border-color: rgba(52, 211, 153, 0.45);
+  color: #6ee7b7;
+  font-weight: 600;
+}
+
 .quick-exports .btn-action {
   justify-content: center;
   text-align: center;

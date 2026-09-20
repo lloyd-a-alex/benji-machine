@@ -864,7 +864,6 @@ class KnitApp {
     this.lastCompileMs = performance.now() - t0;
 
     this.updateScheduleUI();
-    this.updateDiagnosticsUI();
     this.updateStatusStats();
     this._renderHealth();
     this._cardDirty = false;
@@ -995,114 +994,61 @@ class KnitApp {
     }).join('');
   }
 
-  updateDiagnosticsUI() {
+  /**
+   * Render the Design-Health "Live machine check" list in the right sidebar.
+   *
+   * It reads from the SAME feasibility verdict the advisor modal uses — it no
+   * longer runs a parallel float/bed scan (which disagreed with the advisor on
+   * tuck semantics, so one would flag a column while the other stayed silent).
+   * One source, so the sidebar and the report can never contradict each other.
+   * Each row is clickable and lights the exact stitches up on the canvas, or
+   * opens the full advisor when the finding is not cell-local.
+   *
+   * @param {object} [verdict]  A precomputed feasibility verdict; computed here if omitted.
+   */
+  updateDiagnosticsUI(verdict) {
     const diagList = this.elements.diagnosticsContainer;
     if (!diagList) return;
-
-    const diags = (this.compilationResult?.diagnostics || []).slice();
-    // Wider than the bed is fatal, so it leads the list.
-    const bedError = this.analyzeBedWidth();
-    if (bedError) diags.unshift(bedError);
-    // Fair Isle / slip / tuck: each has its own stranded-yarn failure mode, and
-    // only the advisor knows which. Advisory, like everything here except bed width.
-    const floatWarn = this.analyzeFloats();
-    if (floatWarn) diags.push(floatWarn);
-
-    if (diags.length === 0) {
-      diagList.innerHTML = '<div class="diag-ok">✓ No physical collisions or carriage conflicts detected. Pattern is 100% machine executable!</div>';
+    let v = verdict;
+    try { v = v || (this.feasibility && this.feasibility.verdict()); } catch (_) { v = null; }
+    if (!v) { diagList.innerHTML = '<div class="diag-ok">\u2713 No carriage conflicts detected.</div>'; return; }
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const flagged = v.issues.filter(i => i.sev === 'error' || i.sev === 'warn');
+    if (!flagged.length) {
+      diagList.innerHTML = `<div class="diag-ok">\u2713 ${esc(v.status === 'feasible' ? 'No carriage conflicts or float risks \u2014 clear to knit.' : 'Nothing blocking. Craft notes live in the full advisor.')}</div>`;
       return;
     }
-
-    // Three severities, three distinct glyphs. A warning used to render with the
-    // info icon, which made "this will snag on every finger" look optional.
-    const glyph = t => (t === 'error' ? '⛔' : t === 'warning' ? '⚠' : 'ℹ');
-    diagList.innerHTML = diags.map(d => `
-      <div class="diag-item diag-${d.type}">
-        <span class="diag-icon">${glyph(d.type)}</span>
-        <span class="diag-msg">${d.message}</span>
-        ${d.row !== null && d.row !== undefined ? `<span class="diag-loc">[Row ${d.row + 1}${d.col !== null && d.col !== undefined ? `, Col ${d.col + 1}` : ''}]</span>` : ''}
-      </div>
-    `).join('');
+    const glyph = s => (s === 'error' ? '\u26d4' : '\u26a0');
+    const cls = s => (s === 'error' ? 'diag-error' : 'diag-warning');
+    diagList.innerHTML = flagged.slice(0, 8).map(it => {
+      const idx = v.issues.indexOf(it);
+      return `<button type="button" class="diag-item ${cls(it.sev)} diag-btn" data-diag="${idx}">
+        <span class="diag-icon">${glyph(it.sev)}</span>
+        <span class="diag-msg">${esc(it.title)}</span>
+        ${it.where ? `<span class="diag-loc">${esc(it.where)}</span>` : ''}
+      </button>`;
+    }).join('');
+    diagList.querySelectorAll('[data-diag]').forEach(b =>
+      b.addEventListener('click', () => this._revealIssue(v.issues[parseInt(b.dataset.diag, 10)])));
   }
 
-  // Scan the current pattern for stranded-yarn risks and report the worst one.
-  //
-  // What counts as a float is mode-dependent, and getting it wrong produces
-  // confident nonsense:
-  //   fair_isle — every needle knits one of two colours, so colour A floats
-  //             behind a run of colour B *and vice versa*. Both directions count.
-  //   slip      — punched needles knit and blanks are skipped, so the carried
-  //             yarn sits behind the BLANK run. Counting punched runs would flag
-  //             the solid blocks and miss the actual danger.
-  //   tuck      — a horizontal run of held needles is simply rib-like fabric, not
-  //             a float. The failure mode here is vertical: loops stacking on one
-  //             needle until it lifts out of the cam channel.
-  analyzeFloats() {
-    if (!this.editor || !CanvasEditor.isDirectMode(this.currentMode)) return null;
-    const { maxFloatNeedles, maxTuckLoops } = profileLimits(this.currentProfile);
-    const m = this.editor.matrix;
-    const rows = m.length;
-    const cols = rows ? m[0].length : 0;
-
-    if (this.currentMode === 'tuck') {
-      let worst = 0, worstRow = -1, worstCol = -1;
-      for (let c = 0; c < cols; c++) {
-        let run = 0;
-        for (let r = 0; r < rows; r++) {
-          run = m[r][c] === 1 ? run + 1 : 0;
-          if (run > worst) { worst = run; worstRow = r; worstCol = c; }
-        }
-      }
-      if (worst > maxTuckLoops) {
-        return {
-          type: 'warning',
-          message: `Needle ${worstCol + 1} is asked to hold ${worst} stacked tuck loops (this carriage comfortably carries about ${maxTuckLoops}). Loop the extra yarn with a transfer row, or shorten the column.`,
-          row: worstRow,
-          col: worstCol
-        };
-      }
-      return null;
+  /**
+   * Reveal an advisor finding where it actually lives: spotlight the offending
+   * cells on the canvas, else open the full advisor. Shared by the sidebar list
+   * and the modal's "Show me on the card" button so both behave identically.
+   *
+   * @param {object} it  A feasibility issue (may carry cells/where).
+   */
+  _revealIssue(it) {
+    if (!it) return;
+    if (Array.isArray(it.cells) && it.cells.length && this.editor) {
+      try { document.querySelector('.tab-btn[data-tab="editor"]')?.click(); } catch (_) { /* headless */ }
+      try { this.editor.setHighlight(it.cells, { label: it.title }); } catch (_) { /* contained */ }
+      document.getElementById('kx-feas-backdrop')?.remove();
+      this.notifications?.info?.(`${it.title}${it.where ? ` \u2014 ${it.where}` : ''}. Highlighted on the card.`, { duration: 7000 });
+    } else {
+      this.openFeasibility('advisor');
     }
-
-    // Which symbol actually carries the floating yarn behind it.
-    const floatSymbols = this.currentMode === 'slip' ? [0] : [0, 1];
-    const label = this.currentMode === 'slip' ? 'slipped' : 'stranded';
-
-    let worst = 0, worstRow = -1;
-    for (let r = 0; r < rows; r++) {
-      for (const sym of floatSymbols) {
-        let run = 0;
-        for (let c = 0; c < m[r].length; c++) {
-          run = (m[r][c] === sym) ? run + 1 : 0;
-          if (run > worst) { worst = run; worstRow = r; }
-        }
-      }
-    }
-
-    if (worst > maxFloatNeedles) {
-      return {
-        type: 'warning',
-        message: `Long ${label} run of ${worst} needles on row ${worstRow + 1} — beyond about ${maxFloatNeedles} the carried yarn catches on fingers and pulls the fabric in. Weave it in, or break the run with a colour change.`,
-        row: worstRow,
-        col: null
-      };
-    }
-    return null;
-  }
-
-  // A pattern wider than the bed is not a warning, it is physically impossible:
-  // there is no needle to put the stitch on.
-  analyzeBedWidth() {
-    if (!this.editor) return null;
-    const { maxNeedles } = profileLimits(this.currentProfile);
-    const wide = this.editor.cols;
-    if (wide <= maxNeedles) return null;
-    return {
-      type: 'error',
-      message: `This pattern is ${wide} needles wide but the ${this.currentProfile.name} bed holds ${maxNeedles}. Narrow the pattern, or move the repeat onto the card and tile it.`,
-      row: null,
-      col: null
-    };
   }
 
   updateStatusStats() {
@@ -2657,12 +2603,20 @@ class KnitApp {
       })();
       const cards = v.issues.slice().sort((a, b) => (sevOrder[a.sev] ?? 9) - (sevOrder[b.sev] ?? 9)).map((it) => {
         const idx = v.issues.indexOf(it);
+        // Explanation first; a named location second; then a fix — and if there is
+        // no one-click fix, the manual step, so no finding is ever a dead end. The
+        // design principle is demoted to a footnote: it is colour, not the payload.
+        const canShow = Array.isArray(it.cells) && it.cells.length;
+        const fixBtn = it.fix && it.fix.run
+          ? `<button class="kx-feas-fix" data-fix="${idx}">${esc(it.fix.label)}${it.fix.safe ? ' \u00b7 safe' : ''}</button>`
+          : (it.manual ? `<div class="kx-feas-manual"><b>How to fix:</b> ${esc(it.manual)}</div>` : '');
         return `
         <div class="kx-feas-card kx-feas-${it.sev}">
           <div class="kx-feas-head"><span class="kx-feas-dot"></span><strong>${esc(it.title)}</strong>${it.category ? `<span class="kx-feas-cat">${esc(it.category)}</span>` : ''}</div>
           <div class="kx-feas-prob">${esc(it.problem)}</div>
-          <div class="kx-feas-phil">${esc(it.philosophy || '')}</div>
-          ${it.fix && it.fix.run ? `<button class="kx-feas-fix" data-fix="${idx}">${esc(it.fix.label)}${it.fix.safe ? ' \u00b7 safe' : ''}</button>` : ''}
+          ${it.where ? `<div class="kx-feas-where">\u25c8 ${esc(it.where)}</div>` : ''}
+          <div class="kx-feas-row">${fixBtn}${canShow ? `<button class="kx-feas-show" data-show="${idx}" title="Jump to the editor and light up exactly these stitches">\u25c8 Show me on the card</button>` : ''}</div>
+          ${it.philosophy ? `<div class="kx-feas-phil">${esc(it.philosophy)}</div>` : ''}
         </div>`;
       }).join('');
       return `
@@ -2713,9 +2667,9 @@ class KnitApp {
     const render = () => {
       v = this.feasibility.verdict();
       const badge = v.status === 'feasible' ? '\u2713' : v.status === 'needs-attention' ? '\u26a0' : '\u2715';
-      bd.innerHTML = `<div class="kx-feas" role="dialog" aria-modal="true" aria-label="Machine feasibility">
+      bd.innerHTML = `<div class="kx-feas" role="dialog" aria-modal="true" aria-label="Design health">
         <div class="kx-feas-top">
-          <h2>Machine intelligence</h2>
+          <h2>Design health</h2>
           <div class="kx-feas-topright">${scoreBar(v.score)}<span class="kx-feas-badge kx-feas-${v.status}">${badge} ${v.score}</span></div>
         </div>
         <div class="kx-feas-tabs" role="tablist">
@@ -2735,6 +2689,11 @@ class KnitApp {
         const it = v.issues[parseInt(b.dataset.fix, 10)];
         try { it && it.fix && it.fix.run && it.fix.run(); } catch (_) { /* contained */ }
         this.recompile(); fx('success'); render();
+      }));
+      // "Show me on the card" jumps to the editor and spotlights the exact cells
+      // this finding is about — turning a sentence into something you can see.
+      bd.querySelectorAll('[data-show]').forEach(b => b.addEventListener('click', () => {
+        this._revealIssue(v.issues[parseInt(b.dataset.show, 10)]);
       }));
       const all = bd.querySelector('#kx-feas-all');
       if (all) all.addEventListener('click', () => {
@@ -2796,6 +2755,9 @@ class KnitApp {
       // visible before the modal is ever opened — the button "works correctly"
       // when the card does not, instead of sitting there looking inert.
       this._paintFeasibilityButton(v);
+      // The sidebar "Live machine check" list is the SAME verdict rendered small,
+      // so it can never disagree with the advisor behind the button.
+      this.updateDiagnosticsUI(v);
       if (this.universe) {
         // The cross-fleet count is 6× the work of the single-machine score above
         // (one full advisor per profile) and it is only a summary line, so it is

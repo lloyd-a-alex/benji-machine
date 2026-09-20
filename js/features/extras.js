@@ -149,12 +149,16 @@ function injectStyles() {
   @keyframes kx-fall{from{transform:translateY(0) scale(1);opacity:1}to{transform:translateY(40px) scale(1.4);opacity:0}}
   .kx-menu{position:relative;display:inline-flex}
   .kx-menu-btn{white-space:nowrap}
-  .kx-menu-drop{display:none;position:absolute;top:calc(100% + 6px);left:0;min-width:170px;background:#12203b;
+  .kx-menu-drop{display:none;position:absolute;top:calc(100% + 6px);left:0;min-width:250px;max-width:min(320px,86vw);background:#12203b;
     border:1px solid #24406e;border-radius:10px;padding:6px;z-index:1500;box-shadow:0 12px 30px rgba(0,0,0,.5)}
   .kx-menu-drop.open{display:flex;flex-direction:column;gap:4px}
   .kx-menu-item{text-align:left;background:transparent;border:0;color:#e2e8f0;padding:8px 10px;border-radius:8px;
     cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px}
   .kx-menu-item:hover{background:rgba(56,189,248,.14)}
+  .kx-menu-item svg{flex:0 0 auto;margin-top:1px}
+  .kx-menu-item-txt{display:flex;flex-direction:column;gap:1px;min-width:0}
+  .kx-menu-item-txt b{font-weight:600;font-size:13px}
+  .kx-menu-item-txt i{font-style:normal;font-size:11px;line-height:1.35;color:var(--text-muted)}
   /* ── contextual chrome: editor-only affordances hide off the CAD tab ── */
   body[data-tab]:not([data-tab="editor"]) #left-toolbar,
   body[data-tab]:not([data-tab="editor"]) .canvas-subbar{display:none}
@@ -195,6 +199,24 @@ function injectStyles() {
   .kx-feas-fix{margin-top:10px;background:rgba(56,189,248,.14);border:1px solid #2f5fa0;color:#bae6fd;border-radius:8px;
     padding:6px 12px;font-size:12px;cursor:pointer;transition:background .12s}
   .kx-feas-fix:hover{background:rgba(56,189,248,.28)}
+  /* ── advisor: named location, action row, hand-fix fallback, spotlight ── */
+  .kx-feas-where{font-size:11.5px;color:#fcd34d;margin-top:6px;font-family:var(--font-mono,monospace)}
+  .kx-feas-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+  .kx-feas-row .kx-feas-fix{margin-top:0}
+  .kx-feas-show{background:transparent;border:1px dashed #64748b;color:#cbd5e1;border-radius:8px;
+    padding:6px 11px;font-size:12px;cursor:pointer;transition:border-color .12s,color .12s}
+  .kx-feas-show:hover{border-color:#fde047;color:#fde047}
+  .kx-feas-manual{font-size:12px;line-height:1.5;color:#cbd5e1;background:rgba(148,163,184,.1);
+    border:1px solid #24344f;border-radius:8px;padding:8px 10px;margin-top:10px}
+  .kx-feas-manual b{color:#7dd3fc}
+  /* sidebar live-check rows are real buttons now (click to reveal on the card) */
+  .diag-btn{cursor:pointer;width:100%;text-align:left;font:inherit;color:inherit;transition:filter .12s,transform .08s}
+  .diag-btn:hover{filter:brightness(1.18)}
+  .diag-btn:active{transform:scale(.995)}
+  .kx-health-list-head{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
+    margin:2px 0 8px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline}
+  .kx-health-list-hint{text-transform:none;letter-spacing:0;font-style:italic;opacity:.72}
+  #diagnostics-list{margin-bottom:12px}
   .kx-feas-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
   /* ── machine intelligence: score, tabs, chips, universe matrix ── */
   .kx-feas-topright{display:flex;align-items:center;gap:12px}
@@ -419,15 +441,24 @@ function buildStudioMenu() {
   btn.className = 'btn-action kx-menu-btn';
   btn.setAttribute('aria-haspopup', 'menu');
   btn.setAttribute('aria-expanded', 'false');
-  // A layers glyph + caret make it read as "a group of studio tools" at a glance,
-  // instead of the flat text "Studio ▾" that looked like a disabled label.
+  // Name it for what is inside (three ways to START a pattern), not the vague
+  // "Studio" that hid Presets / Math Studio / Image Dither behind a mystery label.
+  btn.title = 'Start a pattern from the library, the maths studio, or your own photo';
+  // A sparkle glyph + caret read as "create something new" at a glance.
   btn.innerHTML = '<svg class="kx-menu-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" '
     + 'stroke="currentColor" stroke-width="2" aria-hidden="true">'
-    + '<path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>'
-    + '<span>Studio</span><span class="kx-menu-caret" aria-hidden="true">\u25be</span>';
+    + '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>'
+    + '<span>New pattern</span><span class="kx-menu-caret" aria-hidden="true">\u25be</span>';
   const drop = document.createElement('div');
   drop.className = 'kx-menu-drop';
 
+  // Each entry gets a plain-language what-it-is line, so the menu teaches rather
+  // than just naming.
+  const META = {
+    'btn-open-presets': { label: 'Preset library', desc: 'Authentic historical & algorithmic charts' },
+    'btn-open-math': { label: 'Math Studio', desc: 'Generative: reaction-diffusion, waves, cellular automata' },
+    'btn-open-image': { label: 'Image Dither', desc: 'Turn a photo into a punchcard' }
+  };
   targets.forEach(t => {
     const item = document.createElement('button');
     item.type = 'button';
@@ -438,7 +469,13 @@ function buildStudioMenu() {
       clone.setAttribute('width', '14'); clone.setAttribute('height', '14');
       item.appendChild(clone);
     }
-    item.appendChild(document.createTextNode((t.textContent || '').trim()));
+    const meta = META[t.id] || { label: (t.textContent || '').trim(), desc: '' };
+    const txt = document.createElement('span');
+    txt.className = 'kx-menu-item-txt';
+    const b = document.createElement('b'); b.textContent = meta.label;
+    txt.appendChild(b);
+    if (meta.desc) { const i = document.createElement('i'); i.textContent = meta.desc; txt.appendChild(i); }
+    item.appendChild(txt);
     on(item, 'click', () => { drop.classList.remove('open'); t.click(); });
     drop.appendChild(item);
   });

@@ -47,6 +47,80 @@ function runsAbove(line, want, limit) {
   return best > limit ? best : 0;
 }
 
+// ── location helpers ─────────────────────────────────────────────────────────
+// The advisor used to only *count* problems ("3 long floats"), which forced the
+// user to hunt for them. These return the offending cells too, so the UI can say
+// "these exact stitches" and spotlight them on the canvas.
+
+/** Horizontal runs of `want` longer than `limit`: their cells, the rows, worst. */
+function hRuns(M, want, limit) {
+  const cells = []; const rows = new Set(); let worst = 0;
+  for (let i = 0; i < M.length; i++) {
+    const line = M[i]; if (!line) continue;
+    let start = -1;
+    for (let c = 0; c <= line.length; c++) {
+      const is = c < line.length && line[c] === want;
+      if (is && start < 0) start = c;
+      if (!is && start >= 0) {
+        const len = c - start;
+        if (len > limit) { rows.add(i); if (len > worst) worst = len; for (let k = start; k < c; k++) cells.push([i, k]); }
+        start = -1;
+      }
+    }
+  }
+  return { cells, rows, worst };
+}
+
+/** Vertical runs of blanks (0) longer than `limit` — the real tuck failure mode. */
+function vTuckRuns(M, limit) {
+  const cells = []; const columns = new Set(); let worst = 0;
+  const cols = M[0] ? M[0].length : 0;
+  for (let c = 0; c < cols; c++) {
+    let start = -1;
+    for (let r = 0; r <= M.length; r++) {
+      const is = r < M.length && M[r][c] === 0;
+      if (is && start < 0) start = r;
+      if (!is && start >= 0) {
+        const len = r - start;
+        if (len > limit) { columns.add(c); if (len > worst) worst = len; for (let k = start; k < r; k++) cells.push([k, c]); }
+        start = -1;
+      }
+    }
+  }
+  return { cells, columns, worst };
+}
+
+/** Every cell in the column band [c0, c1) (or a row band) — for over-size cards. */
+function bandCells(M, { r0 = 0, r1 = null, c0 = 0, c1 = null } = {}) {
+  const rr = r1 == null ? M.length : Math.min(r1, M.length);
+  const cells = [];
+  for (let r = r0; r < rr; r++) {
+    const line = M[r]; if (!line) continue;
+    const cc = c1 == null ? line.length : Math.min(c1, line.length);
+    for (let c = Math.max(0, c0); c < cc; c++) cells.push([r, c]);
+  }
+  return cells;
+}
+
+/** Trim a cell list so a spotlight stays cheap to draw on very large cards. */
+function capCells(cells, max = 900) {
+  return cells.length > max ? cells.filter((_, i) => i % Math.ceil(cells.length / max) === 0) : cells;
+}
+
+/** Compact "1, 4–6, 20" label from a set/list of indices (1-based for humans). */
+function rangeLabel(nums, { from1 = true } = {}) {
+  const arr = [...new Set(nums)].sort((a, b) => a - b);
+  if (!arr.length) return '';
+  const o = [];
+  let s = arr[0], p = arr[0];
+  for (let i = 1; i <= arr.length; i++) {
+    if (i < arr.length && arr[i] === p + 1) { p = arr[i]; continue; }
+    o.push(s === p ? `${s}` : `${s}\u2013${p}`);
+    s = p = arr[i];
+  }
+  return o.map(x => (from1 ? x.replace(/\d+/g, n => String(Number(n) + 1)) : x)).join(', ');
+}
+
 const PHIL = {
   parsimony: 'Occam’s Razor — the simplest card that still knits is the best card.',
   pareto: 'The Pareto Principle — a handful of trouble spots cause most of the dropped stitches.',
@@ -92,7 +166,8 @@ export function createFeasibilityAdvisor(app) {
       issues.push(mk('error', `Too tall for ${profile.name}`,
         `This machine holds ${maxRows} rows; your card is ${rows}. The bottom would never be read.`,
         PHIL.postel,
-        { label: `Trim to ${maxRows} rows`, safe: true, run: () => ed.setDimensions(maxRows, cols) }));
+        { label: `Trim to ${maxRows} rows`, safe: true, run: () => ed.setDimensions(maxRows, cols) },
+        { where: `the ${rows - maxRows} row${rows - maxRows > 1 ? 's' : ''} past the top (${maxRows + 1}\u2013${rows})`, cells: capCells(bandCells(M, { r0: maxRows })) }));
     }
 
     // ── width over the needle bed ───────────────────────────────────────────
@@ -103,57 +178,46 @@ export function createFeasibilityAdvisor(app) {
       issues.push(mk('error', `Wider than the ${profile.name} bed`,
         `This bed has ${limits.maxNeedles} needles; your card is ${cols} columns across. Everything past needle ${limits.maxNeedles} is never read.`,
         PHIL.postel,
-        { label: `Trim to ${limits.maxNeedles} columns`, safe: true, run: () => ed.setDimensions(rows, limits.maxNeedles) }));
+        { label: `Trim to ${limits.maxNeedles} columns`, safe: true, run: () => ed.setDimensions(rows, limits.maxNeedles) },
+        { where: `columns ${limits.maxNeedles + 1}\u2013${cols} (off the right of the bed)`, cells: capCells(bandCells(M, { c0: limits.maxNeedles })) }));
     }
 
     if (mode === 'fair_isle') {
-      // Two colours, two kinds of float. A run of punched needles (1) works yarn B at
-      // the front and carries yarn A behind it; a run of blanks (0) is the mirror —
-      // yarn A knits and yarn B is floated. Both snag, so the check has to look at
-      // each colour, not just the punched one (which is all this used to do, so a
-      // field of background could hide arbitrarily long carried B floats).
-      let worst = 0;
-      const floatRows = new Set();
-      for (let i = 0; i < M.length; i++) {
-        for (const want of [1, 0]) {
-          const r = runsAbove(M[i], want, limit);
-          if (r) { floatRows.add(i); worst = Math.max(worst, r); }
-        }
-      }
+      // Two colours, two kinds of float: a run of punched needles (1) carries yarn A
+      // behind, a run of blanks (0) carries yarn B. Both snag, so check each colour
+      // and collect the exact stitches either way (previously only the punched one
+      // was measured, so a field of background could hide arbitrarily long B floats).
+      const a = hRuns(M, 1, limit);
+      const b = hRuns(M, 0, limit);
+      const floatRows = new Set([...a.rows, ...b.rows]);
+      const worst = Math.max(a.worst, b.worst);
       const count = floatRows.size;
       if (count) {
         issues.push(mk('warn', `${count} long float${count > 1 ? 's' : ''} (up to ${worst} sts)`,
           `A carried yarn over ${limit} needles snags on needles and puckers the fabric — either colour floats when the other is the one being carried across a long gap.`,
           PHIL.peakEnd,
-          { label: 'Auto-catch every long float', safe: true, run: () => { catchFloats(M, 1, limit); catchFloats(M, 0, limit); } }));
+          { label: 'Auto-catch every long float', safe: true, run: () => { catchFloats(M, 1, limit); catchFloats(M, 0, limit); } },
+          { where: `rows ${rangeLabel(floatRows)}`, cells: capCells([...a.cells, ...b.cells]) }));
       }
     } else if (mode === 'slip') {
-      let worst = 0, count = 0;
-      for (const row of M) { const r = runsAbove(row, 0, limit); if (r) { count++; worst = Math.max(worst, r); } }
+      const s = hRuns(M, 0, limit);
+      const count = s.rows.size;
       if (count) {
-        issues.push(mk('warn', `${count} long slip float${count > 1 ? 's' : ''} (up to ${worst} sts)`,
+        issues.push(mk('warn', `${count} long slip float${count > 1 ? 's' : ''} (up to ${s.worst} sts)`,
           `Slipped stitches carry the unused colour behind; past ${limit} it laces the fabric tight.`,
           PHIL.peakEnd,
-          { label: 'Knit a stitch to catch each float', safe: true, run: () => catchFloats(M, 0, limit) }));
+          { label: 'Knit a stitch to catch each float', safe: true, run: () => catchFloats(M, 0, limit) },
+          { where: `rows ${rangeLabel(s.rows)}`, cells: capCells(s.cells) }));
       }
     } else if (mode === 'tuck') {
-      // Tuck holds a needle's loop over extra rows. The failure is VERTICAL (loop
-      // stacking into a lump), not the horizontal float that fair isle and slip
-      // care about — so measure the tallies, per column.
-      let worst = 0, columnsOver = 0;
-      for (let c = 0; c < cols; c++) {
-        let cur = 0;
-        let tall = 0;
-        for (let r = 0; r < rows; r++) {
-          if (M[r][c] === 0) { cur++; if (cur > tall) tall = cur; } else cur = 0;
-        }
-        if (tall > tuckLimit) { columnsOver++; worst = Math.max(worst, tall); }
-      }
+      const t = vTuckRuns(M, tuckLimit);
+      const columnsOver = t.columns.size;
       if (columnsOver) {
-        issues.push(mk('warn', `${columnsOver} column${columnsOver > 1 ? 's' : ''} tuck for up to ${worst} rows`,
+        issues.push(mk('warn', `${columnsOver} column${columnsOver > 1 ? 's' : ''} tuck for up to ${t.worst} rows`,
           `Holding a needle in tuck for more than ${tuckLimit} rows stacks loops into a bulky lump that can pop off the bed.`,
           PHIL.pareto,
-          { label: 'Knit a row through long tucks', safe: true, run: () => breakTucks(M, tuckLimit) }));
+          { label: 'Knit a row through long tucks', safe: true, run: () => breakTucks(M, tuckLimit) },
+          { where: `needles ${rangeLabel(t.columns)}`, cells: capCells(t.cells) }));
       }
     } else if (mode === 'lace') {
       // Surface the compiler's own physical diagnostics as actionable advice.
@@ -279,18 +343,30 @@ export function createFeasibilityAdvisor(app) {
       const firstAllBlank = M.every(r => r[0] === 0);
       const lastAllBlank = M.every(r => r[cols - 1] === 0);
       if ((firstAllBlank || lastAllBlank) && cols > 2) {
+        const edgeCells = [];
+        for (let i = 0; i < M.length; i++) {
+          if (firstAllBlank) edgeCells.push([i, 0]);
+          if (lastAllBlank) edgeCells.push([i, cols - 1]);
+        }
+        const where = firstAllBlank && lastAllBlank
+          ? `columns 1 and ${cols}`
+          : firstAllBlank ? 'column 1 (left edge)' : `column ${cols} (right edge)`;
         issues.push(mk('info', 'Edge ' + (firstAllBlank && lastAllBlank ? 'columns are' : 'column is') + ' entirely blank',
           'A blank selvedge column gives the cast-on nothing punched to grip, so the edges can curl or ladder. A column of knit at each edge is cheap insurance.',
-          phil('margin'), null, { category: 'structure' }));
+          phil('margin'), null,
+          { category: 'structure', where: `the ${where}`, cells: capCells(edgeCells) }));
       }
     }
 
     // 5. Repeat hygiene: does the card close on a clean horizontal repeat?
     const rep = smallestRepeat(M, cols);
     if (cols >= 6 && rep && rep.repeat && cols % rep.repeat !== 0) {
+      const target = Math.max(rep.repeat, Math.round(cols / rep.repeat) * rep.repeat);
       issues.push(mk('info', 'Repeat does not divide the card width',
         `The motif looks ${rep.repeat} needles wide but the card is ${cols}; tiling it will cut the pattern mid-motif at the seam. Snap the width to a multiple of ${rep.repeat}.`,
-        phil('pragnanz'), null, { category: 'structure' }));
+        phil('pragnanz'),
+        { label: `Set width to ${target}`, safe: true, run: () => app.editor && app.editor.setDimensions(rows, target) },
+        { where: `columns ${Math.floor(cols / rep.repeat) * rep.repeat + 1}\u2013${cols} (a cut-off repeat)`, cells: capCells(bandCells(M, { c0: Math.floor(cols / rep.repeat) * rep.repeat })) }));
     }
 
     // 6. Lace: openwork needs its increases and decreases to balance out.
@@ -304,7 +380,8 @@ export function createFeasibilityAdvisor(app) {
       if (yo && dec && Math.abs(yo - dec) > Math.max(2, 0.15 * (yo + dec))) {
         issues.push(mk('info', `Openwork is unbalanced (${yo} yarnovers vs ${dec} transfers)`,
           'Each yarnover adds a stitch, each transfer takes one away. A surplus widens the fabric row after row (a ruffle); a deficit narrows it toward nothing. Pair them to hold the stitch count.',
-          phil('structure'), null, { category: 'lace' }));
+          phil('structure'), null,
+          { category: 'lace', manual: `Add ${Math.abs(yo - dec)} ${yo > dec ? 'transfer' : 'yarnover'}${Math.abs(yo - dec) > 1 ? 's' : ''} to balance the ${yo} yarnovers and ${dec} transfers, so the stitch count stays constant down the fabric.` }));
       }
     }
   }

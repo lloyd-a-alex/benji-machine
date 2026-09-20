@@ -58,6 +58,11 @@ export class CanvasEditor {
     this.selection = null; // { r1, c1, r2, c2 }
     this.clipboard = null; // { rows, cols, cells[][] } captured for paste
 
+    // Advisory highlight: a transient set of cells the feasibility advisor can
+    // point at ("this is the float I mean"). Purely visual — it never touches the
+    // matrix or history. { cells:[[r,c]...], color, fill, label } or null.
+    this.highlight = null;
+
     // Symmetry options
     this.symmetryH = false;
     this.symmetryV = false;
@@ -84,6 +89,7 @@ export class CanvasEditor {
     this.rows = rows;
     this.cols = cols;
     this.matrix = [];
+    this.highlight = null; // resizing invalidates a spotlight on the old bounds
 
     for (let r = 0; r < rows; r++) {
       this.matrix[r] = [];
@@ -151,6 +157,7 @@ export class CanvasEditor {
     this.rows = newMatrix.length;
     this.cols = newMatrix[0]?.length || 24;
     this.matrix = newMatrix.map(row => [...row]);
+    this.highlight = null; // a new card supersedes any spotlight on the old one
     this.saveState();
     this.render();
     this.onChange();
@@ -433,6 +440,50 @@ export class CanvasEditor {
     return { x: screenX, y: screenY };
   }
 
+  // True when (r, c) falls on a real cell of the grid.
+  _cellInBounds(r, c) {
+    return r >= 0 && r < this.rows && c >= 0 && c < this.cols;
+  }
+
+  /**
+   * Point the canvas at a set of cells the advisor is talking about. Purely
+   * visual: draws a bright overlay and pans so they are on screen, without ever
+   * mutating the matrix or the undo history.
+   * @param {Array<[number, number]>} cells  [row, col] pairs to spotlight.
+   * @param {{color?:string, fill?:string, label?:string}} [opts]
+   */
+  setHighlight(cells, opts = {}) {
+    this.highlight = Array.isArray(cells) && cells.length
+      ? { cells, color: opts.color || '#fde047', fill: opts.fill || 'rgba(253, 224, 71, 0.30)', label: opts.label || '' }
+      : null;
+    if (this.highlight) this.scrollToCells(cells);
+    this.render();
+    return this.highlight;
+  }
+
+  clearHighlight() {
+    if (!this.highlight) return;
+    this.highlight = null;
+    this.render();
+  }
+
+  /** Pan the viewport so the centroid of `cells` sits in the middle of the view. */
+  scrollToCells(cells) {
+    if (!cells || !cells.length) return;
+    let sr = 0, sc = 0;
+    for (const [r, c] of cells) { sr += r; sc += c; }
+    const avgR = sr / cells.length, avgC = sc / cells.length;
+    const rect = this.canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return; // hidden canvas — leave the pan alone
+    // If the whole grid already fits, don't shove it off-centre.
+    if (this.cols * this.zoom <= rect.width - 80 && this.rows * this.zoom <= rect.height - 80) {
+      this.fitToView();
+      return;
+    }
+    this.panX = rect.width / 2 - (avgC + 0.5) * this.zoom;
+    this.panY = rect.height / 2 - (this.rows - 1 - avgR + 0.5) * this.zoom;
+  }
+
   // Mouse, touch & pen handlers — Pointer Events so every input device works.
   setupEvents() {
     const canvas = this.canvas;
@@ -464,8 +515,18 @@ export class CanvasEditor {
         return;
       }
 
+      // Default to panning on empty space: a left-press that lands outside the
+      // grid has no cell to paint or marquee, so rather than doing nothing it
+      // navigates. Painting/selecting the moment you are over a cell is unchanged.
+      if (e.button === 0 && !this._cellInBounds(cell.r, cell.c)) {
+        this.isPanning = true;
+        canvas.style.cursor = 'grabbing';
+        return;
+      }
+
       this.isMouseDown = true;
       this.dragStartCell = cell;
+      if (this.highlight) this.highlight = null; // taking a paint stroke dismisses the advisor spotlight
 
       if (e.button === 2) {
         // Right click: Erase
@@ -899,6 +960,25 @@ export class CanvasEditor {
       ctx.fillStyle = 'rgba(244, 63, 94, 0.15)';
       ctx.fillRect(x1, y1, sw, sh);
       ctx.setLineDash([]);
+    }
+
+    // Advisory spotlight: the feasibility advisor pointing at the exact cells it
+    // means. Drawn above cells/selection but below the rulers. Runs inside the
+    // translated context, so x/y are grid-local just like everything above.
+    if (this.highlight && this.highlight.cells && this.highlight.cells.length) {
+      const hl = this.highlight;
+      ctx.save();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = hl.color;
+      ctx.fillStyle = hl.fill;
+      for (const [r, c] of hl.cells) {
+        if (!this._cellInBounds(r, c)) continue;
+        const x = c * this.zoom;
+        const y = (this.rows - 1 - r) * this.zoom;
+        ctx.fillRect(x + 1, y + 1, this.zoom - 2, this.zoom - 2);
+        ctx.strokeRect(x + 0.5, y + 0.5, this.zoom - 1, this.zoom - 1);
+      }
+      ctx.restore();
     }
 
     // Draw needle bed ruler and row numbers
