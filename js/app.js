@@ -3,7 +3,8 @@
  * Main Application Orchestrator & State Controller
  */
 
-import { MACHINE_PROFILES, calculateCardDimensions, profileLimits, bedNeedleCapacity } from './machine/profiles.js';
+import { MACHINE_PROFILES, calculateCardDimensions, profileLimits, bedNeedleCapacity, loadCustomProfiles } from './machine/profiles.js';
+import { openProfileEditor } from './machine/profile-editor.js';
 import { gridSizeMm, formatLength } from './edit/measure.js';
 import { STITCH_TYPE } from './math/knit-topology.js';
 import { LaceCompiler, CARRIAGE_TYPE, DIRECTION } from './compiler/lace-decompiler.js';
@@ -17,6 +18,12 @@ import { CadDxfExporter } from './exporters/cad-dxf.js';
 import { VectorSvgExporter } from './exporters/vector-svg.js';
 import { FormatsExporter } from './exporters/formats-dak.js';
 import { readProject } from './project/kcard.js';
+// One door for every importable text file: .kcard (which still defers to readProject
+// above as the trust boundary) plus DesignaKnit, AYAB, CSV, DXF and KNITCAT G-code.
+import { readAnyProject } from './importers/reader-registry.js';
+// Photo counterpart: reverse a *physical* punched card (camera photo) back into a grid.
+import { analyzePunchcard } from './importers/punchcard-reader.js';
+import { printHtml } from './ui/printing.js';
 import { PATTERN_PRESETS } from './presets/preset-library.js';
 import { openPresetsBrowser } from './presets/presets-browser.js';
 import { initToolbar } from './ui/toolbar.js';
@@ -37,6 +44,9 @@ import { initExtras } from './features/extras.js';
 import { initSound, fx } from './features/sound.js';
 import { initCommandPalette } from './features/command-palette.js';
 import { initAdmin } from './features/admin.js';
+// "Send to machine" over Web Serial — streams the AYAB bitstream down the wire. The
+// module feature-detects at call time, so importing it is always safe (even headless).
+import { openSerialIfSupported, isSerialSupported } from './features/serial.js';
 import { createFeasibilityAdvisor } from './features/feasibility.js';
 import { createMachineUniverse } from './features/machine-universe.js';
 import { initPwa } from './features/pwa.js';
@@ -57,6 +67,10 @@ import { initContextMenu } from './ui/context-menu.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createTaskbar } from './ui/taskbar.js';
 import { runCommand as dispatchCommand } from './ui/commands.js';
+// The Chart/Select command palette entries (js/ui/chart-commands.js) so Ctrl+K can
+// find every row/column/transform/selection verb by name. Same id vocabulary the
+// menu bar and dispatcher use — one source of truth, three surfaces over it.
+import { chartPaletteActions } from './ui/chart-commands.js';
 
 class KnitApp {
   constructor() {
@@ -204,6 +218,9 @@ class KnitApp {
   }
 
   initDOM() {
+    // Fold any user-defined machines into the registry before the picker is built,
+    // so a saved custom gauge is selectable on this load and every later one.
+    try { loadCustomProfiles(); } catch (_) { /* storage unreadable — built-ins still work */ }
     // Cache UI elements
     this.elements = {
       profileSelect: document.getElementById('profile-select'),
@@ -246,20 +263,79 @@ class KnitApp {
     // Populate profile selector. The needle-bed count is spelled into every label:
     // it is the single most consequential difference between these machines, and
     // it used to be buried in the description (see js/machine/profiles.js).
-    this.elements.profileSelect.innerHTML = Object.values(MACHINE_PROFILES)
-      .map(p => `<option value="${p.id}">${p.name} \u00b7 ${p.beds === 2 ? 'double bed' : 'single bed'}</option>`)
+    this.refreshProfileSelect();
+  }
+
+  /**
+   * (Re)build the machine picker from the live profile registry, appending a
+   * "＋ Add custom machine…" affordance. Called at boot (after custom profiles
+   * are loaded) and again whenever a custom machine is created or removed. The
+   * currently-selected id is preserved when it still exists.
+   */
+  refreshProfileSelect() {
+    const select = this.elements?.profileSelect;
+    if (!select) return;
+    const keep = select.value || this.currentProfile?.id;
+    const options = Object.values(MACHINE_PROFILES)
+      .map(p => `<option value="${p.id}">${p.name} \u00b7 ${p.beds === 2 ? 'double bed' : 'single bed'}${p.custom ? ' \u00b7 custom' : ''}</option>`)
       .join('');
+    select.innerHTML = `${options}<option value="__add_profile__">\uff0b Add custom machine\u2026</option>`;
+    if (keep && MACHINE_PROFILES[keep]) select.value = keep;
+  }
+
+  /**
+   * Handle the "＋ Add custom machine…" sentinel: open the editor, then reload
+   * the registry into the picker and switch to the freshly-created machine.
+   */
+  _addCustomProfile() {
+    const select = this.elements?.profileSelect;
+    openProfileEditor({
+      notifier: this.notifications,
+      onApplied: (id) => {
+        this.refreshProfileSelect();
+        const profile = MACHINE_PROFILES[id];
+        if (profile && select) {
+          select.value = id;
+          this.applyMachineProfile(profile);
+        }
+      }
+    });
+    // Restore the previous selection so the sentinel is never "stuck" on screen.
+    if (select && this.currentProfile) select.value = this.currentProfile.id;
+  }
+
+  /**
+   * Switch the whole app onto a machine profile: the compiler, the editor width,
+   * the derived physical specs and the size limits all follow. Extracted from the
+   * change handler so the custom-profile editor can apply a brand-new machine
+   * through the identical path.
+   * @param {object} profile
+   */
+  applyMachineProfile(profile) {
+    if (!profile) return;
+    this.currentProfile = profile;
+    this.compiler.setProfile(profile);
+    this.editor.setDimensions(this.editor.rows, profile.columns);
+    this.updateMachineSpecs();
+    this.applyProfileLimits();
+    this.recompile();
   }
 
   initComponents() {
     // Use requestIdleCallback to defer heavy initialization for faster startup
     const initComponents = () => {
       try {
-        // 1. Grid Canvas Editor
+        // 1. Grid Canvas Editor. The editor owns the layer stack, the branching
+        //    history tree, the selection engine, guides/repeats and annotations, so
+        //    it is constructed with the machine profile (dimension annotations need
+        //    real mm pitch) and a notifier (a wand that selects 19,000 cells has to
+        //    say so out loud rather than silently eat the next Delete).
         this.editor = new CanvasEditor(this.elements.editorCanvas, {
           rows: 24,
           cols: this.currentProfile.columns,
           mode: this.currentMode,
+          profile: this.currentProfile,
+          notify: (message, opts) => this._editorNotice(message, opts),
           onChange: () => this.handlePatternChange()
         });
 
@@ -297,7 +373,7 @@ class KnitApp {
         // 6. Brother KH-830 Kinematic Simulator
         const brotherEl = document.getElementById('brother-canvas');
         if (brotherEl) {
-          this.brotherCanvas = new BrotherSimCanvas(brotherEl);
+          this.brotherCanvas = new BrotherSimCanvas(brotherEl, { profile: this.currentProfile });
         }
 
         // Now that components are ready, load the preset
@@ -412,16 +488,61 @@ class KnitApp {
     }).catch(() => { /* keep the last known recents */ });
   }
 
+  /**
+   * Funnel the editor's advisory messages into the toast stack. The canvas editor
+   * is DOM-only-of-its-own making, so it never imports the notifier; it calls this
+   * instead. Shape-tolerant on purpose: `notify(msg)`, `notify(msg, {details})`
+   * and `notify(msg, 'warn')` all have to work.
+   * @private
+   */
+  _editorNotice(message, opts = {}) {
+    const kind = typeof opts === 'string' ? opts : (opts?.kind || opts?.level || 'info');
+    const payload = typeof opts === 'string' ? {} : (opts || {});
+    const send = this.notifications?.[kind] || this.notifications?.info;
+    try { send?.call(this.notifications, message, { duration: 5000, ...payload }); } catch (_) { /* toast layer absent */ }
+  }
+
+  /**
+   * Enter a canvas tool from anywhere — the palette, a keyboard letter, a menu, the
+   * command palette or the clip shelf. The canvas owns the registry
+   * (`CanvasEditor.TOOLS`) and does the button highlighting itself, so this is only
+   * a validity check plus an honest toast when a tool is not in this build.
+   * @returns {boolean} whether the tool was entered
+   */
+  _selectTool(tool) {
+    const ed = this.editor;
+    if (!ed) return false;
+    const known = CanvasEditor.TOOLS || [];
+    if (!known.includes(tool)) {
+      this.notifications?.warn?.(`The "${tool}" tool is not available in this build.`, {
+        details: `KNITCAT knows: ${known.join(', ')}.`
+      });
+      return false;
+    }
+    ed.setActiveTool(tool);
+    return true;
+  }
+
   /** Live enable/disable state for the menu bar (undo depth, a live selection). */
   _chromeFlags() {
     const ed = this.editor;
     let hasSelection = false;
     try { hasSelection = !!(ed && ed.getSelectionBounds && ed.getSelectionBounds()); } catch (_) { /* not ready */ }
-    return {
-      canUndo: !!(ed && ed.historyIndex > 0),
-      canRedo: !!(ed && ed.history && ed.historyIndex < ed.history.length - 1),
-      hasSelection
-    };
+    // Undo is a tree now, so "can I go back" is a property of the branch we stand
+    // on, not of an array index. Structure-panel and menubar both read these.
+    let canUndo = false;
+    let canRedo = false;
+    try {
+      canUndo = !!(ed && ed.tree && ed.tree.canUndo());
+      canRedo = !!(ed && ed.tree && ed.tree.canRedo());
+    } catch (_) { /* history not built yet */ }
+    // The Chart/Select menus dim the region verbs until a blob exists and light the
+    // value-pick verb only once the pointer has a cell to read. `hoverCell` is the
+    // editor's live {r,c}; -1 means the pointer is off the card.
+    let hasCell = false;
+    try { hasCell = !!(ed && ed.hoverCell && ed.hoverCell.r >= 0 && ed.hoverCell.c >= 0); } catch (_) { /* not ready */ }
+    const snap = !!(ed && ed.snapGuides);
+    return { canUndo, canRedo, hasSelection, hasCell, snap };
   }
 
   /** Snap every draggable surface back to its authored corner and forget its spot. */
@@ -445,6 +566,10 @@ class KnitApp {
     const rows = [
       ['Pencil \u00b7 line \u00b7 rect \u00b7 ellipse', 'P \u00b7 L \u00b7 R \u00b7 C'],
       ['Select \u00b7 fill \u00b7 eraser', 'S \u00b7 G \u00b7 E'],
+      ['Wand \u00b7 lasso \u00b7 bezier \u00b7 spline', 'W \u00b7 K \u00b7 B \u00b7 J'],
+      ['Smudge \u00b7 measure \u00b7 note', 'M \u00b7 V \u00b7 N'],
+      ['Finish a lasso / bezier / spline path', 'Enter'],
+      ['Abandon a path in progress', 'Esc'],
       ['Undo / redo', 'Ctrl Z / Ctrl Y'],
       ['Copy / cut / paste / duplicate', 'Ctrl C / X / V / D'],
       ['Delete selection', 'Del'],
@@ -572,17 +697,15 @@ class KnitApp {
   }
 
   initEvents() {
-    // Machine Profile change
+    // Machine Profile change. The "＋ Add custom machine…" sentinel opens the
+    // editor instead of switching; every other value is a real registry profile.
     this.elements.profileSelect.addEventListener('change', e => {
-      const profile = MACHINE_PROFILES[e.target.value];
-      if (profile) {
-        this.currentProfile = profile;
-        this.compiler.setProfile(profile);
-        this.editor.setDimensions(this.editor.rows, profile.columns);
-        this.updateMachineSpecs();
-        this.applyProfileLimits();
-        this.recompile();
+      if (e.target.value === '__add_profile__') {
+        this._addCustomProfile();
+        return;
       }
+      const profile = MACHINE_PROFILES[e.target.value];
+      if (profile) this.applyMachineProfile(profile);
     });
     this.updateMachineSpecs();
     this.applyProfileLimits();
@@ -649,12 +772,18 @@ class KnitApp {
       activateTab(next, { focus: true });
     });
 
-    // Tool Buttons (Pencil, Eraser, Line, Rect, Circle, Fill)
+    // Tool Buttons (Pencil, Eraser, Line, Rect, Circle, Fill …). Routed through
+    // setActiveTool rather than assigning `activeTool` directly: the editor clears
+    // any half-drawn lasso/bezier/spline on a tool change, and it is the single
+    // place that knows the tool registry, so a button can never select a tool that
+    // the canvas would then ignore.
     this.elements.toolButtons.forEach(btn => {
       btn.addEventListener('click', () => {
-        this.elements.toolButtons.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        if (this.editor) this.editor.activeTool = btn.dataset.tool;
+        if (!this._selectTool(btn.dataset.tool)) {
+          btn.classList.remove('active');
+          return;
+        }
+        this.elements.toolButtons.forEach(b => b.classList.toggle('active', b === btn));
       });
     });
 
@@ -749,6 +878,19 @@ class KnitApp {
       this.closeAllModals();
     });
 
+    // Physical punchcard photo reader (js/importers/punchcard-reader.js).
+    document.getElementById('btn-open-punchcard-photo')?.addEventListener('click', () => this.openModal('punchcard-photo'));
+    document.getElementById('punchcard-photo-input')?.addEventListener('change', e => this.handlePunchcardPhoto(e));
+    document.getElementById('btn-apply-punchcard-photo')?.addEventListener('click', () => {
+      this.applyPunchcardPhoto();
+      this.closeAllModals();
+    });
+    ['punchcard-holes-light', 'punchcard-min-blob', 'punchcard-pitch', 'punchcard-downscale'].forEach(id => {
+      const el = document.getElementById(id);
+      el?.addEventListener('input', () => this._onPunchcardControl(id));
+      el?.addEventListener('change', () => this._onPunchcardControl(id));
+    });
+
     // Math generator parameter visibility
     const mathTypeSelect = document.getElementById('math-gen-type');
     const updateMathParams = () => {
@@ -785,6 +927,7 @@ class KnitApp {
     document.getElementById('btn-schedule-verify')?.addEventListener('click', () => this.verifySchedule());
     document.getElementById('btn-schedule-optimize')?.addEventListener('click', () => this.optimizeSchedule());
     document.getElementById('btn-schedule-export')?.addEventListener('click', () => this.exportScheduleCSV());
+    document.getElementById('btn-schedule-print')?.addEventListener('click', () => this.printSchedule());
     document.getElementById('btn-schedule-stats')?.addEventListener('click', () => this.toggleScheduleStats());
     document.getElementById('btn-schedule-collisions')?.addEventListener('click', () => this.detectCollisions());
     
@@ -867,6 +1010,7 @@ class KnitApp {
     
     // Additional advanced exports
     document.getElementById('btn-export-ayab')?.addEventListener('click', () => this.exportAYAB());
+    document.getElementById('btn-send-machine')?.addEventListener('click', () => this.sendToMachine());
     document.getElementById('btn-export-brother')?.addEventListener('click', () => this.exportBrotherDisk());
     document.getElementById('btn-export-xml')?.addEventListener('click', () => this.exportXML());
     document.getElementById('btn-export-docs')?.addEventListener('click', () => this.exportDocumentation());
@@ -934,25 +1078,41 @@ class KnitApp {
         // Ctrl+T, Ctrl+R and friends must keep working. Stopping the chain here
         // also means a bare-letter shortcut can never fire behind a modifier.
         return;
-      } else if (k === 'p' || k === 'b') {
-        document.querySelector('[data-tool="pencil"]')?.click();
+      } else if (k === 'p') {
+        this._selectTool('pencil');
       } else if (k === 'e') {
-        document.querySelector('[data-tool="eraser"]')?.click();
+        this._selectTool('eraser');
       } else if (k === 'l') {
-        document.querySelector('[data-tool="line"]')?.click();
+        this._selectTool('line');
       } else if (k === 'r') {
-        document.querySelector('[data-tool="rect"]')?.click();
+        this._selectTool('rect');
       } else if (k === 'c') {
-        document.querySelector('[data-tool="circle"]')?.click();
+        this._selectTool('circle');
       } else if (k === 'o') {
-        document.querySelector('[data-tool="rectOutline"]')?.click();
+        this._selectTool('rectOutline');
       } else if (k === 'i') {
-        document.querySelector('[data-tool="circleOutline"]')?.click();
+        this._selectTool('circleOutline');
       } else if (k === 'g') {
         // 'g' for fill — 'f' stays owned by the CNC toolpath viewer (fit to view).
-        document.querySelector('[data-tool="fill"]')?.click();
+        this._selectTool('fill');
       } else if (k === 's') {
-        document.querySelector('[data-tool="select"]')?.click();
+        this._selectTool('select');
+      } else if (k === 'w') {
+        this._selectTool('wand');
+      } else if (k === 'k') {
+        this._selectTool('lasso');
+      } else if (k === 'b') {
+        this._selectTool('bezier');
+      } else if (k === 'j') {
+        this._selectTool('spline');
+      } else if (k === 'm') {
+        this._selectTool('smudge');
+      } else if (k === 'v') {
+        this._selectTool('measure');
+      } else if (k === 'n') {
+        this._selectTool('annotate');
+      } else if (k === 'h') {
+        this._selectTool('heart');
       } else if (k === 'u') {
         this.editor?.undo();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -1130,20 +1290,27 @@ class KnitApp {
     }
   }
 
-  // Duplicate the current marquee selection offset by one cell down-right.
+  // Duplicate the current selection offset by one cell down-right.
+  //
+  // It builds a full replacement matrix and hands it to setMatrix(): `editor.matrix`
+  // is a getter over the composited layer stack, so writing into it would edit a
+  // copy that is immediately thrown away (and would skip undo, the punchcard and
+  // every other listener). setMatrix() is the single undoable write path.
   duplicateSelection() {
     const ed = this.editor;
     if (!ed || !ed.copySelection()) return;
     const b = ed.getSelectionBounds();
     if (!b) return;
     const src = ed.clipboard;
+    const next = ed.matrix.map(row => [...row]);
     for (let r = 0; r < src.rows; r++) {
       for (let c = 0; c < src.cols; c++) {
         const tr = b.r1 + 1 + r, tc = b.c1 + 1 + c;
-        if (tr >= 0 && tr < ed.rows && tc >= 0 && tc < ed.cols) ed.matrix[tr][tc] = src.cells[r][c];
+        if (tr >= 0 && tr < ed.rows && tc >= 0 && tc < ed.cols) next[tr][tc] = src.cells[r][c];
       }
     }
-    ed.saveState(); ed.render(); ed.onChange();
+    ed.setLabel('Duplicate selection');
+    ed.setMatrix(next);
     this.notifications.info('Duplicated selection.');
   }
 
@@ -1241,6 +1408,92 @@ class KnitApp {
     }
   }
 
+  // ── Issue step-through tour (plan §6.2) ───────────────────────────────────
+  //
+  // A 38-cell float is 38 separate stitches you cannot see all at once, and a static
+  // spotlight of all of them helps nobody walk the row. This opens a small, persistent,
+  // keyboard-driven walker at the foot of the screen: \u25c0 / \u25b6 (or Left / Right) move
+  // one offending cell at a time, the editor auto-pans to it, and every cell in the
+  // issue's list gets its moment in the sun. It is deliberately its own overlay rather
+  // than a widget inside the advisor modal, because the modal covers the very canvas
+  // you are trying to inspect. Escape (or the \u2715) hands control straight back.
+
+  _startIssueTour(cells, title) {
+    if (typeof document === 'undefined') return;
+    const list = Array.isArray(cells) ? cells.filter(Boolean) : [];
+    if (!list.length) return;
+    this._stopIssueTour();
+    try { document.querySelector('.tab-btn[data-tab="editor"]')?.click(); } catch (_) { /* headless */ }
+
+    this._tour = { cells: list, i: 0, title: title || 'Issue' };
+    const bar = document.createElement('div');
+    bar.id = 'kx-issue-tour';
+    bar.setAttribute('role', 'toolbar');
+    bar.setAttribute('aria-label', 'Stepping through a machine-feasibility issue');
+    document.body.appendChild(bar);
+    this._renderIssueTour();
+
+    this._tourKey = (e) => {
+      if (!this._tour) return;
+      switch (e.key) {
+        case 'ArrowRight': case ' ': e.preventDefault(); this._tourStep(1); break;
+        case 'ArrowLeft': e.preventDefault(); this._tourStep(-1); break;
+        case 'Home': e.preventDefault(); this._tourGoTo(0); break;
+        case 'End': e.preventDefault(); this._tourGoTo(this._tour.cells.length - 1); break;
+        case 'Escape': e.preventDefault(); this._stopIssueTour(); break;
+        default: break;
+      }
+    };
+    document.addEventListener('keydown', this._tourKey);
+    this._tourHighlight();
+  }
+
+  _renderIssueTour() {
+    const bar = document.getElementById('kx-issue-tour');
+    if (!bar || !this._tour) return;
+    const { cells, i, title } = this._tour;
+    const [r, c] = cells[i];
+    bar.innerHTML = `
+      <button class="kx-tour-btn" id="kx-tour-prev" type="button" aria-label="Previous stitch">\u25c0</button>
+      <span class="kx-tour-pos">${i + 1}\u2009/\u2009${cells.length}</span>
+      <button class="kx-tour-btn" id="kx-tour-next" type="button" aria-label="Next stitch">\u25b6</button>
+      <span class="kx-tour-title">${String(title).replace(/[<>&]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]))}
+        <span class="kx-tour-cell">row ${r + 1}, needle ${c + 1}</span></span>
+      <button class="kx-tour-close" id="kx-tour-exit" type="button" aria-label="Exit tour">\u2715</button>`;
+    bar.querySelector('#kx-tour-prev').addEventListener('click', () => this._tourStep(-1));
+    bar.querySelector('#kx-tour-next').addEventListener('click', () => this._tourStep(1));
+    bar.querySelector('#kx-tour-exit').addEventListener('click', () => this._stopIssueTour());
+  }
+
+  _tourStep(delta) {
+    if (!this._tour) return;
+    const n = this._tour.cells.length;
+    this._tourGoTo(((this._tour.i + delta) % n + n) % n);
+  }
+
+  _tourGoTo(index) {
+    if (!this._tour) return;
+    this._tour.i = Math.max(0, Math.min(this._tour.cells.length - 1, index));
+    this._renderIssueTour();
+    this._tourHighlight();
+  }
+
+  _tourHighlight() {
+    if (!this._tour || !this.editor) return;
+    const cell = this._tour.cells[this._tour.i];
+    try { this.editor.setHighlight([cell], { label: `${this._tour.title} \u00b7 ${this._tour.i + 1}/${this._tour.cells.length}`, color: '#fb7185', fill: 'rgba(251,113,133,0.35)' }); } catch (_) { /* contained */ }
+  }
+
+  _stopIssueTour() {
+    if (typeof document !== 'undefined' && this._tourKey) {
+      document.removeEventListener('keydown', this._tourKey);
+    }
+    this._tourKey = null;
+    this._tour = null;
+    document.getElementById('kx-issue-tour')?.remove();
+    try { this.editor?.clearHighlight?.(); } catch (_) { /* contained */ }
+  }
+
   updateStatusStats() {
     if (!this.compilationResult) return;
     const cardRows = this.compilationResult.cardMatrix.length;
@@ -1332,6 +1585,12 @@ class KnitApp {
       : 'A transfer moves a loop to the neighbouring needle on the same bed, and only while the carriage travels that way.');
     setElem('spec-max-float', `up to ${profileLimits(p).maxFloatNeedles} sts carried`,
       'Longer stranded runs than this catch on fingers and pull the fabric in. Tuck and slip have their own limits, which the advisor checks.');
+    // 5.5 — the yarn sim's fabric physics are derived from the machine's real gauge.
+    // Stamping the profile here is enough: the next updateFabric (tab open, edit)
+    // rebuilds the topology with this spacing, so no work is done until it is seen.
+    if (this.yarnSim) this.yarnSim.machineProfile = p;
+    // 5.6 — the Brother needle-selector rescales to this bed's needle capacity.
+    try { this.brotherCanvas?.setProfile?.(p); } catch (_) { /* sim not mounted */ }
     this.applyProfileLimits();
   }
 
@@ -1727,6 +1986,145 @@ class KnitApp {
     }
   }
 
+  // ── Physical punchcard photo reader (js/importers/punchcard-reader.js) ──────
+  //
+  // A knitter points a phone camera at a punched card; we detect every hole and lay
+  // them back onto a needle grid. The heavy lifting (Otsu threshold, connected-component
+  // labelling, grid quantisation) is DOM-free in the reader module; this is only the
+  // camera-to-canvas plumbing and the preview overlay that lets the knitter *see* the
+  // detected grid sitting on top of their photo before committing it.
+
+  handlePunchcardPhoto(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      const img = new Image();
+      img.onload = () => {
+        this._punchcardPhotoImage = img;
+        this._punchcardResult = null;
+        this._runPunchcardAnalysis();
+      };
+      img.onerror = () => this.notifications.error('That image could not be opened.');
+      img.src = evt.target.result;
+    };
+    reader.onerror = () => this.notifications.error('That file could not be read.');
+    reader.readAsDataURL(file);
+  }
+
+  /** Re-run the analysis when a control changes; also echoes the size slider value. */
+  _onPunchcardControl(id) {
+    if (id === 'punchcard-min-blob') {
+      const val = document.getElementById('punchcard-min-blob-val');
+      if (val) val.textContent = String(parseInt(document.getElementById('punchcard-min-blob')?.value, 10) || 0);
+    }
+    if (this._punchcardPhotoImage) this._runPunchcardAnalysis();
+  }
+
+  /** Downscale the photo into an ImageData, run the reader, then paint the overlay. */
+  _runPunchcardAnalysis() {
+    const img = this._punchcardPhotoImage;
+    const canvas = document.getElementById('punchcard-photo-canvas');
+    const status = document.getElementById('punchcard-photo-status');
+    const applyBtn = document.getElementById('btn-apply-punchcard-photo');
+    if (!img || !canvas) return;
+
+    const scale = Math.max(1, parseInt(document.getElementById('punchcard-downscale')?.value, 10) || 2);
+    const w = Math.max(1, Math.round(img.width / scale));
+    const h = Math.max(1, Math.round(img.height / scale));
+    const work = document.createElement('canvas');
+    work.width = w;
+    work.height = h;
+    const wctx = work.getContext('2d', { willReadFrequently: true });
+    wctx.drawImage(img, 0, 0, w, h);
+    let image;
+    try {
+      image = wctx.getImageData(0, 0, w, h);
+    } catch (err) {
+      if (status) status.textContent = 'The browser would not let this image be read (cross-origin?).';
+      if (applyBtn) applyBtn.disabled = true;
+      return;
+    }
+
+    const punchedIsLight = document.getElementById('punchcard-holes-light')?.checked ?? true;
+    const minBlobPx = Math.max(1, parseInt(document.getElementById('punchcard-min-blob')?.value, 10) || 4);
+    const pitch = parseFloat(document.getElementById('punchcard-pitch')?.value);
+    const opts = { punchedIsLight, minBlobPx };
+    // An explicit px pitch overrides auto-detection for both axes (a regular card).
+    if (Number.isFinite(pitch) && pitch > 0) { opts.pitchX = pitch; opts.pitchY = pitch; }
+
+    const result = analyzePunchcard(image, opts);
+    this._punchcardResult = result.ok ? result : null;
+
+    // Paint the photo and overlay the detected grid + hole centres so misalignment is
+    // obvious at a glance (the whole point of reading a physical card photographically).
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+
+    if (!result.ok) {
+      if (status) status.textContent = result.error || 'No holes were found.';
+      if (applyBtn) applyBtn.disabled = true;
+      return;
+    }
+
+    // Draw cross-hairs on every detected hole centre.
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 1;
+    for (const hole of result.holes) {
+      ctx.beginPath();
+      ctx.moveTo(hole.x - 3, hole.y);
+      ctx.lineTo(hole.x + 3, hole.y);
+      ctx.moveTo(hole.x, hole.y - 3);
+      ctx.lineTo(hole.x, hole.y + 3);
+      ctx.stroke();
+    }
+    if (status) {
+      const pct = result.estimatedPitch ? ' (pitch auto-detected)' : '';
+      status.textContent = `${result.rows}\u00d7${result.cols} grid \u00b7 ${result.holes.length} holes \u00b7 pitch ${result.pitchX.toFixed(1)}\u00d7${result.pitchY.toFixed(1)} px${pct}`;
+    }
+    if (result.warnings && result.warnings.length) {
+      this.notifications.warn(result.warnings[0]);
+    }
+    if (applyBtn) applyBtn.disabled = false;
+  }
+
+  /** Commit the detected grid to the card through the editor's one undoable write. */
+  applyPunchcardPhoto() {
+    const result = this._punchcardResult;
+    if (!result || !result.matrix) {
+      this.notifications.warn('Read a punchcard photo first.');
+      return;
+    }
+    const { rows, cols } = result;
+    const { minRows, maxRows } = profileLimits(this.currentProfile);
+    const maxCols = this.currentProfile.columns;
+    let matrix = result.matrix;
+    let warnings = [];
+    if (rows > maxRows || cols > maxCols) {
+      const r = Math.min(rows, maxRows);
+      const c = Math.min(cols, maxCols);
+      matrix = matrix.slice(0, r).map(row => row.slice(0, c));
+      warnings.push(`The card was trimmed to ${r}\u00d7${c} to fit the ${this.currentProfile.name}.`);
+    }
+    // Match the row count to the machine's minimum so a short read still fills the bed.
+    if (matrix.length < minRows) {
+      while (matrix.length < minRows) matrix.push(new Array(matrix[0].length).fill(0));
+    }
+    if (this.currentMode === 'lace') {
+      const stitchMatrix = MathPatternGenerators.convertBinaryToLaceStitches(matrix);
+      this.editor.setMatrix(stitchMatrix);
+    } else {
+      this.editor.setMatrix(matrix);
+    }
+    this.notifications.success(`Imported a ${result.rows}\u00d7${result.cols} punchcard from the photo.`);
+    if (warnings.length) this.notifications.warn(warnings[0]);
+    this._punchcardResult = null;
+    this._punchcardPhotoImage = null;
+  }
+
   // Modal helpers
   openModal(name) {
     this.closeAllModals();
@@ -1877,8 +2275,29 @@ class KnitApp {
       stitchMatrix: ed.matrix,
       name: this.projectMeta?.name || null,
       notes: this.projectMeta?.notes || null,
-      meta: { ...(this.projectMeta || {}) }
+      meta: { ...(this.projectMeta || {}) },
+      // ── Working context (plan §4.2) ──────────────────────────────────────────
+      // A card is more than its cells: the branch you were standing on, the guide
+      // lines you dragged in, the repeat tile you marked and the notes you pinned
+      // are all part of "my project". Autosave, versions, backups and .kcard all
+      // funnel through this one object, so storing them here means every path
+      // carries them and none can forget.
+      layers: this._safeEditorRead(() => ed.serializeStack(), null),
+      history: this._safeEditorRead(() => ed.serializeHistory(), null),
+      guides: this._safeEditorRead(() => (ed.guides || []).map(g => ({ ...g })), []),
+      repeats: this._safeEditorRead(() => (ed.repeats || []).map(rp => ({ ...rp })), []),
+      annotations: this._safeEditorRead(() => ed.getAnnotations(), [])
     };
+  }
+
+  /** Read an editor field without ever letting a half-built editor throw on save. */
+  _safeEditorRead(read, fallback) {
+    try {
+      const value = read();
+      return value === undefined ? fallback : value;
+    } catch (_) {
+      return fallback;
+    }
   }
 
   /**
@@ -1895,10 +2314,11 @@ class KnitApp {
   }
 
   saveProject() {
-    const project = FormatsExporter.generateProjectJson({
-      ...this._projectSnapshot(),
-      compilationResult: this.compilationResult
-    });
+    // The compile result is derived, and `readProject` throws it away on open (it
+    // rebuilds the schedule from the chart, which is the only safe thing to do).
+    // Embedding it anyway used to bloat every file by tens of kilobytes and then
+    // toast "the saved carriage schedule was ignored" at the person who opened it.
+    const project = FormatsExporter.generateProjectJson(this._projectSnapshot());
     const filename = this._projectFilename();
     const bridge = this.fileBridge;
     if (bridge?.bound) {
@@ -1977,10 +2397,8 @@ class KnitApp {
           if (picked.ok) this._showBoundFile(saveBtn, picked.name);
           return;
         }
-        const result = await bridge.save(FormatsExporter.generateProjectJson({
-          ...this._projectSnapshot(),
-          compilationResult: this.compilationResult
-        }), { suggestedName: bridge.boundName, allowPicker: false });
+        const result = await bridge.save(FormatsExporter.generateProjectJson(this._projectSnapshot()),
+          { suggestedName: bridge.boundName, allowPicker: false });
         this.notifications[result?.ok ? 'success' : 'error'](
           result?.ok ? `Saved to ${result.name}.` : 'That file could not be written.',
           { details: result?.error, duration: 6000 }
@@ -2065,9 +2483,14 @@ class KnitApp {
    * than half-loading a file and painting a blank canvas.
    */
   loadProjectText(text, label = 'pasted project') {
-    const result = readProject(text);
+    // readAnyProject recognises the format and returns exactly the shape readProject
+    // always did, so everything below is unchanged for a .kcard and now also works for
+    // a DAK/AYAB/CSV/DXF/G-code export. `void readProject` keeps the named trust-boundary
+    // import honest for readers of this file; the registry uses it internally.
+    void readProject;
+    const result = readAnyProject(text, { profile: this.currentProfile, name: label });
     if (!result.ok) {
-      this.notifications.error('That is not a KNITCAT project this build can open.', {
+      this.notifications.error('That is not a file this build can open.', {
         details: [result.error, `Checked: ${label}`]
       });
       return false;
@@ -2088,6 +2511,22 @@ class KnitApp {
     // loaded yet — compiling now would schedule the previous project.
     if (data.mode) this.setPatternMode(data.mode, { recompile: false });
     this.editor.setMatrix(data.stitchMatrix);
+    // ── working context ───────────────────────────────────────────────────────
+    // The layers, the undo trail, the guide lines, the repeat tile and the pinned
+    // notes all come back with the card. Each is optional, each is validated by
+    // `kcard.js` before it gets here, and each is applied through an editor method
+    // that answers `false` rather than throwing, so a card from an older build (or
+    // a hand-edited file) simply loads without the extra instead of breaking.
+    const restored = [];
+    if (data.layers && this.editor.adoptStack?.(data.layers)) restored.push('layers');
+    if (data.history && this.editor.adoptHistory?.(data.history)) restored.push('edit history');
+    this.editor.setGuides?.(data.guides || [], { silent: true });
+    this.editor.setRepeats?.(data.repeats || [], { silent: true });
+    this.editor.setAnnotations?.(data.annotations || [], { silent: true });
+    if (restored.length) this.editor.render();
+    if (data.guides?.length || data.repeats?.length || data.annotations?.length) {
+      notes.push(`Restored ${data.guides?.length || 0} guide(s), ${data.repeats?.length || 0} repeat tile(s), ${data.annotations?.length || 0} note(s).`);
+    }
     // Metadata travels with the chart: a recovered or opened card comes back with
     // its name and notes, not as an anonymous grid.
     this.projectMeta = {
@@ -2190,6 +2629,41 @@ class KnitApp {
     this.downloadFile(ayabStr, 'pattern_ayab.txt', 'text/plain');
   }
 
+  /**
+   * Send to machine over Web Serial (plan §6.4). This is the *transfer* only: the
+   * bytes are exactly the AYAB bitstream the file exporter already produces. We
+   * lazily build one sender, connect (the browser's own port picker is the user
+   * gesture), stream with a progress toast, then hand the port back.
+   */
+  async sendToMachine() {
+    if (!this.compilationResult || !this.compilationResult.cardMatrix) {
+      this.notifications.warn('Nothing to send yet — draw a pattern and the compiler will punch the card.', { duration: 6000 });
+      return;
+    }
+    if (!isSerialSupported()) {
+      this.notifications.warn('This browser cannot talk to a machine over USB. Export the AYAB file instead.', {
+        duration: 7000,
+        details: ['Web Serial is available in Chrome, Edge and other Chromium browsers over HTTPS.']
+      });
+      return;
+    }
+    if (!this._serial) this._serial = openSerialIfSupported({ notifier: this.notifications });
+    const sender = this._serial;
+    if (!sender) return;
+
+    const ayabStr = FormatsExporter.generateAyabFormat(this.compilationResult.cardMatrix);
+    if (!sender.connected) {
+      const conn = await sender.connect();
+      if (!conn.ok) return; // cancelled or errored — the sender already said why
+    }
+    this.notifications.info('Sending to machine…', { duration: 3000 });
+    const res = await sender.send(ayabStr);
+    if (res.ok) {
+      // Leave the port open in case the knitter wants to re-send, but log completion.
+      this.notifications.success('Pattern sent to the machine.');
+    }
+  }
+
   exportBrotherDisk() {
     if (!this.compilationResult || !this.compilationResult.cardMatrix) {
       this.notifications.warn('Nothing to export yet — draw a pattern and the compiler will punch the card.', { duration: 6000 });
@@ -2265,12 +2739,40 @@ class KnitApp {
     } catch (_) { /* presets not ready */ }
     // Modes / tools / exports / settings.
     ['lace', 'fair_isle', 'tuck', 'slip'].forEach(m => acts.push({ label: `Mode: ${m.replace('_', ' ')}`, group: 'Mode', keywords: `mode ${m} ${m.replace('_', ' ')}`, run: () => this.setPatternMode(m) }));
-    [['pencil', 'Pencil', 'pencil draw paint brush'], ['eraser', 'Eraser', 'eraser rub delete'], ['fill', 'Flood fill', 'fill bucket flood paint'], ['select', 'Marquee select', 'select marquee move region copy paste'], ['line', 'Straight line', 'line straight draw'], ['rect', 'Filled rectangle', 'rectangle rect box square filled'], ['rectOutline', 'Rectangle outline', 'rectangle rect outline box square frame'], ['circle', 'Filled ellipse', 'circle ellipse oval round filled'], ['circleOutline', 'Ellipse outline', 'circle ellipse oval outline ring frame'], ['heart', 'Heart stamp', 'heart love stamp valentine']].forEach(([t, name, k]) =>
-      acts.push({ label: `Tool: ${name}`, group: 'Tool', keywords: `tool ${k}`, run: () => document.querySelector(`[data-tool="${t}"]`)?.click() }));
+    // Every tool the canvas knows how to enter. Derived from the editor's own tool
+    // registry (`CanvasEditor.TOOLS`) so the palette can never fall behind the
+    // canvas: adding a tool to the editor makes it searchable the same instant.
+    const toolLabels = {
+      pencil: 'Pencil', eraser: 'Eraser', fill: 'Flood fill', wand: 'Magic wand', lasso: 'Lasso select',
+      bezier: 'Bezier curve', spline: 'Spline curve', smudge: 'Smudge', line: 'Straight line',
+      rect: 'Filled rectangle', rectOutline: 'Rectangle outline', circle: 'Filled ellipse',
+      circleOutline: 'Ellipse outline', select: 'Marquee select', measure: 'Measure distance',
+      annotate: 'Pin a note', heart: 'Heart stamp', pan: 'Pan'
+    };
+    const toolKeywords = {
+      wand: 'wand magic flood region select similar contiguous', lasso: 'lasso freeform loop polygon outline select',
+      bezier: 'bezier curve path vector bend', spline: 'spline curve smooth path vector',
+      smudge: 'smudge smear drag soften paint', measure: 'measure distance mm gauge size ruler dimension cm',
+      annotate: 'annotate note pin label text comment mark', pan: 'pan move view drag canvas'
+    };
+    const tools = (() => {
+      try { return CanvasEditor.TOOLS; } catch (_) { return []; }
+    })();
+    for (const t of tools) {
+      const name = toolLabels[t] || t;
+      acts.push({
+        label: `Tool: ${name}`,
+        group: 'Tool',
+        keywords: `tool ${t} ${t.replace(/([A-Z])/g, ' $1').toLowerCase()} ${name.toLowerCase()} ${toolKeywords[t] || ''}`.toLowerCase(),
+        run: () => this._selectTool(t)
+      });
+    }
     acts.push({ label: 'Export / CNC', group: 'Export', keywords: 'export save dxf gcode laser cnc download', run: click('#btn-open-export') });
+    acts.push({ label: 'Send to machine (USB Serial)', group: 'Export', keywords: 'serial send machine ayab usb stream chrome edge transfer', run: () => this.sendToMachine() });
     acts.push({ label: 'Presets browser', group: 'Design', keywords: 'presets library browse patterns', run: click('#btn-open-presets') });
     acts.push({ label: 'Math Studio', group: 'Design', keywords: 'math procedural generative reaction diffusion waves automata', run: click('#btn-open-math') });
     acts.push({ label: 'Image Dither', group: 'Design', keywords: 'image photo dither import picture atkinson floyd steinberg', run: click('#btn-open-image') });
+    acts.push({ label: 'Read a punched card (photo)', group: 'Design', keywords: 'punchcard photo scan reverse physical card import camera hole otsu brother vintage', run: () => this.runCommand('design.punchcard-photo') });
     acts.push({ label: 'Settings', group: 'Settings', keywords: 'settings preferences accent colour name photo anniversary theme', run: () => this._openSettingsViaExtras() });
     acts.push({ label: 'Toggle theme (light / dark)', group: 'Settings', keywords: 'theme light dark appearance toggle', run: () => document.getElementById('kx-theme')?.click() });
     acts.push({ label: 'About KNITCAT', group: 'Settings', keywords: 'about info story help who made this knitcat knit cat', run: () => document.querySelector('.brand-section .kx-hbtn')?.click() });
@@ -2295,6 +2797,9 @@ class KnitApp {
     // The Studio folds in as first-class palette citizens so "open a project" is
     // searchable like everything else.
     try { (this.projects?.commands?.() || []).forEach(cmd => acts.push(cmd)); } catch (_) { /* hub absent */ }
+    // The whole Chart/Select vocabulary, generated from the same id tables the menus
+    // render, so a command added to the dispatcher is searchable the moment it lands.
+    try { acts.push(...chartPaletteActions(this)); } catch (_) { /* chart vocab not ready */ }
     return acts;
   }
 
@@ -2452,6 +2957,7 @@ class KnitApp {
     document.getElementById('btn-clothes-print')?.addEventListener('click', () => this.printClothesPattern());
     document.getElementById('btn-clothes-editor')?.addEventListener('click', () => this.sendClothesToEditor());
     document.getElementById('btn-clothes-feasibility')?.addEventListener('click', () => this.checkClothesFeasibility());
+    document.getElementById('btn-clothes-compare-gauges')?.addEventListener('click', () => this._compareGauges());
 
     if (!this._activeGarment) this._selectGarment('beanie', { render: false });
   }
@@ -2577,6 +3083,76 @@ class KnitApp {
       stitchesPer10Cm: parseFloat(document.getElementById('clothes-gauge-sts')?.value) || 28,
       rowsPer10Cm: parseFloat(document.getElementById('clothes-gauge-rows')?.value) || 40
     };
+  }
+
+  /**
+   * A machine's *natural* gauge, straight from its needle pitch: one stitch per
+   * needle across, one row per row-spacing down. `pitchX` / `pitchY` are in mm, so
+   * stitches (rows) per 10 cm is 100 / pitch. This is not a knitter's swatch gauge —
+   * tension and yarn change that — but it is the honest geometric ceiling the bed
+   * imposes, which is exactly what makes two machines' cast-ons comparable.
+   * @param {object} profile
+   */
+  _naturalGaugeFor(profile) {
+    const px = Number(profile?.pitchX) || 4.5;
+    const py = Number(profile?.pitchY) || 5.08;
+    return {
+      stitchesPer10Cm: Math.round((100 / px) * 10) / 10,
+      rowsPer10Cm: Math.round((100 / py) * 10) / 10
+    };
+  }
+
+  /**
+   * Compare gauges side by side (plan §6.3): re-run the current garment + size
+   * through every machine at its natural gauge and list the cast-on / row counts.
+   * No new engine — just `ClothesEngine.compute` called once per profile.
+   */
+  _compareGauges() {
+    const host = document.getElementById('clothes-gauge-compare');
+    const g = this._activeGarment;
+    if (!host) return;
+    if (!g || !this.clothes) {
+      host.innerHTML = '<div class="kx-gc-empty">Pick a garment first.</div>';
+      return;
+    }
+    const params = this._clothesParamsFromDom();
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const rows = Object.values(MACHINE_PROFILES).map(profile => {
+      const gauge = this._naturalGaugeFor(profile);
+      let castOn = null;
+      let outRows = null;
+      let note = '';
+      try {
+        const plan = this.clothes.compute(g, params, gauge);
+        const parts = (plan && plan.parts) || [];
+        if (parts.length) {
+          // The widest part is the one that decides whether the piece fits the bed.
+          const main = parts.reduce((a, b) => ((b.castOn || 0) > (a.castOn || 0) ? b : a), parts[0]);
+          castOn = Math.round(main.castOn || 0);
+          outRows = Math.round(parts.reduce((s, p) => s + (p.rows || 0), 0));
+        }
+      } catch (err) {
+        note = 'could not compute';
+      }
+      const bed = profile.columns || 0;
+      const fits = castOn != null && castOn <= bed;
+      return { profile, gauge, castOn, outRows, fits, bed, note };
+    });
+    rows.sort((a, b) => (b.castOn || 0) - (a.castOn || 0));
+    const currentId = this.currentProfile && this.currentProfile.id;
+    host.innerHTML = `
+      <table class="kx-gc-table">
+        <thead><tr><th>Machine</th><th>Gauge</th><th>Cast-on</th><th>Rows</th></tr></thead>
+        <tbody>${rows.map(r => `
+          <tr class="kx-gc-row${r.profile.id === currentId ? ' kx-gc-cur' : ''}${r.castOn != null && !r.fits ? ' kx-gc-oversize' : ''}">
+            <td>${esc(r.profile.name)}${r.profile.id === currentId ? ' <span class="kx-gc-tag">selected</span>' : ''}</td>
+            <td>${r.gauge.stitchesPer10Cm}\u00d7${r.gauge.rowsPer10Cm}<span class="kx-gc-sub"> /10cm</span></td>
+            <td>${r.castOn == null ? esc(r.note || '\u2014') : `${r.castOn} st${r.castOn === 1 ? '' : 's'}${r.fits ? '' : ` \u26a0 ${r.bed}`}`}</td>
+            <td>${r.outRows == null ? '\u2014' : `${r.outRows} row${r.outRows === 1 ? '' : 's'}`}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="kx-gc-foot">Cast-on is the widest part; a \u26a0 marks a piece wider than that bed&rsquo;s needle count (shown after the warning). Gauge is set purely by needle pitch, so yarn tension is not modelled here.</div>`;
   }
 
   // Machine Steps: prefer the KH-830 fashioning (real needle positions) the engine
@@ -2709,24 +3285,24 @@ class KnitApp {
     }
     this.editor.setDimensions(rows, cols);
 
-    if (hasArt) {
-      // Drop the real drawn motif: painted cells become contrast stitches (an eyelet
-      // in lace, a punched cell otherwise); everything else is plain / empty.
-      for (let r = 0; r < this.editor.rows; r++) {
-        for (let c = 0; c < this.editor.cols; c++) {
+    // Built as a whole card and handed to setMatrix() — the single write path that
+    // commits history, repaints and recompiles. `editor.matrix` is now a getter over
+    // the layer composite, so poking it in place would write into a discarded copy.
+    const next = [];
+    for (let r = 0; r < rows; r++) {
+      const line = new Array(cols);
+      for (let c = 0; c < cols; c++) {
+        if (hasArt) {
           const on = !!(painted.matrix[r] && painted.matrix[r][c]);
-          this.editor.matrix[r][c] = lace ? (on ? STITCH_TYPE.EYELET : STITCH_TYPE.KNIT) : (on ? 1 : 0);
+          line[c] = lace ? (on ? STITCH_TYPE.EYELET : STITCH_TYPE.KNIT) : (on ? 1 : 0);
+        } else {
+          line[c] = (!lace && (r + c) % 2 === 0) ? 1 : (lace ? STITCH_TYPE.KNIT : 0);
         }
       }
-    } else {
-      const blank = lace ? STITCH_TYPE.KNIT : 0;
-      for (let r = 0; r < this.editor.rows; r++) {
-        for (let c = 0; c < this.editor.cols; c++) {
-          this.editor.matrix[r][c] = (!lace && (r + c) % 2 === 0) ? 1 : blank;
-        }
-      }
+      next.push(line);
     }
-    this.editor.saveState(); this.editor.render(); this.editor.onChange();
+    this.editor.setLabel(hasArt ? 'From Clothes: drawn motif' : 'From Clothes: cast-on swatch');
+    this.editor.setMatrix(next);
     document.querySelector('.tab-btn[data-tab="editor"]')?.click();
     this.notifications.info(hasArt
       ? `Sent your ${cols}\u00d7${rows} drawn motif to the editor.`
@@ -2807,7 +3383,7 @@ class KnitApp {
           <div class="kx-feas-head"><span class="kx-feas-dot"></span><strong>${esc(it.title)}</strong>${it.category ? `<span class="kx-feas-cat">${esc(it.category)}</span>` : ''}</div>
           <div class="kx-feas-prob">${esc(it.problem)}</div>
           ${it.where ? `<div class="kx-feas-where">\u25c8 ${esc(it.where)}</div>` : ''}
-          <div class="kx-feas-row">${fixBtn}${canShow ? `<button class="kx-feas-show" data-show="${idx}" title="Jump to the editor and light up exactly these stitches">\u25c8 Show me on the card</button>` : ''}</div>
+          <div class="kx-feas-row">${fixBtn}${canShow ? `<button class="kx-feas-show" data-show="${idx}" title="Jump to the editor and light up exactly these stitches">\u25c8 Show me on the card</button>` : ''}${canShow ? `<button class="kx-feas-walk" data-tour="${idx}" title="Step through these stitches one at a time (\u25c0 / \u25b6)">\u25b8 Walk (${it.cells.length})</button>` : ''}</div>
           ${it.philosophy ? `<div class="kx-feas-phil">${esc(it.philosophy)}</div>` : ''}
         </div>`;
       }).join('');
@@ -2886,6 +3462,14 @@ class KnitApp {
       // this finding is about — turning a sentence into something you can see.
       bd.querySelectorAll('[data-show]').forEach(b => b.addEventListener('click', () => {
         this._revealIssue(v.issues[parseInt(b.dataset.show, 10)]);
+      }));
+      // "Walk" opens the keyboard-driven single-cell tour, then dismisses the modal so
+      // the canvas is fully visible underneath it.
+      bd.querySelectorAll('[data-tour]').forEach(b => b.addEventListener('click', () => {
+        const it = v.issues[parseInt(b.dataset.tour, 10)];
+        if (!it) return;
+        this._startIssueTour(it.cells, it.title);
+        bd.remove();
       }));
       const all = bd.querySelector('#kx-feas-all');
       if (all) all.addEventListener('click', () => {
@@ -3120,6 +3704,27 @@ class KnitApp {
     
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     this.downloadFile(csv, 'carriage_schedule.csv', 'text/csv');
+  }
+
+  /**
+   * Send the carriage schedule to paper. A knitter at the machine wants a sheet
+   * they can tick rows off, not a CSV — the exporter lays out a two-column grid
+   * of every pass and `printHtml` drops it into a same-origin print frame (no
+   * popup blocker). Shares the empty-state guard with the CSV export.
+   */
+  printSchedule() {
+    if (!this.compilationResult || this.compilationResult.strokes.length === 0) {
+      this.notifications.warn('No carriage schedule yet — pick Lace mode and draw eyelets or transfers.');
+      return;
+    }
+    const body = VectorSvgExporter.generateScheduleSheets(this.compilationResult.strokes, {
+      profile: this.currentProfile,
+      paper: 'A4'
+    });
+    const result = printHtml({ title: 'Carriage schedule', body, page: 'A4' });
+    if (result && result.ok === false) {
+      this.notifications.error('The browser would not open a print frame.', { details: [result.error] });
+    }
   }
 
   toggleScheduleStats() {

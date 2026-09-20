@@ -21,7 +21,16 @@
  *            flags the mismatch instead of pretending the timings match.
  */
 
-export const MACHINE_PROFILES = {
+import { machineProfile as validateMachineProfile } from '../core/validate.js';
+
+/**
+ * The profiles that ship with KNITCAT — a frozen reference set.
+ *
+ * Kept separate from the live {@link MACHINE_PROFILES} registry so a custom
+ * profile can never overwrite a built-in one and so `restoreProfiles()` can
+ * always roll the registry back to known-good hardware definitions.
+ */
+export const BUILT_IN_PROFILES = Object.freeze({
   brother_standard_24: {
     id: 'brother_standard_24',
     name: 'Brother Standard Gauge (24-Stitch)',
@@ -281,7 +290,128 @@ export const MACHINE_PROFILES = {
     maxTuckLoops: 6,
     description: 'Fully customizable physical parameters for experimental CNC cut cards or DIY knitting machines. Modelled as a single bed.'
   }
-};
+});
+
+/**
+ * The LIVE profile registry every consumer reads. Starts as a copy of the
+ * built-in set; {@link registerProfile} folds validated custom machines in.
+ * A mutable object (not frozen) precisely so a knitter can add their own.
+ */
+export const MACHINE_PROFILES = { ...BUILT_IN_PROFILES };
+
+/** localStorage key holding the user's custom machine profiles. */
+export const CUSTOM_PROFILES_KEY = 'knitcat.profiles.v1';
+
+/** The id every built-in profile carries, so custom ones can be told apart. */
+const BUILT_IN_IDS = new Set(Object.keys(BUILT_IN_PROFILES));
+
+// Custom machine ids become keys on the shared, prototype-based `MACHINE_PROFILES`
+// registry, so a few ids are unsafe no matter how well the rest of the profile
+// validates. `__proto__`/`constructor`/`prototype` would reach an inherited
+// accessor instead of landing as an own entry (prototype pollution), and anything
+// outside a plain slug invites the same class of surprise. The two guards below
+// are used together by {@link registerProfile}.
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** @returns {boolean} true when `id` is one of the shipped machines. */
+export function isBuiltInProfile(id) {
+  return BUILT_IN_IDS.has(id);
+}
+
+/**
+ * Validate and register a custom machine profile. Runs the *same* validator the
+ * rest of the pipeline trusts (`core/validate.js#machineProfile`), so a profile
+ * that registers here is guaranteed to have every field the exporters, advisor
+ * and editor read without re-checking. A built-in id can never be overwritten.
+ *
+ * @param {object} profile
+ * @returns {{ok: true, profile: object} | {ok: false, error: string}}
+ */
+export function registerProfile(profile) {
+  if (!profile || typeof profile !== 'object') {
+    return { ok: false, error: 'A profile must be an object.' };
+  }
+  if (BUILT_IN_IDS.has(profile.id)) {
+    return { ok: false, error: `"${profile.id}" is a built-in machine and cannot be replaced.` };
+  }
+  let checked;
+  try {
+    checked = validateMachineProfile(profile);
+  } catch (err) {
+    return { ok: false, error: err?.message || 'That profile is missing required fields.' };
+  }
+  // Reject keys that would reach an inherited accessor rather than become a plain
+  // registry entry. `__proto__` in particular turns `MACHINE_PROFILES[id] = …` into
+  // a prototype *setter* — silently re-parenting the whole shared registry. Custom
+  // machine ids are simple slugs, so a strict character class costs nothing.
+  if (DANGEROUS_KEYS.has(checked.id) || !SAFE_ID_PATTERN.test(checked.id)) {
+    return { ok: false, error: 'A custom machine id must be a simple name: letters, digits, dash or underscore.' };
+  }
+  // `defineProperty` forces an own data property and can never fire a setter, so
+  // even a future exotic key stays a harmless entry instead of a pollution vector.
+  Object.defineProperty(MACHINE_PROFILES, checked.id, {
+    value: { ...profile, id: checked.id, custom: true },
+    writable: true, enumerable: true, configurable: true
+  });
+  return { ok: true, profile: MACHINE_PROFILES[checked.id] };
+}
+
+/**
+ * Remove a custom profile. Refuses for built-ins and for the id in active use
+ * is intentionally NOT checked here — the caller owns that policy.
+ * @param {string} id
+ * @returns {{ok: boolean, error?: string}}
+ */
+export function unregisterProfile(id) {
+  if (BUILT_IN_IDS.has(id)) return { ok: false, error: 'Built-in machines cannot be removed.' };
+  if (!(id in MACHINE_PROFILES)) return { ok: false, error: 'No such profile.' };
+  delete MACHINE_PROFILES[id];
+  return { ok: true };
+}
+
+/** @returns {object[]} every custom profile currently registered. */
+export function listCustomProfiles() {
+  return Object.values(MACHINE_PROFILES).filter(p => p && p.custom);
+}
+
+/**
+ * Load the user's saved custom profiles into the registry. Called once at boot
+ * before the machine selector is populated, and safe to call again (registering
+ * the same id twice just refreshes it). Malformed stored data is ignored.
+ * @param {Storage} [storage] defaults to `localStorage`; pass a shim in tests.
+ * @returns {number} how many custom profiles were loaded
+ */
+export function loadCustomProfiles(storage = (typeof localStorage !== 'undefined' ? localStorage : null)) {
+  if (!storage) return 0;
+  let loaded = 0;
+  try {
+    const raw = storage.getItem(CUSTOM_PROFILES_KEY);
+    const parsed = JSON.parse(raw || '[]');
+    if (!Array.isArray(parsed)) return 0;
+    for (const p of parsed) {
+      if (registerProfile(p).ok) loaded++;
+    }
+  } catch (_) { /* unreadable storage is not fatal — built-ins still work */ }
+  return loaded;
+}
+
+/**
+ * Persist the current set of custom profiles so they survive a reload. Kept
+ * under the `knitcat.` prefix so {@link buildArchive}'s backup scan already
+ * carries them with zero extra code.
+ * @param {Storage} [storage]
+ * @returns {boolean} whether the write succeeded
+ */
+export function saveCustomProfiles(storage = (typeof localStorage !== 'undefined' ? localStorage : null)) {
+  if (!storage) return false;
+  try {
+    storage.setItem(CUSTOM_PROFILES_KEY, JSON.stringify(listCustomProfiles()));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
 
 /**
  * How many needles fit across this machine's bed.

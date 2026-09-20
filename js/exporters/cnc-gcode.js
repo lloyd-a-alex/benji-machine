@@ -37,6 +37,11 @@ export class CncGcodeExporter {
    * Generates optimized G-Code program string for a punchcard bitmask
    */
   generateGCode(profile, cardMatrix) {
+    // A machine profile is required — the drill coordinates come from its physical
+    // geometry. Guard here so a missing profile is a clear error, not a null access.
+    if (!profile || typeof profile !== 'object') {
+      throw new TypeError('CncGcodeExporter.generateGCode requires a machine profile.');
+    }
     let cols = cardMatrix[0]?.length || 24;
     // Machine-specific physical leader (Brother 7 vs Silver Reed 5 reading rows)
     // makes the drilled card positionally different between machines.

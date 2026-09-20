@@ -767,6 +767,14 @@ export function summariseStrokes(strokes = []) {
   }
   rows.sort((a, b) => (Number(a.patternRow) || 0) - (Number(b.patternRow) || 0));
   const laceOnly = rows.filter(row => row.lacePasses > 0).map(row => row.passes);
+  const designRowCount = new Set(strokes.map(stroke => stroke.patternRow)).size;
+  // 5.7 — the old `cardRowsPerDesignRow` name promised a count but returned a ratio
+  // (a fractional average). Split the honest two: the average, and the exact integer
+  // only when every design row produced the *same whole* number of card rows — which
+  // is the condition a repeat-check actually needs. null means "not a clean factor".
+  const average = strokes.length / Math.max(1, designRowCount);
+  const passCounts = rows.map(row => row.passes);
+  const uniform = passCounts.length > 0 && passCounts.every(n => n === passCounts[0]);
   return {
     rows,
     passes: strokes.length,
@@ -774,8 +782,9 @@ export function summariseStrokes(strokes = []) {
     knitPasses: strokes.filter(stroke => !stroke.purpose || stroke.purpose === PASS_PURPOSE.KNIT).length,
     laceRows: laceOnly.length,
     passesPerLaceRow: uniqueSorted(laceOnly),
-    // The number that decides whether a punched card stays in step with a design.
-    cardRowsPerDesignRow: strokes.length / Math.max(1, new Set(strokes.map(stroke => stroke.patternRow)).size)
+    // The numbers that decide whether a punched card stays in step with a design.
+    averageCardRowsPerDesignRow: average,
+    cardRowsPerDesignRowExact: uniform ? passCounts[0] : null
   };
 }
 

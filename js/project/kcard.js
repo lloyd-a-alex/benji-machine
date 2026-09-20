@@ -22,6 +22,12 @@
  */
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
+// The knitter's working context (pinned notes, ruler guides, repeat tiles) already
+// has a DOM-free sanitizer each. Reusing them here means a hand-edited or hostile
+// file cannot smuggle a half-shaped annotation into the canvas renderer, and the
+// file format can never disagree with the editor about what a guide looks like.
+import { sanitizeAnnotations } from '../edit/annotations.js';
+import { normalizeGuideList } from '../edit/guides.js';
 
 /** Bump this when the document shape changes; readers migrate from older ones. */
 export const KCARD_SCHEMA_VERSION = 2;
@@ -37,6 +43,18 @@ export const KCARD_KIND = 'KNITCAT_PROJECT';
 export const KCARD_MAX_ROWS = 4000;
 export const KCARD_MAX_COLS = 4000;
 export const KCARD_MAX_CELLS = 2_000_000;
+
+/**
+ * Ceilings for the knitter's working context. These are deliberately far above any
+ * real project — nobody draws 400 ruler guides — so hitting one means the file was
+ * not written by a person. The correct response is to keep the card and drop the
+ * field, not to refuse the whole document.
+ */
+export const KCARD_MAX_GUIDES = 400;
+export const KCARD_MAX_REPEATS = 64;
+export const KCARD_MAX_LAYERS = 48;
+export const KCARD_MAX_HISTORY_ENTRIES = 1000;
+export const KCARD_MAX_HISTORY_CELLS = 2_000_000;
 
 const LACE_CODE_SET = new Set(Object.values(STITCH_TYPE));
 export const PATTERN_MODES = new Set(['lace', 'fair_isle', 'tuck', 'slip']);
@@ -198,6 +216,90 @@ export function readProjectMeta(raw) {
 }
 
 /**
+ * The undo tree, as it arrives from `HistoryTree.serialize()`.
+ *
+ * Only the *shape* is checked here — `HistoryTree.deserialize` is already defensive
+ * and returns `null` rather than throwing on garbage. What this guard is for is the
+ * file-size attack: a 200 MB "history" field would freeze the tab long before the
+ * tree ever got built, so the entry count and the total patch-cell count are capped.
+ *
+ * @returns {{history: object|null, warnings: string[]}}
+ */
+export function readProjectHistory(raw) {
+  const warnings = [];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { history: null, warnings };
+  if (!Array.isArray(raw.root) || !Array.isArray(raw.root[0])) {
+    warnings.push('The saved edit history was unreadable and was dropped — the card itself loaded fine.');
+    return { history: null, warnings };
+  }
+  const entries = Array.isArray(raw.entries) ? raw.entries : [];
+  if (entries.length > KCARD_MAX_HISTORY_ENTRIES) {
+    warnings.push(
+      `That file carries ${entries.length} undo steps, past the ${KCARD_MAX_HISTORY_ENTRIES}-step ceiling — the history was dropped.`
+    );
+    return { history: null, warnings };
+  }
+  let cells = 0;
+  for (const entry of entries) {
+    cells += Array.isArray(entry?.patch) ? entry.patch.length : 0;
+    if (cells > KCARD_MAX_HISTORY_CELLS) {
+      warnings.push('The saved edit history was larger than this build will replay, so it was dropped.');
+      return { history: null, warnings };
+    }
+  }
+  return {
+    history: {
+      version: Number.isFinite(raw.version) ? raw.version : 1,
+      root: raw.root,
+      rootCheckpoint: typeof raw.rootCheckpoint === 'string' ? raw.rootCheckpoint.slice(0, 120) : null,
+      mode: typeof raw.mode === 'string' ? raw.mode : null,
+      limit: Number.isFinite(raw.limit) ? Math.max(2, Math.min(KCARD_MAX_HISTORY_ENTRIES, raw.limit)) : null,
+      entries: entries.map(entry => ({
+        patch: Array.isArray(entry?.patch) ? entry.patch.slice(0, KCARD_MAX_HISTORY_CELLS) : [],
+        label: typeof entry?.label === 'string' ? entry.label.slice(0, 120) : 'Edit',
+        mode: typeof entry?.mode === 'string' ? entry.mode : null,
+        selection: entry?.selection && typeof entry.selection === 'object' ? entry.selection : null,
+        checkpoint: typeof entry?.checkpoint === 'string' ? entry.checkpoint.slice(0, 120) : null,
+        at: typeof entry?.at === 'number' ? entry.at : null
+      }))
+    },
+    warnings
+  };
+}
+
+/**
+ * Repeat tiles: the same tolerance `normalizeGuideList` gives rulers, applied to
+ * rectangles. A tile whose corners are inverted or off-card is repaired by
+ * `createRepeat`/`addRepeatFromSelection` on the editor side, so all that is
+ * checked here is that the numbers are numbers and there are not absurd many.
+ */
+export function readProjectRepeats(raw, { rows = Infinity, cols = Infinity } = {}) {
+  const warnings = [];
+  if (!Array.isArray(raw)) return { repeats: [], warnings };
+  const finite = n => (Number.isFinite(n) ? Math.round(n) : null);
+  const repeats = raw.slice(0, KCARD_MAX_REPEATS).map(item => {
+    if (!item || typeof item !== 'object') return null;
+    const r1 = finite(item.r1 ?? item.top);
+    const c1 = finite(item.c1 ?? item.left);
+    const r2 = finite(item.r2 ?? item.bottom);
+    const c2 = finite(item.c2 ?? item.right);
+    if ([r1, c1, r2, c2].some(v => v === null)) return null;
+    return {
+      id: typeof item.id === 'string' ? item.id.slice(0, 40) : null,
+      name: typeof item.name === 'string' ? item.name.slice(0, 64) : 'Repeat',
+      r1: Math.max(0, Math.min(rows - 1, Math.min(r1, r2))),
+      r2: Math.max(0, Math.min(rows - 1, Math.max(r1, r2))),
+      c1: Math.max(0, Math.min(cols - 1, Math.min(c1, c2))),
+      c2: Math.max(0, Math.min(cols - 1, Math.max(c1, c2)))
+    };
+  }).filter(Boolean);
+  if (raw.length > KCARD_MAX_REPEATS) {
+    warnings.push(`Only the first ${KCARD_MAX_REPEATS} repeat tiles were kept.`);
+  }
+  return { repeats, warnings };
+}
+
+/**
  * Read any .kcard-ish object into the shape this build uses.
  *
  * @param {object|string} raw parsed JSON or the JSON text itself
@@ -284,5 +386,67 @@ export function readProject(raw) {
     }
   }
 
+  // ── the knitter's working context (plan §4.2) ──────────────────────────────
+  // Everything below is optional and additive: a card written before these fields
+  // existed loads exactly as it always did, and each one is dropped with a
+  // sentence if it is malformed rather than being allowed to half-apply.
+  const size = { rows: checked.rows, cols: checked.cols };
+  const guideList = normalizeGuideList(Array.isArray(data.guides) ? data.guides.slice(0, KCARD_MAX_GUIDES) : []);
+  const repeatResult = readProjectRepeats(data.repeats, size);
+  const annotationResult = sanitizeAnnotations(Array.isArray(data.annotations) ? data.annotations : [], size);
+  const historyResult = readProjectHistory(data.history);
+
+  project.guides = guideList;
+  project.repeats = repeatResult.repeats;
+  project.annotations = annotationResult.annotations;
+  project.history = historyResult.history;
+  project.layers = readProjectLayers(data.layers, size);
+  warnings.push(...repeatResult.warnings, ...historyResult.warnings);
+  // `sanitizeAnnotations` reports dropped notes as an ARRAY of ids/labels, not a
+  // count — so the emptiness test is `.length` (a bare `[]` is truthy in JS).
+  const droppedAnnotations = Array.isArray(annotationResult.dropped) ? annotationResult.dropped.length : (annotationResult.dropped | 0);
+  if (droppedAnnotations) {
+    warnings.push(`${droppedAnnotations} annotation${droppedAnnotations === 1 ? '' : 's'} in the file could not be read and were skipped.`);
+  }
+  if (Array.isArray(data.guides) && data.guides.length > guideList.length) {
+    warnings.push('Some ruler guides were malformed and have been dropped.');
+  }
+  if (project.layers && project.layers.dropped) {
+    warnings.push('Some layers in the file were unusable, so the card loaded from its flattened chart.');
+    project.layers = null;
+  }
+
   return { ok: true, project, warnings };
+}
+
+/**
+ * The layer stack, if the file brought one.
+ *
+ * A stack is only usable when every layer is a matrix the size of the card, so the
+ * check is strict and the fallback is graceful: `null` means "draw the composite",
+ * which is always correct, just without the ability to peel a layer off.
+ */
+export function readProjectLayers(raw, { rows, cols }) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.layers)) return null;
+  const kept = [];
+  for (const layer of raw.layers.slice(0, KCARD_MAX_LAYERS)) {
+    if (!layer || typeof layer !== 'object') continue;
+    const matrix = Array.isArray(layer.matrix) ? layer.matrix : null;
+    if (!matrix || matrix.length !== rows || matrix.some(r => !Array.isArray(r) || r.length !== cols)) continue;
+    kept.push({
+      id: typeof layer.id === 'string' ? layer.id.slice(0, 40) : null,
+      name: typeof layer.name === 'string' ? layer.name.slice(0, 64) : 'Layer',
+      kind: ['pattern', 'reference', 'annotation'].includes(layer.kind) ? layer.kind : 'pattern',
+      visible: layer.visible !== false,
+      locked: Boolean(layer.locked),
+      opacity: Number.isFinite(layer.opacity) ? Math.min(1, Math.max(0, layer.opacity)) : 1,
+      mode: typeof layer.mode === 'string' ? layer.mode : null,
+      matrix
+    });
+  }
+  return {
+    layers: kept,
+    activeId: typeof raw.activeId === 'string' ? raw.activeId.slice(0, 40) : null,
+    dropped: kept.length < Math.min(raw.layers.length, KCARD_MAX_LAYERS)
+  };
 }

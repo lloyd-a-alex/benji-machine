@@ -38,7 +38,6 @@ import { createStack, stackInfo, composite } from '../edit/layers.js';
 import { createRepeat, repeatTiles } from '../edit/guides.js';
 import { pitchFor, gridSizeMm, formatLength } from '../edit/measure.js';
 import { isPunched } from '../edit/modes.js';
-import { createHistory } from '../edit/history.js';
 import { addAnnotation, dimensionText, annotationSummary, sanitizeAnnotations } from '../edit/annotations.js';
 import { getDiagnostics } from '../core/diagnostics.js';
 import { buildPanel } from './kit.js';
@@ -255,7 +254,7 @@ export function createStructurePanel(deps = {}) {
   injectStyles();
 
   // Panel-local repeat box, seeded from the card so the first render is meaningful.
-  const state = { repeatRows: 0, repeatCols: 0, notes: loadNotes(), lastTrailMatrix: null, trail: null };
+  const state = { repeatRows: 0, repeatCols: 0, notes: loadNotes() };
 
   let button = document.getElementById(BUTTON_ID);
   if (!button) {
@@ -292,10 +291,23 @@ export function createStructurePanel(deps = {}) {
         <div data-fit class="kxs-fit"></div>
         <div class="kx-numlist"><button class="kx-btn kx-btn--primary" data-rep-fill>Tile the repeat across the whole card</button></div>
       </section>
-      <section class="kxs-sec"><h3 class="kx-panel__h3">Layers <span class="kx-panel__sub">paintable, open one at a time</span></h3><div data-layers></div><div data-layerstore></div></section>
-      <section class="kxs-sec"><h3 class="kx-panel__h3">Edit trail</h3>
-        <div data-trail></div>
-        <button class="kx-btn kx-btn--ghost" data-checkpoint>Checkpoint current state</button>
+      <section class="kxs-sec"><h3 class="kx-panel__h3">Layers <span class="kx-panel__sub">the card is their composite</span></h3>
+        <div data-layers class="kxs-muted"></div>
+        <div class="kx-numlist">
+          <button class="kx-btn kx-btn--primary" data-layer-add>\u271a New layer</button>
+          <button class="kx-btn kx-btn--ghost" data-layer-merge>Merge down</button>
+          <button class="kx-btn kx-btn--ghost" data-layer-flatten>Flatten</button>
+        </div>
+        <div data-layermgr class="kx-layers"></div>
+      </section>
+      <section class="kxs-sec"><h3 class="kx-panel__h3">Edit trail <span class="kx-panel__sub">branches &amp; checkpoints</span></h3>
+        <div data-trail class="kxs-muted"></div>
+        <div class="kx-numlist">
+          <button class="kx-btn kx-btn--primary" data-undo>\u21b6 Undo</button>
+          <button class="kx-btn kx-btn--ghost" data-redo>Redo \u21b7</button>
+          <button class="kx-btn kx-btn--ghost" data-checkpoint>\u2691 Checkpoint</button>
+        </div>
+        <ul data-branch class="kx-branch"></ul>
       </section>
       <section class="kxs-sec"><h3 class="kx-panel__h3">Measurement</h3><div data-measure></div></section>
       <section class="kxs-sec"><h3 class="kx-panel__h3">Notes <button class="kx-btn kx-btn--ghost" data-add-note>Add note at hover</button></h3>
@@ -308,8 +320,10 @@ export function createStructurePanel(deps = {}) {
   const els = {
     doc: q('[data-doc]'), repRows: q('[data-rep-rows]'), repCols: q('[data-rep-cols]'),
     repFull: q('[data-rep-full]'), repFill: q('[data-rep-fill]'), fit: q('[data-fit]'), layers: q('[data-layers]'),
-    docStore: q('[data-docstore]'), layerStore: q('[data-layerstore]'),
-    trail: q('[data-trail]'), checkpoint: q('[data-checkpoint]'), measure: q('[data-measure]'),
+    docStore: q('[data-docstore]'), layerMgr: q('[data-layermgr]'),
+    layerAdd: q('[data-layer-add]'), layerMerge: q('[data-layer-merge]'), layerFlatten: q('[data-layer-flatten]'),
+    trail: q('[data-trail]'), branch: q('[data-branch]'), undo: q('[data-undo]'), redo: q('[data-redo]'),
+    checkpoint: q('[data-checkpoint]'), measure: q('[data-measure]'),
     addNote: q('[data-add-note]'), notes: q('[data-notes]')
   };
 
@@ -355,31 +369,47 @@ export function createStructurePanel(deps = {}) {
     render();
   });
 
-  // The Layers and Documents engines, now in Benji's hands: two instances of one
-  // grid-store, each persisting to its own localStorage key.
-  const layerStore = createGridStore({
-    container: els.layerStore, getEditor, notifications: notifier, limit: 6,
-    addLabel: 'Layer \u2190 capture current card', newLabel: 'New blank layer',
-    initial: loadGridStore(LAYERS_KEY), onSave: items => saveGridStore(LAYERS_KEY, items)
-  });
+  // Documents stay a stored list of whole cards; the Layers section is now the
+  // editor's *real* stack — every control calls an editor method that commits one
+  // undoable step, so the panel and the canvas can never disagree about the card.
   const docStore = createGridStore({
     container: els.docStore, getEditor, notifications: notifier, limit: 8,
     addLabel: 'Save card as document', newLabel: 'New blank document',
     initial: loadGridStore(DOCS_KEY), onSave: items => saveGridStore(DOCS_KEY, items)
   });
-  state.layerStore = layerStore;
   state.docStore = docStore;
   pushAnnotations();
 
+  els.layerAdd.addEventListener('click', () => {
+    const ed = getEditor();
+    if (!ed || !ed.addNewLayer) return;
+    try { ed.addNewLayer({ name: `Layer ${ed.getLayers().length + 1}`, kind: 'pattern' }); } catch (err) { diag.warn('add layer: ' + err.message); }
+  });
+  els.layerMerge.addEventListener('click', () => {
+    const ed = getEditor();
+    const active = ed && ed.getLayers && ed.getLayers().find(l => l.active);
+    if (!ed || !active) { notifier && notifier.warn && notifier.warn('No active layer to merge.'); return; }
+    try { const r = ed.mergeLayerDown(active.id); if (r && !r.ok && notifier) notifier.warn(r.error || 'Cannot merge the bottom layer.'); } catch (err) { diag.warn('merge: ' + err.message); }
+  });
+  els.layerFlatten.addEventListener('click', () => {
+    const ed = getEditor();
+    if (!ed || !ed.flattenLayers) return;
+    try { ed.flattenLayers(); } catch (err) { diag.warn('flatten: ' + err.message); }
+  });
+
   els.checkpoint.addEventListener('click', () => {
+    const ed = getEditor();
+    if (!ed || !ed.addCheckpoint) return;
     const name = safePrompt('Checkpoint label', `checkpoint ${new Date().toLocaleTimeString()}`);
-    if (!state.trail || name === null) return;
+    if (name === null) return;
     try {
-      state.trail.checkpoint(String(name).slice(0, 60) || 'checkpoint');
-      render();
+      ed.addCheckpoint(String(name).slice(0, 60) || 'checkpoint');
       notifier && notifier.info && notifier.info('Checkpoint added to the edit trail.');
     } catch (err) { diag.warn('checkpoint failed: ' + err.message); }
   });
+
+  els.undo.addEventListener('click', () => { const ed = getEditor(); try { ed && ed.undo && ed.undo(); } catch (err) { diag.warn('undo: ' + err.message); } });
+  els.redo.addEventListener('click', () => { const ed = getEditor(); try { ed && ed.redo && ed.redo(); } catch (err) { diag.warn('redo: ' + err.message); } });
 
   els.addNote.addEventListener('click', () => {
     const ed = getEditor();
@@ -404,7 +434,7 @@ export function createStructurePanel(deps = {}) {
     if (ed && ed.setAnnotations) ed.setAnnotations(state.notes.map(n => ({ r: n.r, c: n.c, text: n.text })));
   }
 
-  /** Recompute the analysis + trail and repaint. Cheap enough to poll while open. */
+  /** Recompute the analysis and repaint. Cheap enough to poll while open. */
   function refresh() {
     const ed = getEditor();
     if (!ed) return;
@@ -415,24 +445,7 @@ export function createStructurePanel(deps = {}) {
       readRepeat();
       seeded = true;
     }
-    observeHistory(matrix);
     render();
-  }
-
-  // An independent history tree that simply watches the card. It never drives the
-  // editor's own undo — it only records where you have been, so the panel can show a
-  // real branching trail (the abandoned branches included).
-  function observeHistory(matrix) {
-    const mode = getMode();
-    const sig = signature(matrix);
-    if (!state.trail) {
-      state.trail = createHistory({ matrix: clone(matrix), mode, label: 'opened' });
-      state.lastTrailMatrix = sig;
-      return;
-    }
-    if (sig === state.lastTrailMatrix) return;
-    state.trail.commit({ matrix: clone(matrix), label: 'edit' });
-    state.lastTrailMatrix = sig;
   }
 
   function render() {
@@ -454,16 +467,145 @@ export function createStructurePanel(deps = {}) {
       : report.fit.summary || report.fit.error;
     els.fit.className = 'kxs-fit ' + (report.fit.ok ? (report.fit.coversWholeCard ? 'kxs-ok' : 'kxs-warn') : 'kxs-muted');
 
-    els.layers.textContent = `${state.layerStore ? state.layerStore.count() : report.layers.layers} editable layer(s) · ${report.worked}/${report.layers.total} needles worked`;
+    els.layers.textContent = `${report.worked}/${report.layers.total} needles worked`;
 
-    if (state.trail) {
-      const nodes = state.trail.nodes ? state.trail.nodes.size : state.trail.tree().length;
-      const cps = (state.trail.checkpoints ? state.trail.checkpoints() : []).length;
-      els.trail.textContent = `${nodes} state(s) recorded · ${cps} checkpoint(s) · undo ${state.trail.canUndo() ? 'yes' : 'no'}`;
-    }
+    renderLayers(ed);
+    renderBranch(ed);
 
     renderMeasure(ed);
     renderNotes();
+  }
+
+  /**
+   * Paint the editor's real layer stack: one row per layer with select / rename /
+   * visibility / lock toggles, an opacity slider (committed on release so a drag is
+   * one undo step), a kind dropdown, and up/down/merge/delete per row. Every control
+   * calls an editor method that commits, so the canvas and this list never diverge.
+   */
+  function renderLayers(ed) {
+    if (!els.layerMgr || !ed.getLayers) return;
+    const layers = ed.getLayers();
+    els.layerMgr.textContent = '';
+    if (!layers.length) {
+      const hint = document.createElement('div');
+      hint.className = 'kxs-muted';
+      hint.textContent = 'No layers yet.';
+      els.layerMgr.appendChild(hint);
+      return;
+    }
+    // Topmost layer first, so it reads the way the composite is stacked visually.
+    [...layers].reverse().forEach(layer => {
+      const row = document.createElement('div');
+      row.className = 'kx-layer' + (layer.active ? ' kx-layer--active' : '');
+
+      const head = document.createElement('div');
+      head.className = 'kx-layer__head';
+      const pick = document.createElement('button');
+      pick.type = 'button';
+      pick.className = 'kx-layer__name';
+      pick.textContent = layer.name;
+      pick.title = 'Make this the active (drawing) layer';
+      pick.addEventListener('click', () => { ed.setActiveLayer(layer.id); });
+      const vis = document.createElement('button');
+      vis.type = 'button';
+      vis.className = 'kx-iconbtn';
+      vis.textContent = layer.visible ? '\ud83d\udc41' : '\u2298';
+      vis.title = layer.visible ? 'Hide layer' : 'Show layer';
+      vis.addEventListener('click', () => { ed.toggleLayerVisibleById(layer.id); });
+      const lock = document.createElement('button');
+      lock.type = 'button';
+      lock.className = 'kx-iconbtn' + (layer.locked ? ' kx-layer__lock--on' : '');
+      lock.textContent = layer.locked ? '\ud83d\udd12' : '\ud83d\udd13';
+      lock.title = layer.locked ? 'Unlock layer' : 'Lock layer';
+      lock.addEventListener('click', () => { ed.setLayerLockedById(layer.id, !layer.locked); });
+      head.append(pick, vis, lock);
+
+      const tools = document.createElement('div');
+      tools.className = 'kx-layer__tools';
+      const up = mkIconBtn('\u25b2', 'Move up', () => ed.moveLayerById(layer.id, 1));
+      const down = mkIconBtn('\u25bc', 'Move down', () => ed.moveLayerById(layer.id, -1));
+      const ren = mkIconBtn('\u270e', 'Rename', () => {
+        const nm = safePrompt('Layer name', layer.name);
+        if (nm != null) ed.renameLayerById(layer.id, String(nm).slice(0, 40) || layer.name);
+      });
+      const del = mkIconBtn('\u2715', 'Delete layer', () => {
+        const r = ed.removeLayerById(layer.id);
+        if (r && !r.ok && notifier) notifier.warn(r.error || 'Cannot delete the only layer.');
+      });
+      del.classList.add('kx-iconbtn--delete');
+      tools.append(up, down, ren, del);
+
+      const meta = document.createElement('div');
+      meta.className = 'kx-layer__meta';
+      const op = document.createElement('input');
+      op.type = 'range'; op.min = '0'; op.max = '1'; op.step = '0.05';
+      op.value = String(layer.opacity == null ? 1 : layer.opacity);
+      op.title = 'Layer opacity'; op.setAttribute('aria-label', `Opacity of ${layer.name}`);
+      op.addEventListener('change', () => { ed.setLayerOpacityById(layer.id, Number(op.value)); });
+      const kind = document.createElement('select');
+      kind.setAttribute('aria-label', `Kind of ${layer.name}`);
+      for (const k of ['pattern', 'reference', 'annotation']) {
+        const opt = document.createElement('option');
+        opt.value = k; opt.textContent = k;
+        if (layer.kind === k) opt.selected = true;
+        kind.appendChild(opt);
+      }
+      kind.addEventListener('change', () => { ed.setLayerKindById(layer.id, kind.value); });
+      meta.append(op, kind);
+
+      row.append(head, tools, meta);
+      els.layerMgr.appendChild(row);
+    });
+  }
+
+  /**
+   * The branching undo tree, straight from the editor. Each row is a state,
+   * indented by depth; the current one is marked. Click jumps the editor there
+   * (undo/redo/redraw), right-click deletes that branch (refused on the node in
+   * view — the tree guards that itself). No separate observer, so it is always the
+   * true trail.
+   */
+  function renderBranch(ed) {
+    if (!els.branch) return;
+    const rows = typeof ed.historyRows === 'function' ? ed.historyRows() : [];
+    const stats = typeof ed.historyStats === 'function' ? ed.historyStats() : null;
+    els.trail.textContent = stats
+      ? `${stats.nodes} state(s) \u00b7 ${stats.checkpoints} checkpoint(s) \u00b7 depth ${stats.depth}`
+      : `${rows.length} state(s)`;
+    els.branch.textContent = '';
+    for (const node of rows) {
+      const li = document.createElement('li');
+      li.className = 'kx-branch__row' + (node.current ? ' kx-branch__row--current' : '') + (node.checkpoint ? ' kx-branch__row--cp' : '');
+      li.style.marginLeft = `${node.depth * 12}px`;
+      li.textContent = (node.checkpoint ? '\u2691 ' : '') + (node.label || 'edit') + ` \u00b7 ${node.cells} cell(s)`;
+      li.title = 'Jump to this state';
+      li.tabIndex = 0;
+      li.addEventListener('click', () => { ed.jumpHistory(node.id); });
+      li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ed.jumpHistory(node.id); } });
+      li.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        const r = ed.deleteHistoryBranch(node.id);
+        if (r && !r.ok && notifier) notifier.warn(r.error || 'Cannot delete that branch.');
+      });
+      els.branch.appendChild(li);
+    }
+    if (!rows.length) {
+      const li = document.createElement('li');
+      li.className = 'kxs-muted';
+      li.textContent = 'No history yet.';
+      els.branch.appendChild(li);
+    }
+  }
+
+  function mkIconBtn(text, title, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'kx-iconbtn';
+    b.textContent = text;
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.addEventListener('click', onClick);
+    return b;
   }
 
   // A live dimension from the card origin to the hovered cell, via annotations.js.
@@ -496,7 +638,9 @@ export function createStructurePanel(deps = {}) {
     }
   }
 
-  const timer = setInterval(() => { if (open) { const ed = getEditor(); if (ed) observeHistory(ed.matrix || []); } }, 500);
+  // Keep the panel live while open: undo/redo driven from the menubar or keyboard
+  // never routes through here, so poll the editor's own tree rather than a mirror.
+  const timer = setInterval(() => { if (open) render(); }, 500);
 
   function destroy() {
     clearInterval(timer);
@@ -509,25 +653,6 @@ export function createStructurePanel(deps = {}) {
 }
 
 /* ── module-private helpers (all DOM/localStorage use is after boot) ─────────── */
-
-function clone(matrix) {
-  return (Array.isArray(matrix) ? matrix : []).map(row => (Array.isArray(row) ? row.slice() : []));
-}
-
-// A cheap, order-sensitive digest of the card so the trail only commits on a real
-// change. It does not have to be cryptographic — it only has to differ whenever the
-// visible card does, which this scan guarantees for the grid sizes we handle.
-function signature(matrix) {
-  const rows = matrix.length;
-  if (!rows) return '0:0';
-  const cols = matrix[0].length;
-  let h = rows * 100003 + cols;
-  for (let r = 0; r < rows; r++) {
-    const row = matrix[r] || [];
-    for (let c = 0; c < row.length; c++) h = (h * 31 + String(row[c]).length + c + r) | 0;
-  }
-  return `${rows}x${cols}:${h}`;
-}
 
 function safePrompt(title, value) {
   try { return typeof window !== 'undefined' && window.prompt ? window.prompt(title, value) : null; } catch (_) { return null; }
@@ -590,6 +715,22 @@ function injectStyles() {
   #kx-structure .kxs-warn{color:var(--accent-amber)}
   #kx-structure .kxs-muted{color:var(--panel-muted)}
   #kx-structure [data-doc],#kx-structure [data-layers],#kx-structure [data-trail],#kx-structure [data-measure]{color:var(--panel-text)}
+  #kx-structure .kx-layers{display:flex;flex-direction:column;gap:5px;margin-top:4px}
+  #kx-structure .kx-layer{border:1px solid var(--panel-hairline);border-radius:8px;padding:5px 6px;display:flex;flex-direction:column;gap:4px}
+  #kx-structure .kx-layer--active{border-color:var(--accent-sky);background:color-mix(in srgb,var(--accent-sky) 12%,transparent)}
+  #kx-structure .kx-layer__head{display:flex;align-items:center;gap:4px}
+  #kx-structure .kx-layer__name{flex:1 1 auto;text-align:left;background:none;border:none;color:var(--panel-text);cursor:pointer;font-weight:600;padding:0}
+  #kx-structure .kx-layer__lock--on{opacity:.6}
+  #kx-structure .kx-layer__tools{display:flex;gap:4px}
+  #kx-structure .kx-layer__meta{display:flex;align-items:center;gap:8px}
+  #kx-structure .kx-layer__meta input[type=range]{flex:1 1 auto;min-width:0}
+  #kx-structure .kx-layer__meta select{font:inherit;font-size:11px;background:var(--panel-bg);color:var(--panel-text);border:1px solid var(--panel-hairline);border-radius:6px;padding:2px 4px}
+  #kx-structure .kx-branch{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:180px;overflow:auto}
+  #kx-structure .kx-branch__row{font-size:11px;color:var(--panel-text);padding:3px 6px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  #kx-structure .kx-branch__row:hover{background:color-mix(in srgb,var(--panel-text) 8%,transparent)}
+  #kx-structure .kx-branch__row--current{border-color:var(--accent-sky);background:color-mix(in srgb,var(--accent-sky) 14%,transparent)}
+  #kx-structure .kx-branch__row--cp{font-weight:700}
+  @media (forced-colors:active){ #kx-structure .kx-layer,#kx-structure .kx-branch__row{border-color:CanvasText} }
   @media (max-width:640px){ #kx-structure{width:min(90vw,300px)} }
   `;
   try {

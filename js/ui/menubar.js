@@ -24,6 +24,11 @@
  */
 
 import { escHtml } from './text.js';
+// The Chart/Select vocabulary lives in one place (js/ui/chart-commands.js). Importing
+// the id tables here means the two new menus can never advertise an action the
+// dispatcher does not answer, and the "no dead commands" test stays honest as the
+// command set grows — there is no second list to keep in step.
+import { CHART_COMMAND_IDS, SELECT_COMMAND_IDS } from './chart-commands.js';
 
 const BAR_ID = 'kx-menubar';
 const STYLE_ID = 'kx-menubar-style';
@@ -45,7 +50,10 @@ export const MENUBAR_ACTIONS = new Set([
   'design.presets', 'design.math', 'design.image', 'design.knitalong', 'design.legend',
   'design.heritage',
   'machine.feasibility', 'machine.universe', 'machine.fitAll', 'machine.pick',
-  'help.about', 'help.guide', 'help.eyelets', 'help.shortcuts', 'help.search', 'help.love'
+  'help.about', 'help.guide', 'help.eyelets', 'help.shortcuts', 'help.search', 'help.love',
+  // Every chart-row/column/transform/region/matrix verb and every selection verb.
+  ...CHART_COMMAND_IDS,
+  ...SELECT_COMMAND_IDS
 ]);
 
 /**
@@ -55,6 +63,8 @@ export const MENUBAR_ACTIONS = new Set([
  * @param {boolean} [flags.canUndo]
  * @param {boolean} [flags.canRedo]
  * @param {boolean} [flags.hasSelection]
+ * @param {boolean} [flags.hasCell]   a cell is under the cursor (context path)
+ * @param {boolean} [flags.snap]      guide snapping is on
  * @returns {Array<{id:string,title:string,items:Array}>}
  */
 export function buildMenus(flags = {}) {
@@ -96,6 +106,96 @@ export function buildMenus(flags = {}) {
         it('Select all', 'edit.selectAll'),
         it('Invert card', 'edit.invert'),
         it('Clear canvas', 'edit.clear', { danger: true })
+      ]
+    },
+    {
+      id: 'chart', title: 'Chart',
+      items: [
+        sec('Rows'),
+        it('Insert row above', 'chart.row.insertAbove', { disabled: !flags.hasSelection }),
+        it('Insert row below', 'chart.row.insertBelow', { disabled: !flags.hasSelection }),
+        it('Duplicate row', 'chart.row.duplicate', { disabled: !flags.hasSelection }),
+        it('Delete row', 'chart.row.delete', { disabled: !flags.hasSelection, danger: true }),
+        it('Move row up', 'chart.row.moveUp', { disabled: !flags.hasSelection }),
+        it('Move row down', 'chart.row.moveDown', { disabled: !flags.hasSelection }),
+        it('Reverse row', 'chart.row.reverse', { disabled: !flags.hasSelection }),
+        it('Swap row up', 'chart.row.swapUp', { disabled: !flags.hasSelection }),
+        it('Swap row down', 'chart.row.swapDown', { disabled: !flags.hasSelection }),
+        sep(),
+        sec('Needle columns'),
+        it('Insert column left', 'chart.col.insertLeft', { disabled: !flags.hasSelection }),
+        it('Insert column right', 'chart.col.insertRight', { disabled: !flags.hasSelection }),
+        it('Duplicate column', 'chart.col.duplicate', { disabled: !flags.hasSelection }),
+        it('Delete column', 'chart.col.delete', { disabled: !flags.hasSelection, danger: true }),
+        it('Move column left', 'chart.col.moveLeft', { disabled: !flags.hasSelection }),
+        it('Move column right', 'chart.col.moveRight', { disabled: !flags.hasSelection }),
+        it('Reverse column', 'chart.col.reverse', { disabled: !flags.hasSelection }),
+        sep(),
+        sec('Whole card'),
+        it('Rotate 90\u00b0 clockwise', 'chart.transform.rot90cw'),
+        it('Rotate 90\u00b0 counter-clockwise', 'chart.transform.rot90ccw'),
+        it('Rotate 180\u00b0', 'chart.transform.rot180'),
+        it('Transpose (mirror on diagonal)', 'chart.transform.transpose'),
+        it('Anti-transpose', 'chart.transform.antitranspose'),
+        sep(),
+        sec('Selected region'),
+        it('Flip region horizontal', 'chart.region.flipH', { disabled: !flags.hasSelection }),
+        it('Flip region vertical', 'chart.region.flipV', { disabled: !flags.hasSelection }),
+        it('Invert region', 'chart.region.invert', { disabled: !flags.hasSelection }),
+        it('Convert region \u2192 Lace', 'chart.region.convert.lace'),
+        it('Convert region \u2192 Fair Isle', 'chart.region.convert.fair_isle'),
+        it('Convert region \u2192 Tuck', 'chart.region.convert.tuck'),
+        it('Convert region \u2192 Slip', 'chart.region.convert.slip'),
+        sep(),
+        sec('Resize & remix'),
+        it('Resample card (fit new size)\u2026', 'chart.matrix.resample'),
+        it('Re-gauge to another machine\u2026', 'chart.matrix.regauge'),
+        it('Interleave rows\u2026', 'chart.matrix.interleave'),
+        it('Soften region (stagger floats)', 'chart.soften', { disabled: !flags.hasSelection }),
+        it('Smudge last stroke', 'chart.smudge'),
+        sep(),
+        it('Jump to cell\u2026', 'chart.jumpTo', { shortcut: 'Ctrl G' }),
+        it('Card statistics', 'chart.info')
+      ]
+    },
+    {
+      id: 'select', title: 'Select',
+      items: [
+        it('All', 'select.all', { shortcut: 'Ctrl A' }),
+        it('None', 'select.none', { shortcut: 'Esc' }),
+        it('Inverse', 'select.invert'),
+        it('Punched cells', 'select.punched'),
+        it('Same value as here', 'select.cellValue', { disabled: !flags.hasCell }),
+        sep(),
+        it('Expand', 'select.expand'),
+        it('Contract', 'select.contract'),
+        it('Feather edge', 'select.feather'),
+        it('Grow (whole-card same-value)', 'select.grow'),
+        it('Shrink', 'select.shrink'),
+        sep(),
+        sec('Align blobs'),
+        it('Left', 'select.align.left', { disabled: !flags.hasSelection }),
+        it('Right', 'select.align.right', { disabled: !flags.hasSelection }),
+        it('Top', 'select.align.top', { disabled: !flags.hasSelection }),
+        it('Bottom', 'select.align.bottom', { disabled: !flags.hasSelection }),
+        it('Centre horizontally', 'select.align.centreH', { disabled: !flags.hasSelection }),
+        it('Centre vertically', 'select.align.centreV', { disabled: !flags.hasSelection }),
+        sep(),
+        it('Distribute horizontally', 'select.distribute.h', { disabled: !flags.hasSelection }),
+        it('Distribute vertically', 'select.distribute.v', { disabled: !flags.hasSelection }),
+        sep(),
+        sec('Nudge content'),
+        it('Up', 'select.move.up', { disabled: !flags.hasSelection }),
+        it('Down', 'select.move.down', { disabled: !flags.hasSelection }),
+        it('Left', 'select.move.left', { disabled: !flags.hasSelection }),
+        it('Right', 'select.move.right', { disabled: !flags.hasSelection }),
+        sep(),
+        sec('Selection tools'),
+        it('Magic wand', 'select.wand'),
+        it('Lasso', 'select.lasso'),
+        it('B\u00e9zier path', 'select.bezier'),
+        it('Spline path', 'select.spline'),
+        it(flags.snap ? 'Snapping: on' : 'Snapping: off', 'select.snap')
       ]
     },
     {

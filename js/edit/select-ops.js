@@ -275,12 +275,16 @@ export function floodRegion(
   const seed = valueAt(matrix, startR, startC);
   const hood = neighbourList(connectivity);
   const queue = [[startR, startC]];
+  // Dequeue with a moving cursor, never Array#shift: shift() is O(n), so popping
+  // the head on a full-card wand click (~48k cells) made the scan O(n²) and froze
+  // the tab. This stays breadth-first while dequeuing in O(1).
+  let head = 0;
   keys.add(cellKey(startR, startC));
   // The seed is counted too: a `limit` of 0 has to mean "select nothing", and a
   // caller that only checked the loop would hand back a one-cell selection.
   if (keys.size > limit) return capped(keys.size);
-  while (queue.length) {
-    const [r, c] = queue.shift();
+  while (head < queue.length) {
+    const [r, c] = queue[head++];
     for (const [dr, dc] of hood) {
       const nr = r + dr;
       const nc = c + dc;

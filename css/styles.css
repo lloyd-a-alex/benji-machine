@@ -1809,6 +1809,275 @@ footer#status-bar {
   background-color: #0b0f19;
 }
 
+/* ── Punchcard photo reader modal (js/importers/punchcard-reader.js UI) ── */
+.kx-modal-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.kx-modal-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* ── Feasibility issue step-through tour (plan §6.2) ── */
+#kx-issue-tour {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 9600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background-color: #0b0f19;
+  border: 1px solid var(--border-active, #38bdf8);
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.kx-tour-btn,
+.kx-tour-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  font: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+  background-color: #1e293b;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+}
+
+.kx-tour-btn:hover,
+.kx-tour-close:hover {
+  background-color: #334155;
+}
+
+.kx-tour-pos {
+  min-width: 48px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  text-align: center;
+  color: #fb7185;
+}
+
+.kx-tour-title {
+  max-width: 42vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kx-tour-cell {
+  margin-left: 6px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text-secondary);
+}
+
+.kx-feas-walk {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  background-color: rgba(251, 113, 133, 0.14);
+  border: 1px solid #fb7185;
+  border-radius: var(--radius, 8px);
+  padding: 5px 10px;
+}
+
+.kx-feas-walk:hover {
+  background-color: rgba(251, 113, 133, 0.28);
+}
+
+/* ── Compare machine gauges (plan §6.3, Clothes tab) ── */
+.kx-gauge-compare {
+  margin-top: 8px;
+}
+
+.kx-gc-table {
+  width: 100%;
+  font-size: 11px;
+  border-collapse: collapse;
+}
+
+.kx-gc-table th {
+  padding: 4px 6px;
+  color: var(--text-secondary);
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.kx-gc-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.6);
+}
+
+.kx-gc-cur {
+  background-color: rgba(56, 189, 248, 0.1);
+}
+
+.kx-gc-oversize td {
+  color: var(--accent-rose, #f43f5e);
+}
+
+.kx-gc-tag {
+  padding: 1px 5px;
+  margin-left: 4px;
+  font-size: 9px;
+  color: #38bdf8;
+  text-transform: uppercase;
+  border: 1px solid #38bdf8;
+  border-radius: 999px;
+}
+
+.kx-gc-sub {
+  color: var(--text-secondary);
+}
+
+.kx-gc-foot {
+  margin-top: 6px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.kx-gc-empty {
+  padding: 6px 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* ── Reusable form dialog (js/ui/dialogs.js): chart + machine-profile modals ── */
+.kx-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.kx-form-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.kx-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.kx-form-field-inline {
+  flex-direction: row;
+  align-items: center;
+}
+
+.kx-form-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.kx-form-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.kx-form-hint {
+  font-size: 10.5px;
+  color: var(--text-muted, #64748b);
+}
+
+.kx-form-field input[type="text"],
+.kx-form-field input[type="number"],
+.kx-form-field select,
+.kx-form-field textarea {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  background-color: #0b0f19;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius, 8px);
+  padding: 8px 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.kx-form-field input:focus,
+.kx-form-field select:focus,
+.kx-form-field textarea:focus {
+  outline: none;
+  border-color: var(--border-active, #38bdf8);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+
+.kx-form-radios {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.kx-form-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.kx-form-error {
+  font-size: 12px;
+  color: var(--accent-rose, #f43f5e);
+  background: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  border-radius: var(--radius, 8px);
+  padding: 8px 10px;
+}
+
+.kx-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* The inline note field the annotate tool parks over a cell. */
+.kx-canvas-note-input {
+  min-width: 180px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: rgba(11, 15, 25, 0.94);
+  border: 1px solid var(--border-active, #38bdf8);
+  border-radius: 6px;
+  padding: 5px 7px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+@media (forced-colors: active) {
+  .kx-form-field input,
+  .kx-form-field select,
+  .kx-form-field textarea,
+  .kx-canvas-note-input { border-color: CanvasText; }
+}
+
 .form-group {
   display: flex;
   flex-direction: column;

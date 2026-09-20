@@ -18,6 +18,13 @@ export class CadDxfExporter {
    * Generates standard AutoCAD DXF R12 text stream
    */
   static generateDxf(profile, cardMatrix, options = {}) {
+    // A machine profile is a required argument: the whole point of the DXF is the
+    // physical geometry (pitch, sprockets, card leader) that only the profile knows.
+    // Fail with a clear message instead of a cryptic property-access TypeError two
+    // frames deeper when a caller forgets it.
+    if (!profile || typeof profile !== 'object') {
+      throw new TypeError('CadDxfExporter.generateDxf requires a machine profile.');
+    }
     const {
       includeSprockets = true,
       includeText = true,

@@ -33,7 +33,10 @@ export function isStandalone() {
 
 function injectChrome() {
   const actions = document.querySelector('.header-actions');
-  if (actions) {
+  // Idempotent by id (5.8): a hot reload or a second initPwa() used to append a
+  // *second* Install button, a second status chip and a second banner. Each element
+  // is created once and reused, matching how buildMobileChrome() guards its own ids.
+  if (actions && !document.getElementById('btn-install-app')) {
     installBtn = document.createElement('button');
     installBtn.type = 'button';
     installBtn.id = 'btn-install-app';
@@ -49,26 +52,38 @@ function injectChrome() {
     // Install belongs at the end of the row: it is the least-used, most permanent
     // action here, and it should never out-shout Feasibility or Export.
     actions.appendChild(installBtn);
+  } else {
+    installBtn = document.getElementById('btn-install-app') || installBtn;
   }
 
-  chipEl = document.createElement('span');
-  chipEl.id = 'net-status';
-  chipEl.className = 'net-status';
-  chipEl.setAttribute('role', 'status');
-  chipEl.setAttribute('aria-live', 'polite');
-  chipEl.hidden = true;
-  (actions || document.body).prepend(chipEl);
-
-  bannerEl = document.createElement('div');
-  bannerEl.id = 'pwa-banner';
-  bannerEl.className = 'pwa-banner';
-  bannerEl.setAttribute('role', 'status');
-  bannerEl.hidden = true;
-  const container = document.getElementById('toast-container');
-  if (container?.parentNode) {
-    container.parentNode.insertBefore(bannerEl, container);
+  const existingChip = document.getElementById('net-status');
+  if (existingChip) {
+    chipEl = existingChip;
   } else {
-    document.body.appendChild(bannerEl);
+    chipEl = document.createElement('span');
+    chipEl.id = 'net-status';
+    chipEl.className = 'net-status';
+    chipEl.setAttribute('role', 'status');
+    chipEl.setAttribute('aria-live', 'polite');
+    chipEl.hidden = true;
+    (actions || document.body).prepend(chipEl);
+  }
+
+  const existingBanner = document.getElementById('pwa-banner');
+  if (existingBanner) {
+    bannerEl = existingBanner;
+  } else {
+    bannerEl = document.createElement('div');
+    bannerEl.id = 'pwa-banner';
+    bannerEl.className = 'pwa-banner';
+    bannerEl.setAttribute('role', 'status');
+    bannerEl.hidden = true;
+    const container = document.getElementById('toast-container');
+    if (container?.parentNode) {
+      container.parentNode.insertBefore(bannerEl, container);
+    } else {
+      document.body.appendChild(bannerEl);
+    }
   }
 }
 

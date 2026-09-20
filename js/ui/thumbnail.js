@@ -131,3 +131,113 @@ export function drawPunchcard(ctx, mask, opts = {}) {
     }
   }
 }
+
+/**
+ * Cell-level diff of two charts, as a rectangular grid of small integer codes.
+ *
+ * {@link diffMatrices} in project/backups.js answers "how many cells changed" for
+ * banners and toasts; a *picture* of the change needs to know which cell, and in
+ * which direction. This is that per-cell view — pure, DOM-free, and the single
+ * source of truth for both {@link drawDiff} and {@link renderDiffCard}, so the
+ * versions modal can never disagree with the recovery banner about what moved.
+ *
+ * Codes: 0 unchanged-blank · 1 kept (punched in both) · 2 added (was blank) ·
+ * 3 removed (now blank) · 4 recolored (punched in both, different value).
+ *
+ * @param {Array<Array<any>>} before  the older chart (left)
+ * @param {Array<Array<any>>} after   the newer chart (right)
+ * @returns {{rows:number,cols:number,cells:Uint8Array[]}}
+ */
+export function diffCells(before, after) {
+  const a = Array.isArray(before) ? before : [];
+  const b = Array.isArray(after) ? after : [];
+  const rows = Math.max(a.length, b.length);
+  let cols = 0;
+  for (const row of a) if (Array.isArray(row)) cols = Math.max(cols, row.length);
+  for (const row of b) if (Array.isArray(row)) cols = Math.max(cols, row.length);
+  const cells = [];
+  for (let r = 0; r < rows; r++) {
+    const ra = Array.isArray(a[r]) ? a[r] : [];
+    const rb = Array.isArray(b[r]) ? b[r] : [];
+    const line = new Uint8Array(cols);
+    for (let c = 0; c < cols; c++) {
+      const pa = isPunchedValue(ra[c]);
+      const pb = isPunchedValue(rb[c]);
+      if (!pa && !pb) line[c] = 0;
+      else if (pa && !pb) line[c] = 3;      // removed
+      else if (!pa && pb) line[c] = 2;      // added
+      else line[c] = normCell(ra[c]) === normCell(rb[c]) ? 1 : 4; // kept / recolored
+    }
+    cells.push(line);
+  }
+  return { rows, cols, cells };
+}
+
+/** Collapse a cell to a comparable primitive (blank -> 0). */
+function normCell(v) {
+  return v === false || v === null || v === undefined || v === '' ? 0 : v;
+}
+
+/** Default colour for each diff code; overridable via opts.colors. */
+export const DIFF_COLORS = {
+  1: '#64748b', // kept     — grey
+  2: '#22c55e', // added    — green
+  3: '#ef4444', // removed  — red
+  4: '#3b82f6'  // recolored — blue
+};
+
+/**
+ * Paint a {@link diffCells} result into a 2D context, letterboxed in `box × box`.
+ * DOM-free — hand it a context (or an OffscreenCanvas context) and it draws.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {{rows:number,cols:number,cells:Uint8Array[]}} diff
+ * @param {object} [opts]
+ * @param {number} [opts.box=64]
+ * @param {number} [opts.pad=2]
+ * @param {string} [opts.bg]
+ * @param {Record<number,string>} [opts.colors]
+ */
+export function drawDiff(ctx, diff, opts = {}) {
+  if (!ctx || !diff) return;
+  const box = Math.trunc(opts.box) || 64;
+  const pad = opts.pad == null ? 2 : opts.pad;
+  const colors = Object.assign({}, DIFF_COLORS, opts.colors || {});
+  const fit = fitThumb(diff.rows, diff.cols, box, pad);
+  if (opts.bg) { ctx.fillStyle = opts.bg; ctx.fillRect(0, 0, box, box); }
+  const ox = Math.round((box - fit.width) / 2);
+  const oy = Math.round((box - fit.height) / 2);
+  for (let r = 0; r < diff.rows; r++) {
+    const line = diff.cells[r];
+    if (!line) continue;
+    for (let c = 0; c < diff.cols; c++) {
+      const code = line[c];
+      if (!code) continue;
+      ctx.fillStyle = colors[code] || colors[1];
+      ctx.fillRect(ox + c * fit.cell, oy + r * fit.cell, fit.cell, fit.cell);
+    }
+  }
+}
+
+/**
+ * Render a before/after diff straight into a canvas, HiDPI-aware. Same pixel
+ * pipeline as {@link renderThumbnail} so a diff card matches the look of every
+ * other thumbnail in the app.
+ * @param {HTMLCanvasElement} canvas
+ * @param {Array<Array<any>>} before
+ * @param {Array<Array<any>>} after
+ * @param {number} box
+ * @param {object} [opts]
+ */
+export function renderDiffCard(canvas, before, after, box, opts = {}) {
+  if (!canvas || typeof canvas.getContext !== 'function') return;
+  const d = _dpr();
+  canvas.width = Math.round(box * d);
+  canvas.height = Math.round(box * d);
+  canvas.style.width = box + 'px';
+  canvas.style.height = box + 'px';
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  ctx.clearRect(0, 0, box, box);
+  drawDiff(ctx, diffCells(before, after), Object.assign({ box }, opts));
+}

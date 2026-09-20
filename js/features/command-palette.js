@@ -22,9 +22,11 @@ const SYNONYMS_TAB = {
   yarn: 'yarn 3d fabric simulation swatch drape feel physical',
   punchcard: 'punchcard card ribbon holes punch fair isle jacquard',
   cnc: 'cnc toolpath gcode laser mill router',
-  tanktop: 'shirt top tank tops camisole vest singlet sleeveless tailor garment',
-  beanie: 'beanie hat cap bob watch knit beanie tailor',
-  clothes: 'clothes clothing catalog wardrobe garment sweater jumper cardigan scarf cowl socks mittens shawl hat every',
+  // The beanie and tank-top tabs were folded into Clothes long ago, so a top-level
+  // `tanktop`/`beanie` key here pointed at a tab that no longer exists and could
+  // never be matched by the tab-walk. Their words now ride on `clothes`, so typing
+  // "beanie" still lands on the Clothes tab — just via a tab that is actually there.
+  clothes: 'clothes clothing catalog wardrobe garment sweater jumper cardigan scarf cowl socks mittens shawl hat every beanie tanktop shirt top camisole vest singlet sleeveless tailor garment cap bob watch',
   brother: 'brother kinematics mechanism machine simulator selector kh-830'
 };
 const SYNONYMS_MODE = {

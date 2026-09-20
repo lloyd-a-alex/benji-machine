@@ -3,6 +3,9 @@ name: Deploy static site to GitHub Pages
 on:
   push:
     branches: [master]
+  # 5.10 — run the suite on pull requests too, so a red test is caught before it
+  # reaches master instead of after. The deploy job is gated off for PRs below.
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -24,12 +27,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          # 5.11 — the repo now carries a (dependency-free) package-lock.json, so the
+          # npm metadata can be cached. Free speed even with zero dependencies.
+          cache: 'npm'
       # The project is dependency-free, so `npm test` runs the built-in Node test
       # runner directly — no install step. A red suite must never ship to Pages.
       - name: Test
         run: npm test
   deploy:
     needs: test
+    # 5.10 — a pull request only checks that the suite is green; it must never
+    # publish to the live Pages site.
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

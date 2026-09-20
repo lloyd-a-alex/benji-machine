@@ -17,6 +17,7 @@ import {
   createDataService, diffMatrices, describeDiff, toProjectDocument,
   AUTOSAVE_KEY, MAX_SNAPSHOTS, MAX_RECENTS
 } from '../project/backups.js';
+import { renderThumbnail, renderDiffCard, DIFF_COLORS } from '../ui/thumbnail.js';
 
 const STYLE_ID = 'knitcat-data-style';
 const PANEL_ID = 'kx-data-panel';
@@ -70,6 +71,16 @@ const CSS = `
 .kx-version-label{font-size:12px;font-weight:600;color:var(--text-primary,#f8fafc);overflow-wrap:anywhere}
 .kx-version-meta{font-size:10px;color:var(--text-muted,#64748b)}
 .kx-version-diff{font-size:10px;color:var(--accent-amber,#fbbf24);margin-top:2px}
+.kx-version-diff--canvas{margin-top:6px;color:var(--text-secondary,#94a3b8)}
+.kx-diff-strip{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.kx-diff-fig{margin:0;display:flex;flex-direction:column;align-items:center;gap:2px}
+.kx-diff-fig figcaption{font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted,#64748b)}
+.kx-diff-cv{border:1px solid var(--border-subtle,#1e293b);border-radius:6px;background:#0b1220}
+.kx-diff-fig--overlay .kx-diff-cv{border-color:var(--border-active,#38bdf8)}
+.kx-diff-legend{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;margin-bottom:2px}
+.kx-diff-legend span{display:inline-flex;align-items:center;gap:4px}
+.kx-diff-legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.kx-diff-caption{font-size:10px;color:var(--accent-amber,#fbbf24)}
 .kx-mini{border:1px solid var(--border-subtle,#1e293b);background:transparent;color:var(--text-secondary,#94a3b8);
   border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;flex:0 0 auto}
 .kx-mini:hover{color:var(--text-primary,#f8fafc);border-color:var(--border-active,#38bdf8)}
@@ -425,10 +436,32 @@ export async function initDataPanel(context = {}) {
           await service.deleteSnapshot(entry.id);
           await renderVersionList();
         } else if (act === 'diff') {
-          const { diff } = await service.diffSnapshot(entry.id);
+          const { left, right, diff } = await service.diffSnapshot(entry.id);
           const out = li.querySelector('.kx-version-diff');
           out.hidden = false;
-          out.textContent = `vs now — ${describeDiff(diff)}`;
+          out.classList.add('kx-version-diff--canvas');
+          const before = (left && left.stitchMatrix) || [];
+          const after = (right && right.stitchMatrix) || [];
+          out.innerHTML = `
+            <div class="kx-diff-strip">
+              <figure class="kx-diff-fig"><canvas class="kx-diff-cv" data-cv="before"></canvas><figcaption>saved</figcaption></figure>
+              <figure class="kx-diff-fig"><canvas class="kx-diff-cv" data-cv="after"></canvas><figcaption>now</figcaption></figure>
+              <figure class="kx-diff-fig kx-diff-fig--overlay"><canvas class="kx-diff-cv" data-cv="diff"></canvas><figcaption>diff</figcaption></figure>
+            </div>
+            <div class="kx-diff-legend">
+              <span><i style="background:${DIFF_COLORS[1]}"></i>kept</span>
+              <span><i style="background:${DIFF_COLORS[2]}"></i>added</span>
+              <span><i style="background:${DIFF_COLORS[3]}"></i>removed</span>
+              <span><i style="background:${DIFF_COLORS[4]}"></i>recolored</span>
+            </div>
+            <div class="kx-diff-caption">vs now — ${esc(describeDiff(diff))}</div>`;
+          const box = 96;
+          const cvBefore = out.querySelector('[data-cv="before"]');
+          const cvAfter = out.querySelector('[data-cv="after"]');
+          const cvDiff = out.querySelector('[data-cv="diff"]');
+          renderThumbnail(cvBefore, before, box, { bg: '#0b1220', fg: '#cbd5e1' });
+          renderThumbnail(cvAfter, after, box, { bg: '#0b1220', fg: '#cbd5e1' });
+          renderDiffCard(cvDiff, before, after, box, { bg: '#0b1220' });
         }
       });
       list.appendChild(li);

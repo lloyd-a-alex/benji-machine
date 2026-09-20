@@ -15,6 +15,12 @@ export class VectorSvgExporter {
    * Generates a single continuous laser-cutter ready SVG
    */
   static generateLaserSvg(profile, cardMatrix, options = {}) {
+    // The physical card geometry (pitch, sprockets, hole diameters) comes only from
+    // the profile; a missing one is a caller bug, surfaced clearly rather than as a
+    // null property access deep in the routine.
+    if (!profile || typeof profile !== 'object') {
+      throw new TypeError('VectorSvgExporter.generateLaserSvg requires a machine profile.');
+    }
     const {
       cutColor = '#ff0000',
       scoreColor = '#0000ff',
@@ -95,6 +101,9 @@ export class VectorSvgExporter {
    * Includes 50mm calibration test ruler and overlap gluing margins!
    */
   static generateTiledPrintablePages(profile, cardMatrix, paperType = 'A4') {
+    if (!profile || typeof profile !== 'object') {
+      throw new TypeError('VectorSvgExporter.generateTiledPrintablePages requires a machine profile.');
+    }
     const paperDims = (paperType === 'Letter')
       ? { widthMm: 215.9, heightMm: 279.4 }
       : { widthMm: 210.0, heightMm: 297.0 }; // Standard A4
@@ -204,5 +213,123 @@ export class VectorSvgExporter {
     }
 
     return pages;
+  }
+
+  /**
+   * Printable carriage-pass schedule sheets.
+   *
+   * A knitter standing at the machine does not want a CSV; they want a sheet of
+   * paper they can tick rows off on. This turns the compiler's stroke list into a
+   * two-column HTML grid, one compact line per carriage pass, chunked into pages
+   * with a running footer. It is DOM-free (pure string) so it is unit-testable and
+   * so `printHtml` can drop it straight into a print frame.
+   *
+   * Each line reads, for a transfer pass:
+   *   #07  LACE L→R  card row 7  needles 12,14,18 → 11,13,17
+   * and for a plain knit / blank selecting row the needle list is replaced by the
+   * punch list or a short description.
+   *
+   * @param {Array<object>} strokes  The `compilationResult.strokes` array.
+   * @param {object}        [options]
+   * @param {object}        [options.profile]      Machine profile (used for the header name).
+   * @param {string}        [options.paper='A4']   Paper label for the header.
+   * @param {number}        [options.perPage=36]   Strokes per sheet before a page break.
+   * @param {number}        [options.perColumn=18] Strokes per column within a sheet.
+   * @returns {string} an HTML fragment (a run of `.sched-page` blocks).
+   */
+  static generateScheduleSheets(strokes, { profile = null, paper = 'A4', perPage = 36, perColumn = 18 } = {}) {
+    const list = Array.isArray(strokes) ? strokes.filter(Boolean) : [];
+    const esc = (v) => String(v == null ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const machineName = profile && profile.name ? profile.name : 'Punchcard machine';
+    const paperLabel = paper === 'Letter' ? 'US Letter' : String(paper || 'A4');
+
+    const dirLabel = (d) => (d === 'L_TO_R' ? 'L→R' : d === 'R_TO_L' ? 'R←L' : '—');
+    const carriageLabel = (t) => (t === 'LACE' ? 'LACE' : t === 'COMB' ? 'COMBINED' : t === 'KNIT' ? 'KNIT' : (t ? esc(t) : 'PASS'));
+    const cols = (arr) => (Array.isArray(arr) && arr.length
+      ? arr.map((n) => (Number.isFinite(n) ? n + 1 : n)).join(', ')
+      : '');
+
+    const lineFor = (s, idx) => {
+      const num = String(idx + 1).padStart(2, '0');
+      const cardRow = Number.isFinite(s.cardRowIndex) ? s.cardRowIndex + 1 : '?';
+      const transfers = Array.isArray(s.transfers) ? s.transfers : [];
+      let detail;
+      if (transfers.length) {
+        const src = cols(transfers.map((t) => t.sourceCol));
+        const dst = cols(transfers.map((t) => t.targetCol));
+        detail = `<span class="sched-detail">needles ${esc(src)} → ${esc(dst)}</span>`;
+      } else {
+        const punches = cols(s.punchcardHoles);
+        detail = punches
+          ? `<span class="sched-detail">punches ${esc(punches)}</span>`
+          : `<span class="sched-detail sched-blank">${esc(s.notes || 'blank pass')}</span>`;
+      }
+      return `<li class="sched-row${s.carriageType === 'LACE' ? ' is-lace' : ''}">`
+        + `<span class="sched-num">#${num}</span>`
+        + `<span class="sched-type">${carriageLabel(s.carriageType)}</span>`
+        + `<span class="sched-dir">${dirLabel(s.direction)}</span>`
+        + `<span class="sched-card">row ${cardRow}</span>`
+        + `${detail}</li>`;
+    };
+
+    if (!list.length) {
+      return `<div class="sched-page"><p class="sched-empty">No carriage passes to print. `
+        + `Design a lace pattern and open the Schedule tab first.</p></div>`;
+    }
+
+    const safePerPage = Math.max(1, Math.min(200, perPage | 0));
+    const pages = [];
+    for (let start = 0; start < list.length; start += safePerPage) {
+      pages.push(list.slice(start, start + safePerPage));
+    }
+    const total = pages.length;
+    const half = Math.ceil((pages[0] || []).length / 2);
+
+    const pageHtml = (pageStrokes, pageIdx) => {
+      const columnSlice = (slice) => `<ul class="sched-col">`
+        + slice.map((s, j) => lineFor(s, pageStrokes.indexOf(s) === -1 ? j : pageStrokes.indexOf(s))).join('')
+        + `</ul>`;
+      // Two balanced columns per sheet; indexOf keeps global stroke numbering.
+      const offset = pageIdx * safePerPage;
+      const leftIdx = pageStrokes.slice(0, half).map((s, j) => ({ s, n: offset + j }));
+      const rightIdx = pageStrokes.slice(half).map((s, j) => ({ s, n: offset + half + j }));
+      const renderCol = (rows) => `<ul class="sched-col">`
+        + rows.map(({ s, n }) => lineFor(s, n)).join('') + `</ul>`;
+      const body = (leftIdx.length || rightIdx.length)
+        ? renderCol(leftIdx) + renderCol(rightIdx)
+        : columnSlice(pageStrokes);
+      return `<section class="sched-page">`
+        + `<header class="sched-head"><span class="sched-title">Carriage schedule</span>`
+        + `<span class="sched-machine">${esc(machineName)} · ${esc(paperLabel)}</span>`
+        + `<span class="sched-count">${list.length} passes</span></header>`
+        + `<div class="sched-cols">${body}</div>`
+        + `<footer class="sched-foot">KNITCAT · page ${pageIdx + 1} of ${total}</footer>`
+        + `</section>`;
+    };
+
+    const styles = `
+      .sched-page { page-break-after: always; }
+      .sched-page:last-child { page-break-after: auto; }
+      .sched-head { display: flex; justify-content: space-between; align-items: baseline;
+        border-bottom: 1.5pt solid #111; padding-bottom: 2mm; margin-bottom: 3mm; }
+      .sched-title { font-size: 14pt; font-weight: 700; }
+      .sched-machine, .sched-count { font-size: 9pt; color: #444; }
+      .sched-cols { display: flex; gap: 6mm; }
+      .sched-col { list-style: none; margin: 0; padding: 0; flex: 1 1 0; }
+      .sched-row { display: flex; gap: 4px; align-items: baseline; font-family: ui-monospace, monospace;
+        font-size: 9pt; line-height: 1.5; border-bottom: 0.4pt dotted #cbd5e1; }
+      .sched-row.is-lace .sched-type { color: #b91c1c; font-weight: 700; }
+      .sched-num { color: #64748b; min-width: 22px; }
+      .sched-type { min-width: 44px; }
+      .sched-dir { min-width: 34px; color: #0f766e; }
+      .sched-card { min-width: 46px; color: #475569; }
+      .sched-detail { flex: 1 1 auto; }
+      .sched-blank { color: #94a3b8; font-style: italic; }
+      .sched-foot { margin-top: 4mm; text-align: right; font-size: 8pt; color: #64748b; }
+      .sched-empty { color: #64748b; font-style: italic; }
+    `;
+    return `<style>${styles}</style>` + pages.map(pageHtml).join('');
   }
 }

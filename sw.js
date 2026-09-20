@@ -137,6 +137,12 @@ async function staleWhileRevalidate(request, url) {
   const key = request.url;
   const cached = await cache.match(key);
   if (cached) {
+    // LRU touch (5.9): CacheStorage keeps insertion order and a bare `match` does not
+    // re-insert, so without this the trim below is really FIFO and evicts the shell
+    // pieces you use every single day. Re-putting a still-OK entry moves it to the
+    // newest end; the clone keeps `cached` itself returnable. Guarded on `.ok` so a
+    // never-cached-bad rule holds for every write in this file.
+    if (cached.ok) await cache.put(key, cached.clone());
     // Refresh in the background, and never let a failed revalidation surface.
     fetch(request)
       .then(response => {

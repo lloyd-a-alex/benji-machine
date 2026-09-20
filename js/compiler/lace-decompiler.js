@@ -374,7 +374,10 @@ export class LaceCompiler {
             stroke.needleBedState = [...currentBed];
             stroke.notes = pass.note;
             result.strokes.push(stroke);
-            result.cardMatrix.push(new Array(cols).fill(false).map((hole, col) => pass.holes.includes(col)));
+            // A Set lookup per column, not an Array#includes scan: a 200-needle card
+            // with a busy row used to do cols × holes comparisons per pass.
+            const holeSet = new Set(pass.holes);
+            result.cardMatrix.push(new Array(cols).fill(false).map((_, col) => holeSet.has(col)));
             cardRowCounter++;
           }
 

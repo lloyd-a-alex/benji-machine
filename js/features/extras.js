@@ -430,7 +430,7 @@ function toggleTheme() {
 function buildStudioMenu() {
   const actions = document.querySelector('.header-actions');
   if (!actions || actions.querySelector('.kx-menu')) return;
-  const ids = ['btn-open-presets', 'btn-open-math', 'btn-open-image'];
+  const ids = ['btn-open-presets', 'btn-open-math', 'btn-open-image', 'btn-open-punchcard-photo'];
   const targets = ids.map(id => document.getElementById(id)).filter(Boolean);
   if (targets.length < 2) return; // nothing worth grouping
 
@@ -457,7 +457,8 @@ function buildStudioMenu() {
   const META = {
     'btn-open-presets': { label: 'Preset library', desc: 'Authentic historical & algorithmic charts' },
     'btn-open-math': { label: 'Math Studio', desc: 'Generative: reaction-diffusion, waves, cellular automata' },
-    'btn-open-image': { label: 'Image Dither', desc: 'Turn a photo into a punchcard' }
+    'btn-open-image': { label: 'Image Dither', desc: 'Turn a photo into a punchcard' },
+    'btn-open-punchcard-photo': { label: 'Read a punched card', desc: 'Reverse a physical card from a photo' }
   };
   targets.forEach(t => {
     const item = document.createElement('button');

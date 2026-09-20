@@ -17,6 +17,10 @@ import { STITCH_TYPE } from '../math/knit-topology.js';
 import { cellsOfValue } from '../features/symbol-legend.js';
 import { getDiagnostics } from '../core/diagnostics.js';
 import { bringForward } from './draggable.js';
+// The Chart/Select vocabulary (js/ui/chart-commands.js). Every `chart.*` and
+// `select.*` id falls through to it, so the menu bar, the context menu and Ctrl+K
+// all drive row/column surgery and the selection family through this one dispatcher.
+import { runChartCommand } from './chart-commands.js';
 
 // Commands that can add, rename, reorder (touch) or open a project, so the menu
 // bar's "Recent projects" flyout is refreshed only when the library may have moved.
@@ -120,6 +124,7 @@ export function runCommand(app, id, ctx = {}) {
       case 'design.presets': click('#btn-open-presets'); break;
       case 'design.math': click('#btn-open-math'); break;
       case 'design.image': click('#btn-open-image'); break;
+      case 'design.punchcard-photo': click('#btn-open-punchcard-photo'); break;
       case 'design.knitalong': case 'app.knitAlong': app.knitAlong && app.knitAlong.toggle && app.knitAlong.toggle(); break;
       case 'design.legend': case 'app.symbolLegend': app.symbolLegend && app.symbolLegend.toggle && app.symbolLegend.toggle(); break;
       case 'design.heritage': app.heritagePanel && app.heritagePanel.toggle && app.heritagePanel.toggle(); break;
@@ -197,7 +202,12 @@ export function runCommand(app, id, ctx = {}) {
       case 'text.copy': { const t = typeof window !== 'undefined' && window.getSelection ? String(window.getSelection()) : ''; if (t) { try { navigator.clipboard && navigator.clipboard.writeText(t); } catch (_) { /* denied */ } } }
         break;
 
-      default: break; // unknown id: harmless
+      default:
+        // No built-in case matched: hand the id to the Chart/Select vocabulary.
+        // It answers true when it owned the id, false for anything unknown (which
+        // stays the harmless no-op it has always been).
+        runChartCommand(app, id, ctx);
+        break;
     }
   } catch (err) {
     getDiagnostics().logError('Command', err, { level: 'warn', context: { command: id } });

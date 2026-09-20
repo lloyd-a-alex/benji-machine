@@ -17,6 +17,13 @@
 
 import { buildProjectDocument, KCARD_MAX_CELLS } from './kcard.js';
 import { STORES } from './storage.js';
+// The File System Access handles live in the KV store but are NOT JSON: a
+// FileSystemFileHandle is structured-clone-only, so `JSON.stringify` turns it into
+// `{}`. Backed up, the handle is already broken; restored, the next save crashes on
+// `queryPermission`. Their keys are excluded from the archive (4.3) — the file
+// binding is per-device and cannot survive a portable backup, which is the whole
+// point of importing the constants rather than re-typing the key strings.
+import { HANDLE_KEY, OPEN_HANDLE_KEY } from '../features/fs-access.js';
 
 export const AUTOSAVE_KEY = 'current';
 export const LAST_BACKUP_KEY = 'lastBackupAt';
@@ -35,6 +42,12 @@ export const OWNED_KEY_PREFIXES = ['knitcad.', 'knitcat.'];
 
 /** Runtime bookkeeping, not user data: a restored session flag would be a lie. */
 export const EXCLUDED_KEYS = [SESSION_KEY, LAST_BACKUP_KEY];
+
+/**
+ * KV entries that hold a live FileSystemFileHandle: structured-clone-only, so a
+ * JSON backup would silently corrupt them (4.3). Never archived, never restored.
+ */
+export const HANDLE_LIKE_KEYS = new Set([HANDLE_KEY, OPEN_HANDLE_KEY]);
 
 /** Debounce for edits: long enough to batch a drag-painted row, short enough to feel free. */
 export const AUTOSAVE_DEBOUNCE_MS = 1500;
@@ -440,13 +453,15 @@ export function createDataService(options = {}) {
         snapshots: await driver.count(STORES.SNAPSHOTS),
         recents: await driver.count(STORES.RECENTS),
         projects: await driver.count(STORES.PROJECTS),
-        kv: await driver.count(STORES.KV)
+        kv: (await driver.getAll(STORES.KV)).filter(e => e && !HANDLE_LIKE_KEYS.has(e.key)).length
       },
       autosave: await loadAutosave(),
       snapshots: await driver.getAll(STORES.SNAPSHOTS),
       recents: await driver.getAll(STORES.RECENTS),
       projects: await driver.getAll(STORES.PROJECTS),
-      kv: await driver.getAll(STORES.KV),
+      // Structured-clone-only handles are dropped so a restore cannot put a `{}`
+      // where a live file binding belongs (4.3).
+      kv: (await driver.getAll(STORES.KV)).filter(e => e && !HANDLE_LIKE_KEYS.has(e.key)),
       settings
     };
   }
@@ -487,7 +502,12 @@ export function createDataService(options = {}) {
       if (entry?.id) { await driver.put(STORES.PROJECTS, entry, entry.id); written.projects++; }
     }
     for (const entry of archive.kv || []) {
-      if (entry?.key) { await driver.put(STORES.KV, entry, String(entry.key)); written.kv++; }
+      // An archive written before 4.3 may still carry a dead handle entry; skipping
+      // it here is the belt to buildArchive's braces, so restoring old backups is
+      // just as safe as writing new ones.
+      if (entry?.key && !HANDLE_LIKE_KEYS.has(entry.key)) {
+        await driver.put(STORES.KV, entry, String(entry.key)); written.kv++;
+      }
     }
     for (const [key, value] of Object.entries(archive.settings || {})) {
       writeLocal(key, value);

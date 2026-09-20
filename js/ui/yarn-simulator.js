@@ -15,7 +15,10 @@ export class YarnSimulator {
 
     this.rows = options.rows || 24;
     this.cols = options.cols || 24;
-    this.topology = new KnitTopologyNetwork(this.rows, this.cols, 22, 18);
+    // The machine profile the fabric is being knitted on. When present it drives the
+    // topology's physical spacing (see 5.5): a chunky gauge really does drape looser.
+    this.machineProfile = options.machineProfile || null;
+    this.topology = new KnitTopologyNetwork(this.rows, this.cols, 22, 18, this.machineProfile);
     this.topology.collisionEnabled = false;
 
     this.yarnColorMain = options.yarnColorMain || '#f8fafc';
@@ -51,7 +54,7 @@ export class YarnSimulator {
     try {
       this.rows = stitchMatrix.length;
       this.cols = stitchMatrix[0]?.length || 24;
-      this.topology = new KnitTopologyNetwork(this.rows, this.cols, 22, 18);
+      this.topology = new KnitTopologyNetwork(this.rows, this.cols, 22, 18, this.machineProfile);
       this.topology.buildFromStitchMatrix(stitchMatrix, colorMatrix);
       this.applyMaterialProfile(this.materialProfile);
 

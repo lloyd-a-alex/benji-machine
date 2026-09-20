@@ -10,13 +10,18 @@
  */
 
 import { BrotherSelectorMechanism } from '../machine/brother-selector.js';
+import { bedNeedleCapacity } from '../machine/profiles.js';
 
 export class BrotherSimCanvas {
   constructor(canvasElement, options = {}) {
     this.canvas = canvasElement;
     this.ctx = canvasElement.getContext('2d');
 
-    this.mechanism = new BrotherSelectorMechanism(200, 24, 8);
+    // The selector's needle count comes from the machine profile, not a hardcoded
+    // 200 (5.6): a chunky 9 mm bed really holds ~100 needles, and the sim should
+    // look like the machine you picked. `setProfile` rebuilds it when you switch.
+    this.profile = options.profile || null;
+    this.mechanism = new BrotherSelectorMechanism(bedNeedleCapacity(this.profile), 24, 8);
     this.dpr = 1;
     this.isDraggingCarriage = false;
     this.animating = true;
@@ -59,6 +64,23 @@ export class BrotherSimCanvas {
   /** Legacy single-row entry point; still valid, just no longer the whole story. */
   setCardPattern(cardRow24) {
     this.setCard([cardRow24], []);
+  }
+
+  /**
+   * Rescale the whole simulation to a different machine (5.6). The needle capacity is
+   * a property of the physical bed, so changing profile means rebuilding the
+   * selector mechanism — then re-pushing the indexed card row so the display agrees.
+   * @param {object} profile
+   */
+  setProfile(profile) {
+    if (!profile) return;
+    const same = this.profile && profile.id && this.profile.id === profile.id;
+    this.profile = profile;
+    if (same) return;
+    this.mechanism = new BrotherSelectorMechanism(bedNeedleCapacity(profile), 24, 8);
+    this._applyCardRow();
+    this.resize();
+    this.render();
   }
 
   /** Push the currently-indexed card row into the sensing pins. */

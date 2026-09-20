@@ -248,11 +248,21 @@ export class YarnSegmentConstraint {
 }
 
 export class KnitTopologyNetwork {
-  constructor(rows, cols, spacingX = 14, spacingY = 12) {
+  constructor(rows, cols, spacingX = 14, spacingY = 12, profile = null) {
     this.rows = rows || 24;
     this.cols = cols || 24;
-    this.spacingX = spacingX;
-    this.spacingY = spacingY;
+    // When a machine profile is supplied, derive the physical gauge spacing from its
+    // needle pitch so a bulky card knits visibly looser than a fine one and eyelet
+    // apertures scale with the real hole diameter. ~3 px/mm keeps the magnitude of
+    // the hand-tuned defaults; without a profile the explicit args still win.
+    if (profile && (Number.isFinite(profile.pitchX) || Number.isFinite(profile.pitchY))) {
+      const PX_PER_MM = 3;
+      this.spacingX = (profile.pitchX ?? 4.5) * PX_PER_MM;
+      this.spacingY = (profile.pitchY ?? 5.08) * PX_PER_MM;
+    } else {
+      this.spacingX = spacingX;
+      this.spacingY = spacingY;
+    }
     this.nodes = [];
     this.constraints = [];
     this.matrix = []; // 2D [row][col] mapping to LoopNode
