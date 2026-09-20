@@ -257,6 +257,145 @@ export const GARMENTS = [
       { key: 'length', label: 'Length', unit: 'cm', min: 30, max: 60, step: 1, default: 45 },
       { key: 'border', label: 'Border', unit: 'cm', min: 0, max: 6, step: 1, default: 3 }
     ]
+  },
+
+  // ─── Extended catalogue (same engines, more things to actually make) ──────
+  // Hats
+  {
+    id: 'tam', name: 'Tam O’ Shanter', category: 'Hats', structure: 'hat', icon: '\uD83C\uDFA8',
+    blurb: 'A wide, flat beret that flares past the head for a gathered crown.',
+    params: [
+      { key: 'head', label: 'Head band circumference', unit: 'cm', min: 48, max: 64, step: 1, default: 56 },
+      { key: 'height', label: 'Height', unit: 'cm', min: 14, max: 26, step: 1, default: 18 },
+      { key: 'rib', label: 'Band height', unit: 'cm', min: 2, max: 6, step: 0.5, default: 4 },
+      { key: 'segments', label: 'Crown segments', min: 8, max: 12, step: 1, default: 10 },
+      { key: 'flare', label: 'Crown flare', unit: 'cm', min: 4, max: 16, step: 1, default: 12, advanced: true }
+    ]
+  },
+  {
+    id: 'sunhat', name: 'Sun Hat', category: 'Hats', structure: 'hat', icon: '\u2600',
+    blurb: 'A close crown with a broad turned-down brim for hot days.',
+    params: [
+      { key: 'head', label: 'Head circumference', unit: 'cm', min: 48, max: 66, step: 1, default: 56 },
+      { key: 'height', label: 'Crown height', unit: 'cm', min: 12, max: 22, step: 1, default: 17 },
+      { key: 'rib', label: 'Brim (turn-back) width', unit: 'cm', min: 4, max: 12, step: 1, default: 8 },
+      { key: 'segments', label: 'Crown segments', min: 6, max: 12, step: 1, default: 8 }
+    ]
+  },
+
+  // Tops
+  {
+    id: 'hoodie', name: 'Hooded Pullover', category: 'Tops', structure: 'body', icon: '\uD83E\uDDE5',
+    blurb: 'A cuffed pullover; the hood and kangaroo pocket are added after.',
+    params: [
+      { key: 'chest', label: 'Finished chest', unit: 'cm', min: 84, max: 150, step: 1, default: 104 },
+      { key: 'length', label: 'Body length', unit: 'cm', min: 48, max: 82, step: 1, default: 64 },
+      { key: 'rib', label: 'Hem & cuff rib', unit: 'cm', min: 3, max: 9, step: 0.5, default: 6 },
+      { key: 'sleeve', label: 'Sleeve length', unit: 'cm', min: 25, max: 70, step: 1, default: 48 },
+      { key: 'ease', label: 'Positive ease', unit: 'cm', min: 0, max: 24, step: 1, default: 12, advanced: true },
+      { key: 'armhole', label: 'Armhole depth', unit: 'cm', min: 14, max: 32, step: 0.5, default: 22, advanced: true }
+    ]
+  },
+  {
+    id: 'vest', name: 'Knit Vest', category: 'Tops', structure: 'body', icon: '\uD83D\uDCE6',
+    blurb: 'A sleeveless sweater — deep armholes, quick to finish.',
+    params: [
+      { key: 'chest', label: 'Finished chest', unit: 'cm', min: 80, max: 150, step: 1, default: 100 },
+      { key: 'length', label: 'Length', unit: 'cm', min: 42, max: 74, step: 1, default: 58 },
+      { key: 'rib', label: 'Hem rib', unit: 'cm', min: 3, max: 8, step: 0.5, default: 5 },
+      { key: 'sleeve', label: 'Sleeve length (0 = sleeveless)', unit: 'cm', min: 0, max: 20, step: 1, default: 0 },
+      { key: 'armhole', label: 'Armhole depth', unit: 'cm', min: 14, max: 34, step: 0.5, default: 24, advanced: true }
+    ]
+  },
+  {
+    id: 'turtleneck', name: 'Turtleneck', category: 'Tops', structure: 'body', icon: '\uD83E\uDDE3',
+    blurb: 'A pullover with a long folded neck; work the tube last.',
+    params: [
+      { key: 'chest', label: 'Finished chest', unit: 'cm', min: 84, max: 150, step: 1, default: 102 },
+      { key: 'length', label: 'Body length', unit: 'cm', min: 48, max: 80, step: 1, default: 62 },
+      { key: 'rib', label: 'Hem rib', unit: 'cm', min: 3, max: 8, step: 0.5, default: 5 },
+      { key: 'sleeve', label: 'Sleeve length', unit: 'cm', min: 30, max: 70, step: 1, default: 50 },
+      { key: 'neckdrop', label: 'Neck height (folded ×2)', unit: 'cm', min: 8, max: 24, step: 1, default: 14, advanced: true }
+    ]
+  },
+  {
+    id: 'crop', name: 'Crop Top', category: 'Tops', structure: 'body', icon: '\uD83D\uDC5A',
+    blurb: 'A short, boxy top that ends above the waist.',
+    params: [
+      { key: 'chest', label: 'Finished bust', unit: 'cm', min: 72, max: 140, step: 1, default: 92 },
+      { key: 'length', label: 'Length (short!)', unit: 'cm', min: 28, max: 52, step: 1, default: 38 },
+      { key: 'rib', label: 'Hem rib', unit: 'cm', min: 1.5, max: 5, step: 0.5, default: 3 },
+      { key: 'sleeve', label: 'Sleeve length (0 = strap)', unit: 'cm', min: 0, max: 30, step: 1, default: 12 }
+    ]
+  },
+
+  // Neckwear
+  {
+    id: 'snood', name: 'Snood', category: 'Neckwear', structure: 'tube', icon: '\uD83E\uDDE3',
+    blurb: 'A deep cowl that doubles as a hair warmer — one stretchy tube.',
+    params: [
+      { key: 'head', label: 'Stretched circumference', unit: 'cm', min: 46, max: 70, step: 1, default: 60 },
+      { key: 'height', label: 'Depth', unit: 'cm', min: 18, max: 40, step: 1, default: 28 },
+      { key: 'rib', label: 'Ribbed edging', unit: 'cm', min: 2, max: 8, step: 1, default: 4 }
+    ]
+  },
+  {
+    id: 'bandana', name: 'Bandana', category: 'Neckwear', structure: 'triangle', icon: '\u25C7',
+    blurb: 'A small triangle from the nape — quick, one ball.',
+    params: [
+      { key: 'wingspan', label: 'Wingspan', unit: 'cm', min: 50, max: 110, step: 2, default: 70 },
+      { key: 'height', label: 'Depth', unit: 'cm', min: 20, max: 45, step: 1, default: 30 },
+      { key: 'border', label: 'Edging', unit: 'cm', min: 0, max: 3, step: 0.5, default: 1 }
+    ]
+  },
+
+  // Hands & Feet
+  {
+    id: 'fingerless', name: 'Fingerless Mitts', category: 'Hands & Feet', structure: 'hand', icon: '\uD83E\uDDE4',
+    blurb: 'Cuffed mitts with an open top and a thumb slit.',
+    params: [
+      { key: 'hand', label: 'Hand circumference', unit: 'cm', min: 16, max: 26, step: 0.5, default: 20 },
+      { key: 'length', label: 'Length (cuff to knuckles)', unit: 'cm', min: 12, max: 24, step: 1, default: 18 },
+      { key: 'rib', label: 'Cuff rib', unit: 'cm', min: 2, max: 8, step: 1, default: 5 }
+    ]
+  },
+  {
+    id: 'legwarmers', name: 'Leg Warmers', category: 'Hands & Feet', structure: 'tube', icon: '\uD83E\uDDE6',
+    blurb: 'Ribbed tubes from ankle to calf — all stretch, no fuss.',
+    params: [
+      { key: 'head', label: 'Stretched calf circ.', unit: 'cm', min: 26, max: 48, step: 1, default: 34 },
+      { key: 'height', label: 'Length', unit: 'cm', min: 24, max: 60, step: 1, default: 44 },
+      { key: 'rib', label: 'Ribbed top & toe', unit: 'cm', min: 3, max: 12, step: 1, default: 8 }
+    ]
+  },
+  {
+    id: 'slipper', name: 'Slippers', category: 'Hands & Feet', structure: 'flat', icon: '\uD83D\uDC3E',
+    blurb: 'A thick soled flat that seams into a cosy slipper.',
+    params: [
+      { key: 'width', label: 'Foot width', unit: 'cm', min: 7, max: 12, step: 0.5, default: 9 },
+      { key: 'length', label: 'Foot length', unit: 'cm', min: 20, max: 32, step: 1, default: 26 },
+      { key: 'border', label: 'Turn-back cuff', unit: 'cm', min: 0, max: 5, step: 1, default: 3 }
+    ]
+  },
+
+  // Home
+  {
+    id: 'rug', name: 'Rag Rug', category: 'Home', structure: 'flat', icon: '\uD83D\uDEFB',
+    blurb: 'A dense, sturdy oval-ish mat from yarn or fabric strips.',
+    params: [
+      { key: 'width', label: 'Width', unit: 'cm', min: 40, max: 90, step: 2, default: 60 },
+      { key: 'length', label: 'Length', unit: 'cm', min: 60, max: 160, step: 2, default: 100 },
+      { key: 'border', label: 'Bound edge', unit: 'cm', min: 0, max: 4, step: 1, default: 2 }
+    ]
+  },
+  {
+    id: 'teacosy', name: 'Tea Cosy', category: 'Home', structure: 'tube', icon: '\uD83E\uDDCB',
+    blurb: 'A snug ribbed tube that keeps the pot hot.',
+    params: [
+      { key: 'head', label: 'Stretched circumference', unit: 'cm', min: 34, max: 60, step: 1, default: 46 },
+      { key: 'height', label: 'Height', unit: 'cm', min: 12, max: 26, step: 1, default: 18 },
+      { key: 'rib', label: 'Rib', unit: 'cm', min: 4, max: 18, step: 1, default: 12 }
+    ]
   }
 ];
 

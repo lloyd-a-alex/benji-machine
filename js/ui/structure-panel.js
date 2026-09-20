@@ -9,11 +9,11 @@
  * nothing under `js/` reached it, so the module-graph guard rightly reported them as
  * dead source.
  *
- * This module is those hands, and it is a *read-only consumer* by the same rule the
- * {@link module:ui/stitch-inspector} and {@link module:ui/clip-shelf} follow: it reads
- * the live editor and *reports* — it never touches the drawing matrix, never replaces
- * the working full-matrix undo stack, and can therefore never corrupt a card. A
- * failure to boot it means no panel, never a broken canvas.
+ * This module is those hands. It reads the live editor and reports, and it also now
+ * gives that reading back as *edits*: tiling a repeat across the card and opening
+ * stored layers / documents all go through the editor's own undoable `setMatrix`, so
+ * every change is reversible exactly like drawing by hand and can never desync the
+ * working undo stack. A failure to boot it means no panel, never a broken canvas.
  *
  * Two halves:
  *
@@ -47,6 +47,8 @@ const STYLE_ID = 'kx-structure-style';
 const PANEL_ID = 'kx-structure';
 const BUTTON_ID = 'kx-structure-btn';
 const NOTES_KEY = 'knitcat.structure.notes.v1';
+const LAYERS_KEY = 'knitcat.structure.layers.v1';
+const DOCS_KEY = 'knitcat.structure.docs.v1';
 
 /**
  * Analyse a card with the structural subsystems. Pure and DOM-free so it can be
@@ -111,6 +113,127 @@ export function analyzeCard({ matrix, mode = 'lace', profile = null, name = 'Unt
 }
 
 /**
+ * Tile the top-left `repeatRows × repeatCols` block across the whole card, returning
+ * a NEW matrix (the caller pushes it through the editor's undoable `setMatrix`).
+ * Pure and DOM-free so the fill can be asserted without a browser.
+ *
+ * It copies whatever values live in the repeat block — punched or blank, in any mode
+ * — so it never has to guess what "empty" means for lace vs. colourwork.
+ *
+ * @param {Array<Array<any>>} matrix    The current card.
+ * @param {number} repeatRows           Repeat height (1..rows); <=0 is a no-op clone.
+ * @param {number} repeatCols           Repeat width (1..cols); <=0 is a no-op clone.
+ * @returns {Array<Array<any>>} a card filled edge-to-edge with the repeat.
+ */
+export function fillWithRepeat(matrix, repeatRows, repeatCols) {
+  const src = Array.isArray(matrix) ? matrix : [];
+  const rows = src.length;
+  let cols = 0;
+  for (const r of src) if (Array.isArray(r) && r.length > cols) cols = r.length;
+  const out = src.map(r => (Array.isArray(r) ? r.slice() : []));
+  let rr = Math.trunc(Number(repeatRows) || 0);
+  let rc = Math.trunc(Number(repeatCols) || 0);
+  if (rows === 0 || cols === 0 || rr <= 0 || rc <= 0) return out;
+  rr = Math.min(rr, rows);
+  rc = Math.min(rc, cols);
+  for (let r = 0; r < rows; r++) {
+    if (!Array.isArray(out[r])) out[r] = new Array(cols).fill(0);
+    for (let c = 0; c < cols; c++) out[r][c] = out[r % rr][c % rc];
+  }
+  return out;
+}
+
+/**
+ * A tiny shared "store of whole cards" widget: a list of named matrices you can add
+ * from the live editor, load back into it, overwrite, rename or delete. One
+ * implementation drives BOTH the Layers and the Documents sections, so the two can
+ * never drift apart. It only ever edits the card through the editor's undoable
+ * `setMatrix`, so it inherits the same safety as drawing by hand.
+ *
+ * @param {object} opts
+ * @param {HTMLElement} opts.container  Where to render the rows.
+ * @param {() => any} opts.getEditor
+ * @param {object} [opts.notifications]
+ * @param {number} [opts.limit]         Max stored cards (guards localStorage size).
+ * @param {string} opts.addLabel        Label for the "add current card" button.
+ * @param {string} opts.newLabel        Label for the "new blank card" button.
+ * @param {(items:Array)=>void} [opts.onSave]  Persist hook (called after any change).
+ */
+function createGridStore(opts) {
+  const container = opts.container;
+  const getEditor = opts.getEditor;
+  const notifier = opts.notifications || null;
+  const limit = Math.max(1, opts.limit || 6);
+  let items = Array.isArray(opts.initial) ? opts.initial : [];
+  const onChange = opts.onSave || (() => {});
+
+  const commit = () => { try { onChange(items); } catch (_) { /* quota is fine */ } };
+  const cloneCur = () => { const ed = getEditor(); const m = (ed && ed.matrix) || []; return m.map(r => (Array.isArray(r) ? r.slice() : [])); };
+  const dims = m => (m.length && m[0] ? `${m.length}×${m[0].length}` : '0×0');
+
+  function addFromCard() {
+    if (items.length >= limit) { notifier && notifier.warn && notifier.warn(`Store is full (${limit}).`); return; }
+    const matrix = cloneCur();
+    items.push({ name: `Card ${items.length + 1}`, matrix });
+    commit(); render();
+  }
+  function newBlank() {
+    if (items.length >= limit) { notifier && notifier.warn && notifier.warn(`Store is full (${limit}).`); return; }
+    const ed = getEditor();
+    const rows = (ed && ed.rows) || 0; const cols = (ed && ed.cols) || 0;
+    const matrix = []; for (let r = 0; r < rows; r++) matrix.push(new Array(cols).fill(0));
+    items.push({ name: `Card ${items.length + 1}`, matrix });
+    commit(); render();
+  }
+  function load(i) {
+    const ed = getEditor();
+    if (ed && ed.setMatrix && items[i]) ed.setMatrix(items[i].matrix.map(r => r.slice()));
+  }
+  function update(i) { if (items[i]) { items[i].matrix = cloneCur(); commit(); render(); } }
+  function rename(i) {
+    if (!items[i]) return;
+    const nm = safePrompt('Name this card', items[i].name);
+    if (nm != null) { items[i].name = String(nm).slice(0, 40) || items[i].name; commit(); render(); }
+  }
+  function del(i) { items.splice(i, 1); commit(); render(); }
+
+  function render() {
+    if (!container) return;
+    container.textContent = '';
+    const tools = document.createElement('div');
+    tools.className = 'kx-numlist';
+    const bAdd = document.createElement('button'); bAdd.className = 'kx-btn kx-btn--ghost'; bAdd.textContent = opts.addLabel || 'Add current card'; bAdd.addEventListener('click', addFromCard);
+    const bNew = document.createElement('button'); bNew.className = 'kx-btn kx-btn--ghost'; bNew.textContent = opts.newLabel || 'New blank'; bNew.addEventListener('click', newBlank);
+    tools.append(bAdd, bNew);
+    container.appendChild(tools);
+    if (!items.length) {
+      const hint = document.createElement('div'); hint.className = 'kxs-muted'; hint.textContent = 'Nothing stored yet.';
+      container.appendChild(hint); return;
+    }
+    const ul = document.createElement('ul'); ul.className = 'kx-list';
+    items.forEach((it, i) => {
+      const li = document.createElement('li'); li.className = 'kx-row';
+      const info = document.createElement('div'); info.className = 'kx-row__info';
+      const nm = document.createElement('button'); nm.className = 'kx-btn kx-btn--ghost kx-row__name'; nm.textContent = it.name; nm.title = 'Load into the editor'; nm.addEventListener('click', () => load(i));
+      const meta = document.createElement('div'); meta.className = 'kx-row__meta'; meta.textContent = dims(it.matrix);
+      info.append(nm, meta);
+      const acts = document.createElement('div'); acts.className = 'kx-row__actions';
+      const bOpen = document.createElement('button'); bOpen.className = 'kx-iconbtn'; bOpen.textContent = '\u21E9'; bOpen.title = 'Open in editor'; bOpen.addEventListener('click', () => load(i));
+      const bUpd = document.createElement('button'); bUpd.className = 'kx-iconbtn'; bUpd.textContent = '\u21C8'; bUpd.title = 'Overwrite with current card'; bUpd.addEventListener('click', () => update(i));
+      const bRen = document.createElement('button'); bRen.className = 'kx-iconbtn'; bRen.textContent = '\u270E'; bRen.title = 'Rename'; bRen.addEventListener('click', () => rename(i));
+      const bDel = document.createElement('button'); bDel.className = 'kx-iconbtn kx-iconbtn--delete'; bDel.textContent = '\u2715'; bDel.title = 'Delete'; bDel.addEventListener('click', () => del(i));
+      acts.append(bOpen, bUpd, bRen, bDel);
+      li.append(info, acts);
+      ul.appendChild(li);
+    });
+    container.appendChild(ul);
+  }
+
+  render();
+  return { render, count: () => items.length, items: () => items };
+}
+
+/**
  * Mount the Card Structure panel. Idempotent per document: a second call reuses nodes.
  *
  * @param {object} deps
@@ -159,16 +282,17 @@ export function createStructurePanel(deps = {}) {
     });
     panel = shell.panel;
     shell.body.innerHTML = `
-      <section class="kxs-sec"><h3 class="kx-panel__h3">Document</h3><div data-doc></div></section>
-      <section class="kxs-sec"><h3 class="kx-panel__h3">Repeat fit</h3>
+      <section class="kxs-sec"><h3 class="kx-panel__h3">Document</h3><div data-doc></div><div data-docstore></div></section>
+      <section class="kxs-sec"><h3 class="kx-panel__h3">Repeat fit &amp; fill</h3>
         <div class="kx-numlist">
           <label>Rows <input type="number" min="0" data-rep-rows class="kx-input"></label>
           <label>Needles <input type="number" min="0" data-rep-cols class="kx-input"></label>
           <button class="kx-btn kx-btn--ghost" data-rep-full>Whole card</button>
         </div>
         <div data-fit class="kxs-fit"></div>
+        <div class="kx-numlist"><button class="kx-btn kx-btn--primary" data-rep-fill>Tile the repeat across the whole card</button></div>
       </section>
-      <section class="kxs-sec"><h3 class="kx-panel__h3">Layers</h3><div data-layers></div></section>
+      <section class="kxs-sec"><h3 class="kx-panel__h3">Layers <span class="kx-panel__sub">paintable, open one at a time</span></h3><div data-layers></div><div data-layerstore></div></section>
       <section class="kxs-sec"><h3 class="kx-panel__h3">Edit trail</h3>
         <div data-trail></div>
         <button class="kx-btn kx-btn--ghost" data-checkpoint>Checkpoint current state</button>
@@ -183,7 +307,8 @@ export function createStructurePanel(deps = {}) {
   const q = sel => panel.querySelector(sel);
   const els = {
     doc: q('[data-doc]'), repRows: q('[data-rep-rows]'), repCols: q('[data-rep-cols]'),
-    repFull: q('[data-rep-full]'), fit: q('[data-fit]'), layers: q('[data-layers]'),
+    repFull: q('[data-rep-full]'), repFill: q('[data-rep-fill]'), fit: q('[data-fit]'), layers: q('[data-layers]'),
+    docStore: q('[data-docstore]'), layerStore: q('[data-layerstore]'),
     trail: q('[data-trail]'), checkpoint: q('[data-checkpoint]'), measure: q('[data-measure]'),
     addNote: q('[data-add-note]'), notes: q('[data-notes]')
   };
@@ -192,7 +317,7 @@ export function createStructurePanel(deps = {}) {
   let seeded = false;
 
   function isOpen() { return open; }
-  function show() { panel.hidden = false; open = true; refresh(); }
+  function show() { panel.hidden = false; open = true; refresh(); pushAnnotations(); }
   function hide() { panel.hidden = true; open = false; }
   function toggle() { open ? hide() : show(); }
 
@@ -215,6 +340,36 @@ export function createStructurePanel(deps = {}) {
     readRepeat();
     render();
   });
+
+  // Activate the repeat engine: tile the current repeat block across the whole card
+  // through the editor's undoable setMatrix, so a motif can be tried at bed scale and
+  // stepped straight back with Ctrl+Z.
+  els.repFill.addEventListener('click', () => {
+    const ed = getEditor();
+    const m = (ed && ed.matrix) || [];
+    if (!(state.repeatRows > 0 && state.repeatCols > 0)) { notifier && notifier.warn && notifier.warn('Set the repeat rows and needles first.'); return; }
+    try {
+      ed.setMatrix(fillWithRepeat(m, state.repeatRows, state.repeatCols));
+      notifier && notifier.success && notifier.success('Filled the card with the repeat (undo to step back).');
+    } catch (err) { diag.warn('repeat fill failed: ' + err.message); }
+    render();
+  });
+
+  // The Layers and Documents engines, now in Benji's hands: two instances of one
+  // grid-store, each persisting to its own localStorage key.
+  const layerStore = createGridStore({
+    container: els.layerStore, getEditor, notifications: notifier, limit: 6,
+    addLabel: 'Layer \u2190 capture current card', newLabel: 'New blank layer',
+    initial: loadGridStore(LAYERS_KEY), onSave: items => saveGridStore(LAYERS_KEY, items)
+  });
+  const docStore = createGridStore({
+    container: els.docStore, getEditor, notifications: notifier, limit: 8,
+    addLabel: 'Save card as document', newLabel: 'New blank document',
+    initial: loadGridStore(DOCS_KEY), onSave: items => saveGridStore(DOCS_KEY, items)
+  });
+  state.layerStore = layerStore;
+  state.docStore = docStore;
+  pushAnnotations();
 
   els.checkpoint.addEventListener('click', () => {
     const name = safePrompt('Checkpoint label', `checkpoint ${new Date().toLocaleTimeString()}`);
@@ -239,7 +394,15 @@ export function createStructurePanel(deps = {}) {
     state.notes = clean.annotations;
     saveNotes(state.notes);
     render();
+    pushAnnotations();
   });
+
+  // Mirror the knitter's notes onto the card through the editor's view-only
+  // annotation overlay — they never reach the matrix or the punchcard.
+  function pushAnnotations() {
+    const ed = getEditor();
+    if (ed && ed.setAnnotations) ed.setAnnotations(state.notes.map(n => ({ r: n.r, c: n.c, text: n.text })));
+  }
 
   /** Recompute the analysis + trail and repaint. Cheap enough to poll while open. */
   function refresh() {
@@ -283,7 +446,7 @@ export function createStructurePanel(deps = {}) {
       repeat: state.repeatRows > 0 && state.repeatCols > 0 ? { rows: state.repeatRows, cols: state.repeatCols } : null
     });
 
-    els.doc.textContent = `${report.document.name} · ${report.mode} · ${report.rows}×${report.cols}`;
+    els.doc.textContent = `${report.document.name} · ${report.mode} · ${report.rows}×${report.cols}` + (state.docStore ? ` · ${state.docStore.count()} document(s)` : '');
     els.doc.title = `Physical size ${report.size.widthLabel} × ${report.size.heightLabel} on ${report.size.profileLabel}`;
 
     els.fit.textContent = report.fit.ok
@@ -291,7 +454,7 @@ export function createStructurePanel(deps = {}) {
       : report.fit.summary || report.fit.error;
     els.fit.className = 'kxs-fit ' + (report.fit.ok ? (report.fit.coversWholeCard ? 'kxs-ok' : 'kxs-warn') : 'kxs-muted');
 
-    els.layers.textContent = `${report.layers.layers} layer(s), ${report.layers.visible} visible · ${report.worked}/${report.layers.total} needles worked`;
+    els.layers.textContent = `${state.layerStore ? state.layerStore.count() : report.layers.layers} editable layer(s) · ${report.worked}/${report.layers.total} needles worked`;
 
     if (state.trail) {
       const nodes = state.trail.nodes ? state.trail.nodes.size : state.trail.tree().length;
@@ -389,6 +552,29 @@ function saveNotes(notes) {
   const store = storage();
   if (!store) return;
   try { store.setItem(NOTES_KEY, JSON.stringify(notes.map(n => ({ kind: n.kind, r: n.r, c: n.c, text: n.text })))); } catch (_) { /* quota is fine */ }
+}
+
+// Load a stored list of {name, matrix} cards, defensively: anything malformed is
+// dropped rather than thrown into boot, so an old or corrupted blob is never fatal.
+function loadGridStore(key) {
+  const store = storage();
+  if (!store) return [];
+  try {
+    const raw = store.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(it => it && Array.isArray(it.matrix))
+      .slice(0, 12)
+      .map((it, i) => ({ name: String(it.name || `Card ${i + 1}`).slice(0, 40), matrix: it.matrix.map(r => (Array.isArray(r) ? r.slice() : [])) }));
+  } catch (_) { return []; }
+}
+
+function saveGridStore(key, items) {
+  const store = storage();
+  if (!store) return;
+  try { store.setItem(key, JSON.stringify((items || []).map(it => ({ name: it.name, matrix: it.matrix })))); } catch (_) { /* quota is fine */ }
 }
 
 let stylesInjected = false;

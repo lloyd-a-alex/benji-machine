@@ -31,6 +31,8 @@ import { createStitchInspector } from './ui/stitch-inspector.js';
 import { createClipShelf } from './ui/clip-shelf.js';
 import { createStructurePanel } from './ui/structure-panel.js';
 import { createHeritagePanel } from './ui/heritage-panel.js';
+import { createKnitAlong } from './features/knit-along.js';
+import { createSymbolLegend } from './features/symbol-legend.js';
 import { initExtras } from './features/extras.js';
 import { initSound, fx } from './features/sound.js';
 import { initCommandPalette } from './features/command-palette.js';
@@ -359,10 +361,10 @@ class KnitApp {
           notifications: this.notifications
         });
       }, { notifier: this.notifications, announce: true });
-      // The structure panel is a read-only consumer of five built-but-unwired
-      // js/edit subsystems (documents, layers, guides, history, annotations). It only
-      // ever *reports* on the card — it never touches the drawing matrix or the
-      // working undo — so a failure here just means no panel, never a broken edit.
+      // The structure panel reads the five built-but-unwired js/edit subsystems
+      // (documents, layers, guides, history, annotations) and now also drives them:
+      // repeat-fill and opening layers/documents go through the editor's undoable
+      // setMatrix, so nothing it does can corrupt a card beyond a normal Ctrl+Z.
       runGuarded('Card structure panel', () => {
         this.structurePanel = createStructurePanel({
           getEditor: () => this.editor,
@@ -379,6 +381,27 @@ class KnitApp {
       runGuarded('Textile heritage panel', () => {
         this.heritagePanel = createHeritagePanel({
           applyStructure: (id) => this.loadPreset(id),
+          notifications: this.notifications
+        });
+      }, { notifier: this.notifications, announce: true });
+      // The knit-along companion walks the compiled schedule one row at a time and
+      // spotlights the current row on the card. It only reads the compilation and
+      // paints a highlight — never mutates the matrix — so a boot failure means no
+      // dock, never a broken edit.
+      runGuarded('Knit-along companion', () => {
+        this.knitAlong = createKnitAlong({
+          getEditor: () => this.editor,
+          getCompilation: () => this.compilationResult,
+          getIssues: () => (this.feasibility && this.feasibility.verdict().issues) || [],
+          notifications: this.notifications
+        });
+      }, { notifier: this.notifications, announce: true });
+      // The symbol legend surfaces the stitch-info vocabulary (previously an
+      // unconsumed table) and lets you highlight every needle doing one thing.
+      // Read-only: it paints a spotlight, never edits the matrix.
+      runGuarded('Symbol legend', () => {
+        this.symbolLegend = createSymbolLegend({
+          getEditor: () => this.editor,
           notifications: this.notifications
         });
       }, { notifier: this.notifications, announce: true });
@@ -866,6 +889,8 @@ class KnitApp {
     this.updateScheduleUI();
     this.updateStatusStats();
     this._renderHealth();
+    if (this.knitAlong) this.knitAlong.refresh();
+    if (this.symbolLegend) this.symbolLegend.refresh();
     this._cardDirty = false;
 
     // The kinematics sim always tracks the live card, not just the row it happened
@@ -2094,6 +2119,8 @@ class KnitApp {
     acts.push({ label: 'Open console — Systems status', group: 'Diagnostics', keywords: 'systems status health environment capabilities subsystems boot loaded enabled console diagnostics', run: () => { this.console?.open?.(); this.console?.setView?.('systems'); } });
     acts.push({ label: 'Toggle stitch inspector', group: 'Inspector', keywords: 'inspect hover cell symbol meaning transfer eyelet yarn over inspector hud readout needle', run: () => this._toggleInspector() });
     acts.push({ label: 'Open clip shelf', group: 'Clipboard', keywords: 'clip clipboard shelf history slot copy paste motif vocabulary library panel open close recent', run: () => this.clipShelf?.open?.() });
+    acts.push({ label: 'Walk me through it row by row (Knit-Along)', group: 'Advisor', keywords: 'knit along row counter companion step through what do i do next row carriage direction walk guide progress panel open close', run: () => this.knitAlong?.toggle?.() });
+    acts.push({ label: 'Stitch-symbol legend (what do the symbols mean)', group: 'Inspector', keywords: 'symbol legend chart notation mean what is o circle transfer eyelet tuck slip purl explain highlight symbols key glossary panel open close', run: () => this.symbolLegend?.toggle?.() });
     acts.push({ label: 'Toggle card structure & analysis', group: 'Inspector', keywords: 'structure layers guides repeat tile fit annotations notes document history trail size mm needles rows analysis panel open close', run: () => this.structurePanel?.toggle?.() });
     acts.push({ label: 'Capture selection to clip shelf', group: 'Clipboard', keywords: 'clip clipboard capture copy selection shelf store remember motif', run: () => { if (this.editor?.copySelection()) this.clipShelf?.capture?.(); this.clipShelf?.open?.(); } });
     acts.push({ label: 'Paste most recent clip', group: 'Clipboard', keywords: 'clip clipboard paste most recent previous shelf duplicate reuse', run: () => this.clipShelf?.pasteMostRecent?.() });

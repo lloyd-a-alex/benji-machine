@@ -10,7 +10,7 @@ import { outlineToDxf, outlineToSvg } from '../js/tailor/garment-export.js';
 import { buildFashioning } from '../js/tailor/machine-steps.js';
 import { gradeSizes } from '../js/tailor/grading.js';
 import { estimateYarn } from '../js/tailor/yarn-estimate.js';
-import { ClothesEngine, GARMENTS } from '../js/tailor/clothes-catalog.js';
+import { ClothesEngine, GARMENTS, CATEGORIES } from '../js/tailor/clothes-catalog.js';
 
 const STRUCTURES = ['hat', 'tube', 'flat', 'body', 'hand', 'sock', 'triangle', 'tank'];
 const byId = id => GARMENTS.find(g => g.id === id);
@@ -151,6 +151,22 @@ test('every catalog plan carries geometry, fashioning, yarn and sizes', () => {
     assert.ok(Number.isFinite(plan.yarn.meters), `${g.id} yarn`);
     assert.ok(Array.isArray(plan.sizes) && plan.sizes.length >= 1, `${g.id} sizes`);
   }
+});
+
+test('the extended catalogue adds real, correctly-categorised garments', () => {
+  const added = ['tam', 'sunhat', 'hoodie', 'vest', 'turtleneck', 'crop', 'snood', 'bandana', 'fingerless', 'legwarmers', 'slipper', 'rug', 'teacosy'];
+  const cats = new Set(CATEGORIES);
+  assert.ok(GARMENTS.length >= 34, `catalogue should have grown (found ${GARMENTS.length})`);
+  for (const id of added) {
+    const g = byId(id);
+    assert.ok(g, `garment ${id} exists`);
+    assert.ok(cats.has(g.category), `${id} in a known category (${g.category})`);
+    assert.ok(STRUCTURES.includes(g.structure), `${id} uses a real structure`);
+    assert.ok(g.name && g.blurb && Array.isArray(g.params) && g.params.length >= 2, `${id} is fully described`);
+  }
+  // no duplicate ids in the whole catalogue
+  const ids = GARMENTS.map(g => g.id);
+  assert.equal(new Set(ids).size, ids.length, 'garment ids are unique');
 });
 
 test('the tank top survives as a catalog garment with the CAD pattern attached', () => {

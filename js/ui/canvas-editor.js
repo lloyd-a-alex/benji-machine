@@ -63,6 +63,11 @@ export class CanvasEditor {
     // matrix or history. { cells:[[r,c]...], color, fill, label } or null.
     this.highlight = null;
 
+    // Knitter's notes drawn on the card (from the annotations engine): pinned labels
+    // that live entirely in the view layer and are never compiled. [{ r, c, text,
+    // color }]. Purely visual — never touches the matrix or the punchcard.
+    this.annotations = [];
+
     // Symmetry options
     this.symmetryH = false;
     this.symmetryV = false;
@@ -464,6 +469,25 @@ export class CanvasEditor {
   clearHighlight() {
     if (!this.highlight) return;
     this.highlight = null;
+    this.render();
+  }
+
+  /**
+   * Draw the knitter's annotation notes as pinned labels on the card. Like the
+   * advisory highlight this is view-only: the notes are never punched onto the card
+   * and never reach the compiler.
+   * @param {Array<{r:number,c:number,text?:string,color?:string}>} list
+   */
+  setAnnotations(list) {
+    this.annotations = Array.isArray(list)
+      ? list.filter(a => a && Number.isFinite(a.r) && Number.isFinite(a.c)).slice(0, 500)
+      : [];
+    this.render();
+  }
+
+  clearAnnotations() {
+    if (!this.annotations.length) return;
+    this.annotations = [];
     this.render();
   }
 
@@ -977,6 +1001,34 @@ export class CanvasEditor {
         const y = (this.rows - 1 - r) * this.zoom;
         ctx.fillRect(x + 1, y + 1, this.zoom - 2, this.zoom - 2);
         ctx.strokeRect(x + 0.5, y + 0.5, this.zoom - 1, this.zoom - 1);
+      }
+      ctx.restore();
+    }
+
+    // Knitter's notes: small pinned flags with their text, drawn above the grid but
+    // below the rulers. View-only — never compiled, never punched.
+    if (this.annotations && this.annotations.length) {
+      ctx.save();
+      ctx.font = `${Math.max(9, this.zoom * 0.55)}px sans-serif`;
+      ctx.textBaseline = 'middle';
+      for (const a of this.annotations) {
+        if (!this._cellInBounds(a.r, a.c)) continue;
+        const x = a.c * this.zoom;
+        const y = (this.rows - 1 - a.r) * this.zoom;
+        ctx.fillStyle = a.color || '#fbbf24';
+        ctx.beginPath();
+        ctx.arc(x + this.zoom * 0.2, y + this.zoom * 0.2, Math.max(2, this.zoom * 0.13), 0, Math.PI * 2);
+        ctx.fill();
+        const text = String(a.text || '');
+        if (text) {
+          const tw = ctx.measureText(text).width + 6;
+          const bx = x + this.zoom * 0.34;
+          const by = y + this.zoom * 0.08;
+          ctx.fillStyle = 'rgba(2, 6, 23, 0.82)';
+          ctx.fillRect(bx, by, tw, this.zoom * 0.84);
+          ctx.fillStyle = a.color || '#fbbf24';
+          ctx.fillText(text, bx + 3, by + this.zoom * 0.5);
+        }
       }
       ctx.restore();
     }

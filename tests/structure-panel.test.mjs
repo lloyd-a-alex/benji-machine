@@ -9,6 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { analyzeCard } from '../js/ui/structure-panel.js';
+import { fillWithRepeat } from '../js/ui/structure-panel.js';
 import { STITCH_TYPE } from '../js/math/knit-topology.js';
 import { MACHINE_PROFILES } from '../js/machine/profiles.js';
 
@@ -35,6 +36,52 @@ test('the worked count is what the layer composite actually reads back', () => {
   assert.equal(r.layers.worked, 2, 'the layers pipeline agrees with the headline count');
   assert.equal(r.document.name, 'Swatch');
   assert.equal(r.document.mode, 'lace');
+});
+
+// ─── Repeat fill: the editor activation of the guides/repeat engine ───────────
+
+test('fillWithRepeat is a no-op clone when the repeat is empty or invalid', () => {
+  const card = [[1, 0], [0, 1]];
+  assert.deepEqual(fillWithRepeat(card, 0, 0), card);
+  assert.deepEqual(fillWithRepeat(card, -3, 5), card);
+  assert.deepEqual(fillWithRepeat([], 2, 2), []);
+  // returns a copy, never the same references
+  const out = fillWithRepeat(card, 2, 2);
+  out[0][0] = 9;
+  assert.equal(card[0][0], 1, 'input matrix is untouched');
+});
+
+test('fillWithRepeat tiles the top-left block across the whole card', () => {
+  // A 2×2 motif with a 4×4 canvas → repeats every 2 rows and 2 needles.
+  const card = [
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0]
+  ];
+  assert.deepEqual(fillWithRepeat(card, 2, 2), [
+    [1, 0, 1, 0],
+    [0, 1, 0, 1],
+    [1, 0, 1, 0],
+    [0, 1, 0, 1]
+  ]);
+});
+
+test('fillWithRepeat clamps a repeat larger than the card', () => {
+  const card = [[1, 0], [0, 1]];
+  // a 9×9 "repeat" on a 2×2 card is just the whole card tiled by itself → unchanged
+  assert.deepEqual(fillWithRepeat(card, 9, 9), card);
+});
+
+test('fillWithRepeat copies real values (punched/blank) in any mode', () => {
+  const card = [
+    [7, 0, 5],
+    [0, 3, 0]
+  ];
+  // repeat 2×2 → columns tile [7,0,7] / [0,3,0]... wait cols=3, rc=2 → c%2
+  const out = fillWithRepeat(card, 2, 2);
+  assert.deepEqual(out[0], [7, 0, 7]);
+  assert.deepEqual(out[1], [0, 3, 0]);
 });
 
 test('physical size follows the profile pitch', () => {
