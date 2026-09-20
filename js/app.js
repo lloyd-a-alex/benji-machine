@@ -17,16 +17,20 @@ import { VectorSvgExporter } from './exporters/vector-svg.js';
 import { FormatsExporter } from './exporters/formats-dak.js';
 import { readProject } from './project/kcard.js';
 import { PATTERN_PRESETS } from './presets/preset-library.js';
+import { openPresetsBrowser } from './presets/presets-browser.js';
 import { TankTopCanvas } from './ui/tank-top-canvas.js';
 import { BeanieEngine } from './tailor/beanie-engine.js';
 import { BrotherSimCanvas } from './ui/brother-sim-canvas.js';
 import { NotificationCenter } from './ui/notifications.js';
 import { installGlobalErrorBoundary, installRoundRectPolyfill, runGuarded } from './ui/safety.js';
+import { getDiagnostics } from './core/diagnostics.js';
+import { createConsolePanel } from './ui/console-panel.js';
 import { initExtras } from './features/extras.js';
 import { initSound, fx } from './features/sound.js';
 import { initCommandPalette } from './features/command-palette.js';
 import { initAdmin } from './features/admin.js';
 import { createFeasibilityAdvisor } from './features/feasibility.js';
+import { createMachineUniverse } from './features/machine-universe.js';
 import { initPwa } from './features/pwa.js';
 import { initDataPanel } from './features/data-panel.js';
 import { initShare, incomingShareDocument } from './features/share.js';
@@ -48,44 +52,44 @@ class KnitApp {
     this.projectMeta = { name: null, author: null, notes: null };
 
     // Safety layer first: canvas polyfill + global error boundary so a single
-    // failure anywhere can never silently freeze the whole app.
+    // failure anywhere can never silently freeze the whole app. This also installs
+    // the diagnostics capture net and funnels every console.* call app-wide.
     installRoundRectPolyfill();
     installGlobalErrorBoundary(this.notifications);
+    // Tag every captured record with session context and mark the boot boundary, so
+    // a later log line can be traced back to when and where the app came up.
+    getDiagnostics().context({ app: 'KNITCAT', phase: 'boot' });
+    getDiagnostics().info('Application boot started');
 
     this.compiler = new LaceCompiler(this.currentProfile);
     this.compilationResult = null;
 
-    try {
-      this.initDOM();
-    } catch (e) {
-      console.error('[KNITCAT] initDOM error:', e);
-    }
+    runGuarded('DOM wiring', () => this.initDOM(), { notifier: this.notifications, announce: true });
+    runGuarded('Components', () => this.initComponents(), { notifier: this.notifications, announce: true });
+    runGuarded('Event wiring', () => this.initEvents(), { notifier: this.notifications, announce: true });
 
-    try {
-      this.initComponents();
-    } catch (e) {
-      console.error('[KNITCAT] initComponents error:', e);
-    }
-
-    try {
-      this.initEvents();
-    } catch (e) {
-      console.error('[KNITCAT] initEvents error:', e);
-    }
+    // The in-app console sits on top of the diagnostics stream. Mounted after the DOM
+    // so it can attach its header button; it replays the whole boot timeline because
+    // it reads the shared ring buffer, not just new records.
+    runGuarded('Console', () => {
+      this.console = createConsolePanel({ diagnostics: getDiagnostics(), notifications: this.notifications });
+      this._logEnvironment();
+    }, { notifier: this.notifications, announce: true });
 
     // Personalization + UX extras. Fully contained: if it ever fails, the core
     // CAD app is completely unaffected.
     runGuarded('Extras layer', () => {
       this.extras = initExtras({ notifier: this.notifications });
-    }, { notifier: this.notifications });
+    }, { notifier: this.notifications, announce: true });
 
     // Sound, hidden designer key, feasibility advisor, command palette, clothes
     // catalogue. Each is contained; a failure degrades that one feature only.
-    runGuarded('Sound', () => { this.sound = initSound(); });
-    runGuarded('Designer key', () => { this.admin = initAdmin({ notifier: this.notifications }); });
-    runGuarded('Feasibility advisor', () => { this.feasibility = createFeasibilityAdvisor(this); });
-    runGuarded('Clothes catalogue', () => { this.clothes = new ClothesEngine(); this._activeGarment = null; this._initClothesUI(); });
-    runGuarded('Command palette', () => { this.palette = initCommandPalette({ getActions: () => this._paletteActions() }); });
+    runGuarded('Sound', () => { this.sound = initSound(); }, { notifier: this.notifications, announce: true });
+    runGuarded('Designer key', () => { this.admin = initAdmin({ notifier: this.notifications }); }, { notifier: this.notifications, announce: true });
+    runGuarded('Feasibility advisor', () => { this.feasibility = createFeasibilityAdvisor(this); }, { notifier: this.notifications, announce: true });
+    runGuarded('Machine universe', () => { this.universe = createMachineUniverse(this); }, { notifier: this.notifications, announce: true });
+    runGuarded('Clothes catalogue', () => { this.clothes = new ClothesEngine(); this._activeGarment = null; this._initClothesUI(); }, { notifier: this.notifications, announce: true });
+    runGuarded('Command palette', () => { this.palette = initCommandPalette({ getActions: () => this._paletteActions() }); }, { notifier: this.notifications, announce: true });
 
     // Install / offline / launched files. Must come after the editor exists, because
     // a .kcard handed over by the operating system loads immediately.
@@ -95,7 +99,7 @@ class KnitApp {
         onIntent: intent => this._handleLaunchIntent(intent),
         onFile: file => this.loadProjectFile(file)
       });
-    }, { notifier: this.notifications });
+    }, { notifier: this.notifications, announce: true });
 
     // Autosave, crash recovery, versions, recents, backup. Opening IndexedDB is
     // async, so the panel resolves later; `settle()` runs at the end of
@@ -107,10 +111,10 @@ class KnitApp {
         snapshot: () => this._projectSnapshot(),
         applyDocument: (doc, label) => this.loadProjectText(doc, label)
       }).catch(err => {
-        console.error('[KNITCAT] data panel unavailable:', err);
+        getDiagnostics().logError('Data panel', err, { level: 'warn' });
         return null;
       });
-    }, { notifier: this.notifications });
+    }, { notifier: this.notifications, announce: true });
 
     // Share links, QR codes and the native sheet. Needs no storage, so it goes up
     // straight away; the File System Access bridge waits for the IndexedDB driver,
@@ -127,7 +131,7 @@ class KnitApp {
         saveFile: () => this.saveProject(),
         fileBridge: () => this.fileBridge
       });
-    }, { notifier: this.notifications });
+    }, { notifier: this.notifications, announce: true });
 
     // Show the Benji love popup ONCE per browser (not on every refresh).
     // It stays reachable again via the "Show love letter" command in the palette.
@@ -748,6 +752,10 @@ class KnitApp {
 
     // Feasibility advisor — the always-available "is this knit-able?" check.
     document.getElementById('btn-feasibility')?.addEventListener('click', () => this.openFeasibility());
+    // The sidebar health panel mirrors those two entry points so the deep tools
+    // are reachable right where the score is shown.
+    document.getElementById('btn-health-advisor')?.addEventListener('click', () => this.openFeasibility('advisor'));
+    document.getElementById('btn-health-universe')?.addEventListener('click', () => this.openMachineUniverse());
 
     // Beanie + Clothes canvases should track the window like the tank top does.
     window.addEventListener('resize', () => {
@@ -804,6 +812,7 @@ class KnitApp {
     this.updateScheduleUI();
     this.updateDiagnosticsUI();
     this.updateStatusStats();
+    this._renderHealth();
     this._cardDirty = false;
 
     // The kinematics sim always tracks the live card, not just the row it happened
@@ -1320,28 +1329,12 @@ class KnitApp {
   }
 
   openPresetsModal() {
-    const container = document.getElementById('presets-list');
-    if (!container) return;
-
-    container.innerHTML = PATTERN_PRESETS.map(p => `
-      <div class="preset-card" data-preset="${p.id}">
-        <canvas class="preset-thumb" width="120" height="90"></canvas>
-        <div class="preset-title">${p.name}</div>
-        <div class="preset-badge">${p.category}</div>
-        <div class="preset-desc">${p.description}</div>
-      </div>
-    `).join('');
-
-    container.querySelectorAll('.preset-card').forEach(card => {
-      const preset = PATTERN_PRESETS.find(x => x.id === card.dataset.preset);
-      this.renderPresetThumb(card.querySelector('.preset-thumb'), preset);
-      card.addEventListener('click', () => {
-        this.loadPreset(card.dataset.preset);
-        this.closeAllModals();
-      });
-    });
-
+    // The full submenu browser (family tabs, group drawers, search, bed filter,
+    // favourites) lives in its own module so this stays a one-line delegation.
+    openPresetsBrowser(this);
     this.openModal('presets');
+    // Focus the search box: the library is big enough that typing beats scrolling.
+    setTimeout(() => document.getElementById('presets-search')?.focus(), 30);
   }
 
   // Draw a tiny preview of a preset without touching the main editor state.
@@ -2207,7 +2200,7 @@ class KnitApp {
       for (const p of (PATTERN_PRESETS || [])) {
         acts.push({
           label: `Preset: ${p.name}`, group: 'Preset',
-          keywords: `preset pattern ${p.category || ''} ${p.name}`.toLowerCase(),
+          keywords: `preset pattern ${p.category || ''} ${p.family || ''} ${p.group || ''} ${(p.tags || []).join(' ')} ${p.name} ${p.description || ''}`.toLowerCase(),
           run: () => { this.loadPreset(p.id); }
         });
       }
@@ -2224,10 +2217,86 @@ class KnitApp {
     acts.push({ label: 'Toggle theme (light / dark)', group: 'Settings', keywords: 'theme light dark appearance toggle', run: () => document.getElementById('kx-theme')?.click() });
     acts.push({ label: 'About KNITCAT', group: 'Settings', keywords: 'about info story help who made this knitcat knit cat', run: () => document.querySelector('.brand-section .kx-hbtn')?.click() });
     acts.push({ label: 'Eyelets vs transfers explained', group: 'Advisor', keywords: 'eyelet yarnover transfer difference openwork single bed double bed hole lace why both', run: () => { document.querySelector('.tab-btn[data-tab="editor"]')?.click(); this.openModal('lace-guide'); } });
-    acts.push({ label: 'Check machine feasibility', group: 'Advisor', keywords: 'feasibility check valid fix float snag machine advice', run: () => this.openFeasibility() });
+    acts.push({ label: 'Check machine feasibility', group: 'Advisor', keywords: 'feasibility check valid fix float snag machine advice expert score health', run: () => this.openFeasibility() });
+    acts.push({ label: 'Compare across all machines (universe)', group: 'Advisor', keywords: 'machine universe compatibility cross fit any machine universal adapt brother silver reed passap toyota bulky', run: () => this.openMachineUniverse() });
+    acts.push({ label: 'Make this card fit every machine', group: 'Advisor', keywords: 'universal tune all machines compatible strictest adapt everywhere portability', run: () => { const r = this.universe?.tuneForAll?.(); this.recompile(); this.notifications?.[r && r.changed ? 'success' : 'info']?.(r && r.changed ? 'Tuned to fit every machine.' : 'Already fits every machine.'); } });
     acts.push({ label: 'Show love letter', group: 'Romance', keywords: 'love letter ily benji popup heart romantic', run: () => this._showLovePopup() });
     acts.push({ label: 'Clear the canvas', group: 'Edit', keywords: 'clear erase reset blank canvas new empty', run: () => this.editor?.clear() });
+    acts.push({ label: 'Toggle console', group: 'Diagnostics', keywords: 'console log terminal debug view panel open close ctrl backtick inspect telemetry', run: () => this.console?.toggle?.() });
+    acts.push({ label: 'Open console — Systems status', group: 'Diagnostics', keywords: 'systems status health environment capabilities subsystems boot loaded enabled console diagnostics', run: () => { this.console?.open?.(); this.console?.setView?.('systems'); } });
+    acts.push({ label: 'Diagnostics snapshot', group: 'Diagnostics', keywords: 'diagnostics debug log error warn health telemetry console inspect', run: () => this._diagnosticsSummary() });
+    acts.push({ label: 'Export diagnostics log (JSON)', group: 'Diagnostics', keywords: 'export diagnostics log json debug copy download telemetry error report', run: () => this._exportDiagnostics() });
     return acts;
+  }
+
+  /**
+   * Record a single, useful environment line at boot — engine, viewport, active
+   * machine + mode, and capability availability. One informative breadcrumb, not a
+   * firehose; the full detail rides along as the record payload for the console.
+   * @private
+   */
+  _logEnvironment() {
+    runGuarded('Environment probe', () => {
+      const diag = getDiagnostics();
+      const nav = globalThis.navigator || {};
+      const env = {
+        ua: nav.userAgent || '',
+        language: nav.language || '',
+        online: nav.onLine !== false,
+        dpr: globalThis.devicePixelRatio || 1,
+        viewport: `${globalThis.innerWidth}x${globalThis.innerHeight}`,
+        cores: nav.hardwareConcurrency || 0,
+        memory: nav.deviceMemory || 0,
+        storage: (() => { try { localStorage.setItem('__kx', '1'); localStorage.removeItem('__kx'); return true; } catch (_) { return false; } })(),
+        serviceWorker: !!nav.serviceWorker,
+        profile: this.currentProfile && this.currentProfile.id,
+        mode: this.currentMode
+      };
+      diag.context({ profile: env.profile, mode: env.mode });
+      diag.info(`Ready \u00b7 ${env.profile || 'custom'} \u00b7 ${env.mode} \u00b7 ${env.viewport}@${env.dpr}x \u00b7 ${env.cores} cores \u00b7 ${env.online ? 'online' : 'offline'}`, env);
+    }, { notifier: this.notifications });
+  }
+
+  /**
+   * Show a compact, non-blocking health snapshot of the diagnostics core: how many
+   * records were captured, by level and by category, and the slowest operations.
+   * @private
+   */
+  _diagnosticsSummary() {
+    runGuarded('Diagnostics summary', () => {
+      const s = getDiagnostics().snapshot();
+      const lvl = Object.entries(s.byLevel).map(([k, v]) => `${k} ${v}`).join(', ') || 'clean';
+      const cats = Object.entries(s.byCategory).map(([k, v]) => `${k} ${v}`).join(', ');
+      this.notifications?.info?.(`Diagnostics: ${s.total} record(s), uptime ${Math.round(s.uptimeMs / 1000)}s.`, {
+        title: 'Session health', details: [lvl, cats].filter(Boolean), duration: 7000
+      });
+    }, { notifier: this.notifications });
+  }
+
+  /**
+   * Copy the full diagnostics log to the clipboard and offer a JSON download, so a
+   * user can hand over exactly what went wrong without opening dev tools.
+   * @private
+   */
+  _exportDiagnostics() {
+    runGuarded('Export diagnostics', () => {
+      const json = getDiagnostics().exportJSON();
+      try {
+        const nav = globalThis.navigator;
+        if (nav && nav.clipboard && nav.clipboard.writeText) nav.clipboard.writeText(json).catch(() => {});
+      } catch (_) { /* clipboard may be unavailable */ }
+      try {
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'knitcat-diagnostics.json';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+      } catch (e) {
+        getDiagnostics().logError('Diagnostics download', e);
+      }
+      this.notifications?.success?.('Diagnostics log exported (also copied to clipboard).', { duration: 5000 });
+    }, { notifier: this.notifications });
   }
 
   _openSettingsViaExtras() {
@@ -2548,45 +2617,117 @@ class KnitApp {
     this.notifications.info(`Sent a ${targetCols}-st cast-on swatch to the editor \u2014 now draw your motif.`);
   }
 
-  // ---- Feasibility advisor modal (drives feasibility.js) ----
-  openFeasibility() {
+  // ---- Feasibility advisor modal (drives feasibility.js + machine-universe.js) ----
+  openFeasibility(startTab) {
     if (!this.feasibility) return;
     fx('open');
-    let v = this.feasibility.verdict();
+    let tab = startTab === 'universe' ? 'universe' : 'advisor';
     document.getElementById('kx-feas-backdrop')?.remove();
     const bd = document.createElement('div');
     bd.id = 'kx-feas-backdrop';
     bd.className = 'kx-cmd-backdrop';
     document.body.appendChild(bd);
-    const render = () => {
-      // verdict().status is 'feasible' | 'needs-attention' | 'not-feasible' — the
-      // badge classes in extras.js key off those exact strings.
+
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const selectProfile = id => {
+      const sel = document.getElementById('profile-select');
+      if (!sel) return;
+      sel.value = id;
+      sel.dispatchEvent(new Event('change'));
+    };
+    const scoreBar = n => `<div class="kx-score"><div class="kx-score-fill" style="width:${Math.max(2, n)}%"></div><span>${n}</span></div>`;
+
+    let v = this.feasibility.verdict();
+
+    const advisorTab = () => {
       const label = v.status === 'feasible' ? '\u2713 Machine-feasible'
         : v.status === 'needs-attention' ? '\u26a0 Needs attention'
         : '\u2715 Not feasible yet';
-      const cards = v.issues.map((it, i) => `
+      const m = v.machine || {};
+      const chips = [];
+      if (m.brand) chips.push(`<span class="kx-chip">${esc(m.brand)}</span>`);
+      if (m.gauge) chips.push(`<span class="kx-chip">${esc(m.gauge)}</span>`);
+      chips.push(`<span class="kx-chip">${m.beds === 2 ? 'Double bed' : 'Single bed'}</span>`);
+      if (m.limits) chips.push(`<span class="kx-chip">${m.limits.maxNeedles} needles</span>`, `<span class="kx-chip">float \u2264${m.limits.maxFloatNeedles}</span>`);
+      if (m.yarnWeights && m.yarnWeights.length && m.yarnWeights[0] !== 'any') chips.push(`<span class="kx-chip">yarn: ${esc(m.yarnWeights.join('/'))}</span>`);
+      const sevOrder = { error: 0, warn: 1, info: 2, ok: 3 };
+      const cards = v.issues.slice().sort((a, b) => (sevOrder[a.sev] ?? 9) - (sevOrder[b.sev] ?? 9)).map((it) => {
+        const idx = v.issues.indexOf(it);
+        return `
         <div class="kx-feas-card kx-feas-${it.sev}">
-          <div class="kx-feas-head"><span class="kx-feas-dot"></span><strong>${it.title}</strong></div>
-          <div class="kx-feas-prob">${it.problem}</div>
-          <div class="kx-feas-phil">${it.philosophy || ''}</div>
-          ${it.fix && it.fix.run ? `<button class="kx-feas-fix" data-fix="${i}">${it.fix.label}${it.fix.safe ? ' \u00b7 safe' : ''}</button>` : ''}
+          <div class="kx-feas-head"><span class="kx-feas-dot"></span><strong>${esc(it.title)}</strong>${it.category ? `<span class="kx-feas-cat">${esc(it.category)}</span>` : ''}</div>
+          <div class="kx-feas-prob">${esc(it.problem)}</div>
+          <div class="kx-feas-phil">${esc(it.philosophy || '')}</div>
+          ${it.fix && it.fix.run ? `<button class="kx-feas-fix" data-fix="${idx}">${esc(it.fix.label)}${it.fix.safe ? ' \u00b7 safe' : ''}</button>` : ''}
+        </div>`;
+      }).join('');
+      return `
+        <p class="kx-feas-sub">Checked live against ${esc(this.currentProfile.name)}. A fix only changes what it has to \u2014 nothing is touched until you click it.</p>
+        <div class="kx-feas-narr"><div class="kx-feas-narr-label">Expert reading</div>${esc(v.narrative)}</div>
+        <div class="kx-chips">${chips.join('')}</div>
+        <div class="kx-feas-list">${cards}</div>`;
+    };
+
+    const universeTab = () => {
+      if (!this.universe) return '<p class="kx-feas-sub">Machine universe unavailable.</p>';
+      const rows = this.universe.analyzeAll();
+      const c = this.universe.compatibility();
+      const spec = this.universe.universalSpec();
+      const counts = `<div class="kx-unv-counts">
+        <span class="kx-unv-count kx-unv-ok">${c.compatible} take it</span>
+        <span class="kx-unv-count kx-unv-warn">${c.attention} need a look</span>
+        <span class="kx-unv-count kx-unv-bad">${c.blocked} blocked</span></div>`;
+      const rowsHtml = rows.map(r => `
+        <div class="kx-unv-row kx-unv-${r.status}">
+          <div class="kx-unv-main">
+            <div class="kx-unv-name">${esc(r.name)}</div>
+            <div class="kx-unv-sub">${esc(r.gauge)} \u00b7 ${r.beds === 2 ? 'double bed' : 'single bed'}${r.blockers.length ? ` \u2014 ${esc(r.blockers[0])}` : r.risks.length ? ` \u2014 ${esc(r.risks[0])}` : ' \u2014 clean'}</div>
+          </div>
+          ${scoreBar(r.score)}
+          <div class="kx-unv-acts">
+            ${r.fixes.length ? `<button class="kx-mini" data-tune="${r.profileId}" title="Run this machine's safe fixes on your live card">Adapt</button>` : ''}
+            ${r.profileId !== this.currentProfile.id ? `<button class="kx-mini" data-switch="${r.profileId}" title="Select this machine and re-check">Switch</button>` : '<span class="kx-unv-cur">selected</span>'}
+          </div>
         </div>`).join('');
+      const bn = spec.bottleneck;
+      const specBoxes = [];
+      if (bn.float) specBoxes.push(`<span class="kx-chip">float \u2264 ${bn.float.value} (${esc(bn.float.name)})</span>`);
+      if (bn.tuck) specBoxes.push(`<span class="kx-chip">tuck \u2264 ${bn.tuck.value}</span>`);
+      if (bn.width) specBoxes.push(`<span class="kx-chip">width \u2264 ${bn.width.value} needles</span>`);
+      if (bn.rows) specBoxes.push(`<span class="kx-chip">rows \u2264 ${bn.rows.value}</span>`);
+      return `
+        <p class="kx-feas-sub">${esc(this.universe.summary())}</p>
+        ${counts}
+        <div class="kx-unv-spec"><div class="kx-feas-narr-label">Universal envelope (fits every machine)</div><div class="kx-chips">${specBoxes.join('')}</div></div>
+        <div class="kx-unv-list">${rowsHtml}</div>
+        <div class="kx-unv-foot"><button class="kx-btn kx-primary" id="kx-unv-all">Make it universal (tune for all machines)</button></div>`;
+    };
+
+    const render = () => {
+      v = this.feasibility.verdict();
+      const badge = v.status === 'feasible' ? '\u2713' : v.status === 'needs-attention' ? '\u26a0' : '\u2715';
       bd.innerHTML = `<div class="kx-feas" role="dialog" aria-modal="true" aria-label="Machine feasibility">
-        <div class="kx-feas-top"><h2>Machine feasibility</h2><span class="kx-feas-badge kx-feas-${v.status}">${label}</span></div>
-        <p class="kx-feas-sub">Checked live against ${this.currentProfile.name}. A fix only changes what it has to \u2014 nothing is touched until you click it.</p>
-        <div class="kx-feas-list">${cards}</div>
+        <div class="kx-feas-top">
+          <h2>Machine intelligence</h2>
+          <div class="kx-feas-topright">${scoreBar(v.score)}<span class="kx-feas-badge kx-feas-${v.status}">${badge} ${v.score}</span></div>
+        </div>
+        <div class="kx-feas-tabs" role="tablist">
+          <button class="kx-feas-tab ${tab === 'advisor' ? 'active' : ''}" data-tab="advisor" role="tab">Advisor</button>
+          <button class="kx-feas-tab ${tab === 'universe' ? 'active' : ''}" data-tab="universe" role="tab">Machine universe</button>
+        </div>
+        <div class="kx-feas-body">${tab === 'universe' ? universeTab() : advisorTab()}</div>
         <div class="kx-feas-foot">
-          ${v.fixable ? `<button class="kx-btn kx-primary" id="kx-feas-all">Fix all safe issues (${v.fixable})</button>` : ''}
+          ${tab === 'advisor' && v.fixable ? `<button class="kx-btn kx-primary" id="kx-feas-all">Fix all safe issues (${v.fixable})</button>` : ''}
           <button class="kx-btn" id="kx-feas-close">Done</button>
         </div>
       </div>`;
+
+      bd.querySelectorAll('.kx-feas-tab').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; render(); }));
+
       bd.querySelectorAll('[data-fix]').forEach(b => b.addEventListener('click', () => {
         const it = v.issues[parseInt(b.dataset.fix, 10)];
         try { it && it.fix && it.fix.run && it.fix.run(); } catch (_) { /* contained */ }
-        this.recompile();
-        v = this.feasibility.verdict();
-        fx('success');
-        render();
+        this.recompile(); fx('success'); render();
       }));
       const all = bd.querySelector('#kx-feas-all');
       if (all) all.addEventListener('click', () => {
@@ -2598,15 +2739,58 @@ class KnitApp {
           try { nxt.fix.run(); } catch (_) { break; }
           this.recompile();
         }
-        v = this.feasibility.verdict();
-        fx('success');
+        fx('success'); this._renderHealth(); render();
+      });
+
+      bd.querySelectorAll('[data-tune]').forEach(b => b.addEventListener('click', () => {
+        const res = this.universe.tune(b.dataset.tune);
+        this.recompile(); fx('success'); this._renderHealth();
+        this.notifications?.info?.(res.changed ? `Adapted the card for ${res.target}.` : `${res.target} already takes this card.`, { duration: 5000 });
+        render();
+      }));
+      bd.querySelectorAll('[data-switch]').forEach(b => b.addEventListener('click', () => {
+        selectProfile(b.dataset.switch);
+        v = this.feasibility.verdict(); render();
+      }));
+      const unvAll = bd.querySelector('#kx-unv-all');
+      if (unvAll) unvAll.addEventListener('click', () => {
+        const res = this.universe.tuneForAll();
+        this.recompile(); fx('success'); this._renderHealth();
+        this.notifications?.success?.(res.changed ? 'Tuned to fit every machine.' : 'Already fits every machine.', { duration: 5000 });
         render();
       });
+
       bd.querySelector('#kx-feas-close')?.addEventListener('click', () => bd.remove());
     };
     render();
     bd.addEventListener('mousedown', e => { if (e.target === bd) bd.remove(); });
     setTimeout(() => bd.querySelector('.kx-btn')?.focus(), 0);
+  }
+
+  // Open straight into the cross-machine tab (command palette / sidebar button).
+  openMachineUniverse() { this.openFeasibility('universe'); }
+
+  // A compact health + fleet readout for the right sidebar.
+  _renderHealth() {
+    const host = document.getElementById('kx-health-panel');
+    if (!host || !this.feasibility) return;
+    try {
+      const v = this.feasibility.verdict();
+      const score = Number.isFinite(v.score) ? v.score : 100;
+      const risk = v.risk || { label: '', blurb: '' };
+      host.querySelector('#kx-health-score') && (host.querySelector('#kx-health-score').textContent = `${score}`);
+      const ring = host.querySelector('#kx-health-ring');
+      if (ring) { ring.style.width = `${Math.max(2, score)}%`; ring.dataset.sev = v.status; }
+      const lbl = host.querySelector('#kx-health-label');
+      if (lbl) { lbl.textContent = risk.label || ''; lbl.title = risk.blurb || ''; }
+      const bd = host.querySelector('#kx-health-break');
+      if (bd) { const b = v.breakdown || {}; bd.textContent = `${b.error || 0} blockers \u00b7 ${b.warn || 0} risks \u00b7 ${b.info || 0} notes`; }
+      if (this.universe) {
+        const c = this.universe.compatibility();
+        const fit = host.querySelector('#kx-health-fit');
+        if (fit) fit.textContent = `${c.compatible}/${c.total} machines`;
+      }
+    } catch (_) { /* never let the panel break the app */ }
   }
 
   // Escape should close whatever is on top — our overlays AND the native modals.

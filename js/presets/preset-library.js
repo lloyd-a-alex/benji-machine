@@ -1,13 +1,28 @@
 /**
- * Authentic Historical & Algorithmic Knitwear Preset Library
- * 
- * Provides classic lace patterns, traditional stranded jacquards,
- * multi-tuck textures, and algorithmic specimens.
+ * KNITCAT - Pattern library, master index.
+ *
+ * Two halves are concatenated here into one `PATTERN_PRESETS`:
+ *   - the original hand-written classics below (`CLASSIC_PRESETS`), and
+ *   - the exhaustive recipe families authored in `patterns-*.js`, which build on the
+ *     shared `preset-recipe-helpers.js` toolkit and are classified into the two-tier
+ *     family/group taxonomy in `preset-catalog.js`.
+ *
+ * Everything is generative (`generate(rows, cols, seed)`), so the whole ~150-pattern
+ * collection is code, not hand-typed matrices, and it sizes itself to whatever bed the
+ * user has selected.
  */
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
+import { LACE_PRESETS } from './patterns-lace.js';
+import { COLORWORK_PRESETS } from './patterns-colorwork.js';
+import { TEXTURE_PRESETS, DOUBLE_BED_PRESETS } from './patterns-texture-dbed.js';
+import {
+  GENERATIVE_PRESETS,
+  EDGES_PRESETS,
+  SHAPING_PRESETS
+} from './patterns-generative-edges.js';
 
-export const PATTERN_PRESETS = [
+const CLASSIC_PRESETS = [
   {
     id: 'feather_fan_lace',
     name: 'Feather & Fan (Old Shale Lace)',
@@ -932,4 +947,56 @@ export const PATTERN_PRESETS = [
     }
   }
 ];
+
+/**
+ * Force any generated chart to the exact rectangle the caller asked for.
+ *
+ * Several of the original hand-written classics step a motif across the bed with a
+ * fixed stride (``for c += 12`` writing to ``c + 11``), so on a bed that is not an exact
+ * multiple of the repeat they write a few cells past the last needle and hand back a
+ * ragged matrix — which the editor and compiler must never see. Cropping the overhang
+ * (a hole on a needle that does not exist is no hole at all) and padding any shortfall
+ * keeps every recipe, old or new, a well-formed rectangle without editing each one.
+ */
+function normalizeChart(matrix, rows, cols, mode) {
+  const blank = mode === 'lace' ? STITCH_TYPE.KNIT : 0;
+  const source = Array.isArray(matrix) ? matrix : [];
+  const out = new Array(rows);
+  for (let r = 0; r < rows; r++) {
+    const src = Array.isArray(source[r]) ? source[r] : null;
+    const row = new Array(cols);
+    for (let c = 0; c < cols; c++) {
+      const value = src && c < src.length ? src[c] : undefined;
+      row[c] = value === undefined || value === null ? blank : value;
+    }
+    out[r] = row;
+  }
+  return out;
+}
+
+/**
+ * The complete collection: the original classics plus every authored recipe family.
+ * `category` is kept as a friendly fallback label (new presets ship with a `family`/
+ * `group` instead), so any older code that still reads a badge keeps working. Every
+ * `generate` is wrapped so the chart is always the requested rectangle (see normalizeChart).
+ */
+export const PATTERN_PRESETS = [
+  ...CLASSIC_PRESETS,
+  ...LACE_PRESETS,
+  ...COLORWORK_PRESETS,
+  ...TEXTURE_PRESETS,
+  ...DOUBLE_BED_PRESETS,
+  ...GENERATIVE_PRESETS,
+  ...EDGES_PRESETS,
+  ...SHAPING_PRESETS
+].map(p => {
+  const raw = p.generate.bind(p);
+  return {
+    ...p,
+    category: p.category || (p.group ? p.group.replace(/-/g, ' ') : 'Unclassified'),
+    generate: (rows, cols, seed) => normalizeChart(raw(rows, cols, seed), rows, cols, p.mode)
+  };
+});
+
+export { CLASSIC_PRESETS };
 

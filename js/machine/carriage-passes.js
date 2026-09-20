@@ -313,7 +313,7 @@ export function planLaceOperation(transfers = [], { mechanics = {}, startSide = 
       addPass(
         PASS_PURPOSE.COMPLETE,
         directionFromSide(side),
-        [],
+        operation.transfers,
         'Completion pass: the transferred loops are laid onto their new latches and the needles are released.'
       );
     }

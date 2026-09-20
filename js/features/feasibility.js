@@ -25,6 +25,7 @@
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
 import { profileLimits } from '../machine/profiles.js';
+import { getDiagnostics } from '../core/diagnostics.js';
 import {
   knowledgeFor, phil, scoreIssues, riskLabel, techniqueSupported
 } from '../machine/machine-knowledge.js';
@@ -191,7 +192,8 @@ export function createFeasibilityAdvisor(app) {
     // openwork balance, yarn-vs-gauge — and add the ones worth knowing about.
     // These are advisory (info) by design: they refine the reading without ever
     // gate-keeping a knit that the physics above already cleared.
-    try { extrasPass(M, { rows, cols, mode, profile, limits, issues }); } catch (_) { /* never throw */ }
+    try { extrasPass(M, { rows, cols, mode, profile, limits, issues }); }
+    catch (err) { getDiagnostics().logError('Feasibility deep pass', err, { level: 'warn' }); /* the core verdict stands */ }
 
     // A card is "clean" when nothing rose to error or warning. Info notes are
     // allowed to coexist with the all-clear, so we key off severity, not length.

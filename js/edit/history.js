@@ -442,10 +442,14 @@ export class HistoryTree {
    */
   serialize() {
     const path = this.pathTo(this.currentId);
-    const root = this.matrixOf(path[0].id);
+    const rootNode = path[0];
+    const root = this.matrixOf(rootNode.id);
     return {
       version: 1,
       root,
+      // The name you gave the state you started from is yours to keep; a restore
+      // that renamed it would be a small rude thing to do to somebody's work.
+      rootCheckpoint: rootNode.checkpoint ? rootNode.checkpointName : null,
       mode: this.mode,
       limit: this.limit,
       entries: path.slice(1).map(node => ({
@@ -465,7 +469,7 @@ export class HistoryTree {
       matrix: data.root,
       mode: data.mode || null,
       limit: data.limit || DEFAULT_HISTORY_LIMIT,
-      label: 'Restored card'
+      label: typeof data.rootCheckpoint === 'string' && data.rootCheckpoint ? data.rootCheckpoint : 'Restored card'
     });
     for (const entry of data.entries || []) {
       tree.commit({

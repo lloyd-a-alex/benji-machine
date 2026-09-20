@@ -25,6 +25,10 @@ let master = null;
 // a genuine gesture handler logs "The AudioContext was not allowed to start".
 // So the context is not even constructed until we have seen a real gesture.
 let gestureSeen = false;
+// resume() is asynchronous; calling it again while a previous attempt is still
+// settling is what made Chrome log the autoplay warning over and over. One in
+// flight at a time, ever.
+let resumeInFlight = false;
 
 function loadPref() {
   try { enabled = localStorage.getItem(KEY) !== 'off'; } catch (_) { enabled = true; }
@@ -54,14 +58,25 @@ function unlock() {
   gestureSeen = true;
   const c = ensureCtx();
   if (!c) return;
-  if (c.state === 'suspended') c.resume().catch(() => {});
-  try {
-    const buf = c.createBuffer(1, 1, 22050);
-    const src = c.createBufferSource();
-    src.buffer = buf;
-    src.connect(c.destination);
-    src.start(0);
-  } catch (_) { /* older engines: nothing to prime */ }
+  // Only ask for resume while suspended AND when no attempt is already settling, so a
+  // burst of key/pointer events cannot each fire a rejected resume (the console spam).
+  if (c.state === 'suspended' && !resumeInFlight) {
+    resumeInFlight = true;
+    const settle = () => { resumeInFlight = false; };
+    try { Promise.resolve(c.resume()).then(settle, settle); } catch (_) { settle(); }
+    try { c.addEventListener('statechange', settle, { once: true }); } catch (_) { /* older engines */ }
+  }
+  // The iOS silent-play ritual is harmless while suspended (it just queues), so keep
+  // priming on every genuine gesture until the context reports running.
+  if (c.state !== 'running') {
+    try {
+      const buf = c.createBuffer(1, 1, 22050);
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      src.connect(c.destination);
+      src.start(0);
+    } catch (_) { /* older engines: nothing to prime */ }
+  }
 }
 
 /** Play a single enveloped tone. */
@@ -152,8 +167,16 @@ export function initSound() {
   loadPref();
   injectToggle();
   // Any real interaction arms audio. Not `once` — the first resume() can still
-  // be rejected (async), so we keep trying until the context reports running.
-  const arm = () => { if (!isReady()) unlock(); };
+  // be rejected (async), so we keep trying until the context reports running,
+  // then detach entirely so we never touch audio (or the console) again.
+  const arm = () => {
+    if (isReady()) {
+      window.removeEventListener('pointerdown', arm);
+      window.removeEventListener('keydown', arm);
+      return;
+    }
+    unlock();
+  };
   window.addEventListener('pointerdown', arm, { passive: true });
   window.addEventListener('keydown', arm);
   window.addEventListener('knit:fx', e => play(e && e.detail));

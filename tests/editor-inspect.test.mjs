@@ -70,10 +70,18 @@ test('a patch across a resize grows the card and shrinks it back', () => {
     [0, 0]
   ];
   const patch = diffMatrices(small, big);
-  assert.equal(patch.length, 2, 'the new row has two cells');
-  assert.equal(patch[0].from, undefined);
+  assert.deepEqual(
+    patch[0],
+    { size: { rows: 2, cols: 2 }, from: { rows: 1, cols: 2 } },
+    'the patch has to say the card changed shape, or undo cannot say so'
+  );
+  assert.equal(patch.length, 3, 'the shape entry plus the two new cells');
+  assert.equal(patch[1].from, undefined);
   assert.deepEqual(applyPatch(small, patch), big);
   assert.deepEqual(applyPatch(big, patch, { inverse: true }), small, 'undoing an inserted row leaves no blank row behind');
+  assert.deepEqual(applyPatch(big, invertPatch(patch)), small, 'and an inverted patch says the same thing');
+  // The other direction: a trim must come back as a trim, not as a row of holes.
+  assert.deepEqual(applyPatch(big, diffMatrices(big, small)), small);
 });
 
 test('the tree keeps every branch you abandon', () => {
@@ -94,7 +102,9 @@ test('the tree keeps every branch you abandon', () => {
   assert.equal(tree.jump(abandoned.id), true);
   assert.deepEqual(tree.currentMatrix(), punched);
   assert.equal(tree.redoChoices().length, 0, 'it has no children of its own');
-  assert.equal(tree.canRedo(), true, 'but it can go back to the fork');
+  assert.equal(tree.canRedo(), false, 'a leaf has nothing ahead of it — the fork is reached by jumping, not by redo');
+  assert.equal(tree.nodes.get(tree.rootId).childIds.length, 2, 'the fork still carries both branches');
+  assert.equal(tree.tree().length, 3, 'root and both branches are all still on the shelf');
 });
 
 test('checkpoints survive, are jumpable by name, and refuse to be folded away', () => {
@@ -134,7 +144,7 @@ test('history serialises the trail you stopped on, not the whole tree', () => {
   assert.equal(dump.entries[0].checkpoint, 'halfway');
   const restored = HistoryTree.deserialize(dump);
   assert.deepEqual(restored.currentMatrix(), [[1, 1]]);
-  assert.deepEqual(restored.checkpoints().map(node => node.checkpointName), ['start', 'halfway']);
+  assert.deepEqual(restored.checkpoints().map(node => node.checkpointName), ['start', 'halfway'], 'the names you gave survive a save');
   assert.equal(HistoryTree.deserialize(null), null);
 });
 
@@ -216,7 +226,7 @@ test('layers resize with the card, flatten on request, and follow the mode', () 
   const converted = convertStackModes(stack, 'lace', 'fair_isle');
   assert.equal(converted.stack.mode, 'fair_isle');
   assert.equal(converted.stack.layers[0].matrix[0][0], 1, 'the eyelet became a punched cell');
-  assert.equal(converted.stack.layers[0].matrix[1][1], 0, 'a transfer cannot survive as a hole and becomes blank');
+  assert.equal(converted.stack.layers[0].matrix[1][1], 1, 'a transfer becomes a punched cell: Fair Isle can say that a needle is worked, just not which operation');
 });
 
 test('layer order is the draw order', () => {
@@ -224,7 +234,11 @@ test('layer order is the draw order', () => {
   assert.equal(stack.layers[1].id, top);
   moveLayerBy(stack, top, -1);
   assert.equal(stack.layers[0].id, top, 'the eyelet layer is now underneath');
-  assert.deepEqual(composite(stack).matrix, [[K, K], [K, TL]], 'so the base paints over it');
+  assert.deepEqual(
+    composite(stack).matrix,
+    [[O, K], [K, TL]],
+    'the eyelet survives underneath: a blank cell cannot punch out a lower layer, so reordering never erases'
+  );
   reorderLayer(stack, top, 1);
   assert.equal(findLayer(stack, base).name, 'Base');
   assert.equal(canDrawOn(findLayer(stack, top)), true);
@@ -272,7 +286,10 @@ test('snapping prefers the guide, then the repeat edge, then the needle', () => 
   assert.equal(snapPosition(5.8, { repeats: [repeat], axis: 'col' }).kind, 'repeat');
   assert.equal(snapPosition(5.8, { repeats: [repeat], axis: 'col' }).value, 6);
   assert.equal(snapPosition(3.6, {}).kind, 'cell');
-  assert.equal(snapPosition(3.4, {}).snapped, false, 'a slow, careful drag is not fought by the tool');
+  assert.equal(snapPosition(3.4, {}).value, 3, 'once cell snapping is on, a drag lands on a whole needle');
+  assert.equal(snapPosition(3.4, {}).snapped, true);
+  assert.equal(snapPosition(4, {}).snapped, false, 'already on a needle, so nothing moved and nothing is claimed');
+  assert.equal(snapPosition(3.4, { config: { cells: false } }).snapped, false, 'turn it off and the tool stops fighting a slow, careful drag');
   assert.equal(snapPosition(4.0, { guides: [4], config: { enabled: false } }).snapped, false);
 });
 
@@ -339,7 +356,8 @@ test('the ruler counts stitches, because that is what a knitter can act on', () 
   assert.equal(ticks.length, 8, 'a tick per boundary, including the right edge');
   assert.equal(ticks[0].label, '0');
   assert.equal(ticks[0].major, true);
-  assert.equal(ticks[3].major, false, '44 px apart means every 3 cells at this zoom');
+  assert.equal(ticks[1].major, false, 'labels want 44 px, so at 20 px per cell every 3rd boundary is numbered');
+  assert.equal(ticks[3].major, true);
   assert.ok(Math.abs(ticks[6].mm - 27) < 0.001);
   assert.equal(ticks[6].major, true);
   assert.deepEqual(rulerTicks(0, 4.5), []);
@@ -354,7 +372,7 @@ test('distance and angle are reported in both currencies', () => {
   assert.equal(line.dRows, 10);
   assert.equal(line.xMm, 27);
   assert.equal(line.yMm, 50);
-  assert.ok(Math.abs(line.lengthMm - 56.7) < 0.1);
+  assert.ok(Math.abs(line.lengthMm - 56.82) < 0.01, 'the hypotenuse of 27 by 50 mm, in mm');
   assert.equal(line.slope, '6:10');
   assert.equal(measureBetween(a, { r: 4, c: 4 }, STANDARD).diagonal, true);
   assert.equal(angleBetween(a, { r: 1, c: 1 }).cardinal, 'diagonal up ↗');
@@ -571,7 +589,7 @@ test('pasting across gauges re-spaces the block rather than lying about its size
   assert.equal(same.warnings.length, 0, 'no conversion is claimed when nothing changed');
   const refused = prepareForPaste(entry, { mode: 'fair_isle', rows: 8, cols: 12, pitch: { x: 4.5, y: 5 }, resize: { rows: 40, cols: 40 } });
   assert.equal(refused.ok, false);
-  assert.match(refused.error, /60 needles/);
+  assert.match(refused.error, /40 needles/, 'it names the size it was asked for, not the size it happened to have');
 });
 
 test('pasting can be flipped and turned on the way in', () => {
