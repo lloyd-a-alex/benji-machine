@@ -182,7 +182,23 @@ header#main-header {
   display: flex;
   align-items: center;
   gap: 16px;
+  /* At 100% the mode segmented control used to collide with the Search cluster:
+     a nowrap flex header can't shrink, so the two groups just overlapped. Let
+     the centre yield — it scrolls in place (bar hidden) below its children's
+     natural width, so Lace/Fair Isle/Tuck/Slip never land on top of Search. */
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+
+.header-center::-webkit-scrollbar { display: none; }
+
+/* Children hold their intrinsic size; any overflow is handled by the scroll on
+   .header-center above, never by squashing a control into its neighbour. */
+.header-center > * { flex: 0 0 auto; }
 
 .profile-picker {
   display: flex;
@@ -270,8 +286,10 @@ header#main-header {
   align-items: center;
   gap: 8px;
   flex-wrap: nowrap;
+  /* Never let the action cluster compress — it pins Search/Export to the right
+     edge so the shrinking burden falls entirely on the centre selector. */
+  flex: 0 0 auto;
   justify-content: flex-end;
-  min-width: 0;
 }
 
 .btn-action {
@@ -1310,6 +1328,12 @@ button, [role="button"], label, a, input[type="range"], input[type="checkbox"], 
 .sidebar-panel {
   padding: 16px;
   border-bottom: 1px solid var(--border-subtle);
+  /* The sidebar is a scrolling flex column. Without this every panel kept the
+     default flex-shrink:1 and squashed to fit the viewport height — content
+     overflowed the compressed box and the sections visually collided at 100%
+     (only resolving when zoomed out to ~67%). Pinning the natural size lets the
+     column scroll for real instead of overlapping. */
+  flex: 0 0 auto;
 }
 
 .sidebar-title {
@@ -1568,18 +1592,34 @@ footer#status-bar {
   font-size: 11px;
   color: var(--text-muted);
   z-index: 20;
+  /* Always exactly one line: the bar has a fixed height, so let long segments
+     (coords / stats / the dedication) clip with an ellipsis instead of pushing
+     off the edge or overlapping the opposite group. */
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .status-left {
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
 }
 
 .status-right {
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.status-left > span,
+.status-right > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-indicator {
@@ -2738,17 +2778,29 @@ html[data-theme="light"] .btn-action.btn-primary { color: #fff; }
   overflow-wrap: anywhere;
 }
 
-/* The tab strip carries 9 tabs; it has always to fit, on any width. */
+/* The tab strip carries 9 tabs — Pattern CAD editor through to the CNC toolpath
+   visualiser — so it is really a horizontal carousel of views. Make that scroll
+   obvious: a slim always-visible scrollbar (the clearest "there's more here"
+   affordance), soft leading/trailing edge fades hinting the off-screen tabs, and
+   snap so each view lands cleanly. (The scrollbar used to be hidden — which is
+   exactly why the strip didn't read as scrollable.) */
 .tab-bar {
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
   -webkit-overflow-scrolling: touch;
   scroll-snap-type: x proximity;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 30px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 30px), transparent 100%);
 }
-.tab-bar::-webkit-scrollbar { display: none; }
+.tab-bar::-webkit-scrollbar { height: 5px; }
+.tab-bar::-webkit-scrollbar-track { background: transparent; }
+.tab-bar::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 999px; }
+.tab-bar::-webkit-scrollbar-thumb:hover { background: var(--accent-cyan); }
 .tab-btn {
   flex: 0 0 auto;
+  white-space: nowrap;
   scroll-snap-align: start;
 }
 

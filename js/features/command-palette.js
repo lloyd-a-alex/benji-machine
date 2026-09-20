@@ -213,6 +213,10 @@ function open(prefill = '') {
   const list = backdrop.querySelector('.kx-cmd-list');
   els = { backdrop, input, list };
   if (prefill) input.value = prefill;
+  // Gather commands fresh each open (the DOM may have changed) and populate the
+  // list BEFORE the first render — otherwise allCommands is still the initial []
+  // and every keystroke filters an empty array, so "nothing happens".
+  allCommands = gatherCommands(_getActions);
   render(input.value);
   setTimeout(() => input.focus(), 0);
 

@@ -41,6 +41,7 @@ import { initPwa } from './features/pwa.js';
 import { initDataPanel } from './features/data-panel.js';
 import { initShare, incomingShareDocument } from './features/share.js';
 import { readShareUrl, decodeCard, stripShareUrl } from './project/url-state.js';
+import { initProjectHub } from './features/project-hub.js';
 import { createFileBridge } from './features/fs-access.js';
 import { ClothesEngine, GARMENTS, CATEGORIES } from './tailor/clothes-catalog.js';
 import { gradeSizes } from './tailor/grading.js';
@@ -51,7 +52,7 @@ class KnitApp {
     this.currentMode = 'lace';
     this.activeTab = 'editor';
     this.romanceMode = true; // Always on — this machine is made for Benji ♥
-    this.punchcardViewMode = 'standard';
+    this.punchcardViewMode = 'standard';  
     this.notifications = new NotificationCenter('toast-container');
     // Descriptive fields for the project document. The metadata editor writes them;
     // autosave, versions and backups all carry the same object, so a restored card
@@ -144,6 +145,24 @@ class KnitApp {
         applyDocument: (doc, label) => this.loadProjectText(doc, label),
         saveFile: () => this.saveProject(),
         fileBridge: () => this.fileBridge
+      });
+    }, { notifier: this.notifications, announce: true });
+
+    // The Studio — the project hub the whole app finally hangs off (Phase 1 of the
+    // superstructure). Reaches no DOM until opened and every storage call is
+    // guarded, so it is inert if anything is unavailable.
+    this.projects = null;
+    runGuarded('Project studio', () => {
+      this.projects = initProjectHub({
+        notifier: this.notifications,
+        getChart: () => {
+          const s = this._projectSnapshot();
+          return { matrix: s.stitchMatrix, mode: s.mode, profileId: s.profileId, rows: s.rows, cols: s.cols, name: s.name };
+        },
+        loadChart: chart => this.loadProjectText(JSON.stringify({
+          format: 'KNITCAT_PROJECT_V2', kind: 'KNITCAT_PROJECT', schemaVersion: 2,
+          stitchMatrix: chart.cells, mode: chart.mode, profileId: chart.profileId, name: chart.name
+        }), chart.name || 'your project')
       });
     }, { notifier: this.notifications, announce: true });
 
@@ -2135,6 +2154,9 @@ class KnitApp {
     acts.push({ label: 'Name this clip (save to slot)', group: 'Clipboard', keywords: 'clip clipboard slot name save persist library motif vocabulary star slot', run: () => this.clipShelf?.promptSaveSlot?.() });
     acts.push({ label: 'Diagnostics snapshot', group: 'Diagnostics', keywords: 'diagnostics debug log error warn health telemetry console inspect', run: () => this._diagnosticsSummary() });
     acts.push({ label: 'Export diagnostics log (JSON)', group: 'Diagnostics', keywords: 'export diagnostics log json debug copy download telemetry error report', run: () => this._exportDiagnostics() });
+    // The Studio folds in as first-class palette citizens so "open a project" is
+    // searchable like everything else.
+    try { (this.projects?.commands?.() || []).forEach(cmd => acts.push(cmd)); } catch (_) { /* hub absent */ }
     return acts;
   }
 
