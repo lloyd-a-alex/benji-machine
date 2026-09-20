@@ -40,20 +40,74 @@ let results = [];    // filtered command array
 let sel = 0;
 let allCommands = [];
 
+const RECENT_KEY = 'knitcad.cmdRecent.v1';
+const RECENT_MAX = 8;
+
+function readRecent() {
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    return raw ? JSON.parse(raw) : []; 
+  } catch (_) {
+    return [];
+  }
+}
+
+// Push a just-run command to the front of the recents list (deduped, capped).
+function pushRecent(label) {
+  try {
+    const list = readRecent().filter(l => l !== label);
+    list.unshift(label);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX)));
+  } catch (_) {
+    /* storage off — recents simply won't persist */
+  }
+}
+
 function norm(s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+
+// Fuzzy subsequence: are the query's characters present in order? Rewards runs
+// that start on word boundaries and adjacent matches, so "expdf" -> "Export PDF".
+function fuzzy(text, q) {
+  if (!q) return 1;
+  let ti = 0;
+  let score = 0;
+  let streak = 0;
+  for (let qi = 0; qi < q.length; qi++) {
+    const ch = q[qi];
+    let found = -1;
+    while (ti < text.length) {
+      const c = text[ti];
+      if (c === ch) { found = ti; break; }
+      ti++;
+    }
+    if (found < 0) return 0;
+    const boundary = found === 0 || /[\s\/\-_.]/.test(text[found - 1]);
+    score += 1 + (boundary ? 3 : 0) + (found === ti - streak ? streak : 0);
+    streak = found === ti ? streak + 1 : 1;
+    ti++;
+  }
+  return score;
+}
 
 // Score a command against a query; higher is better, 0 = no match.
 function score(cmd, q) {
   if (!q) return 1;
-  const hay = norm(cmd.label + ' ' + (cmd.keywords || ''));
+  const label = norm(cmd.label);
+  const hay = norm(label + ' ' + (cmd.keywords || ''));
+  // 1) every whitespace token must at least fuzzy-match the haystack
   const tokens = q.split(' ').filter(Boolean);
   let total = 0;
   for (const t of tokens) {
-    if (!hay.includes(t)) return 0;              // every token must appear
-    total += cmd.label.toLowerCase().startsWith(t) ? 6 : 3;
+    if (label.includes(t)) total += label.startsWith(t) ? 12 : 6;       // exact substring, strong
+    else if (hay.includes(t)) total += 4;                                // in keywords
+    else {
+      const f = fuzzy(hay, t);
+      if (!f) return 0;                                                  // token simply absent
+      total += f;
+    }
   }
-  // subsequence bonus so single words still rank well
-  if (hay.includes(q)) total += 4;
+  // whole-phrase bonus so a full phrase beats scattered letters
+  if (hay.includes(q)) total += 8;
   return total;
 }
 
@@ -76,17 +130,51 @@ function gatherCommands(getActions) {
 }
 
 function render(q) {
-  const scored = allCommands
-    .map(c => ({ c, s: score(c, norm(q)) }))
-    .filter(x => x.s > 0)
-    .sort((a, b) => b.s - a.s || a.c.label.localeCompare(b.c.label))
-    .slice(0, 40)
-    .map(x => x.c);
-  results = scored;
+  const query = norm(q);
+  if (query) {
+    // Search mode: a single ranked list; each row still carries its group tag.
+    results = allCommands
+      .map(c => ({ c, s: score(c, query) }))
+      .filter(x => x.s > 0)
+      .sort((a, b) => b.s - a.s || a.c.label.localeCompare(b.c.label))
+      .slice(0, 60)
+      .map(x => x.c);
+    paint(false);
+    return;
+  }
+  // Browse mode (empty query): recently used first, then everything grouped under
+  // section headers, so the palette is a readable map of the app, not a wall.
+  const byLabel = new Map();
+  allCommands.forEach(c => { if (!byLabel.has(c.label)) byLabel.set(c.label, c); });
+  const recents = readRecent().map(l => byLabel.get(l)).filter(Boolean);
+  const recentSet = new Set(recents.map(c => c.label));
+  const rest = allCommands
+    .filter(c => !recentSet.has(c.label))
+    .slice()
+    .sort((a, b) => String(a.group || '').localeCompare(String(b.group || '')) || a.label.localeCompare(b.label));
+  results = [...recents, ...rest];
+  paint(true, new Set(recents.map(c => c.label)));
+}
+
+// Build the list markup. `withHeaders` inserts a non-selectable section row each
+// time the group changes; selection indices still map 1:1 onto `results`.
+function paint(withHeaders, recentSet) {
   sel = 0;
-  els.list.innerHTML = scored.map((c, i) =>
-    `<div class="kx-cmd-item${i === 0 ? ' sel' : ''}" data-i="${i}"><span class="kx-cmd-label">${esc(c.label)}</span><span class="kx-cmd-group">${esc(c.group || '')}</span></div>`
-  ).join('') || '<div class="kx-cmd-empty">Nothing matches — try another word ♥</div>';
+  let lastGroup = null;
+  const rows = results.map((c, i) => {
+    let head = '';
+    if (withHeaders) {
+      const g = recentSet && recentSet.has(c.label) ? 'Recent' : (c.group || '');
+      if (g !== lastGroup) {
+        lastGroup = g;
+        head = `<div class="kx-cmd-grouphd" role="presentation">${esc(g)}</div>`;
+      }
+    }
+    return head + `<div class="kx-cmd-item${i === 0 ? ' sel' : ''}" data-i="${i}" role="option" aria-selected="${i === 0}">`
+      + `<span class="kx-cmd-label">${esc(c.label)}</span>`
+      + `<span class="kx-cmd-group">${esc((withHeaders && recentSet && recentSet.has(c.label)) ? '' : (c.group || ''))}</span></div>`;
+  });
+  els.list.innerHTML = rows.join('') || '<div class="kx-cmd-empty">Nothing matches — try another word ♥</div>';
 }
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -103,7 +191,10 @@ function moveSel(d) {
 function runSel() {
   const cmd = results[sel];
   close();
-  if (cmd && typeof cmd.run === 'function') { try { cmd.run(); } catch (_) { /* contained */ } }
+  if (cmd && typeof cmd.run === 'function') {
+    try { pushRecent(cmd.label); } catch (_) { /* ignore */ }
+    try { cmd.run(); } catch (_) { /* contained */ }
+  }
 }
 
 function open(prefill = '') {
@@ -113,9 +204,9 @@ function open(prefill = '') {
   const backdrop = document.createElement('div');
   backdrop.className = 'kx-cmd-backdrop';
   backdrop.innerHTML = `<div class="kx-cmd" role="dialog" aria-modal="true" aria-label="Search commands">
-    <input class="kx-cmd-input" type="text" placeholder="Type a word — beanie, shirt, punchcard, export…" autocomplete="off" spellcheck="false">
-    <div class="kx-cmd-list"></div>
-    <div class="kx-cmd-foot"><span>↑↓ move</span><span>↵ run</span><span>esc close</span></div>
+    <input class="kx-cmd-input" type="text" placeholder="Search anything — a tool, preset, machine, export…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="kx-cmd-list" aria-autocomplete="list">
+    <div class="kx-cmd-list" id="kx-cmd-list" role="listbox" aria-label="Commands"></div>
+    <div class="kx-cmd-foot"><span>↑↓ move</span><span>↵ run</span><span>esc close</span><span class="kx-cmd-hint">Type to fuzzy-search the whole app</span></div>
   </div>`;
   document.body.appendChild(backdrop);
   const input = backdrop.querySelector('.kx-cmd-input');
@@ -160,6 +251,8 @@ function ensureStyles() {
   .kx-cmd-input{width:100%;box-sizing:border-box;background:transparent;border:0;outline:none;color:#fff;
     font-size:18px;padding:16px 18px;border-bottom:1px solid #1c2f4d}
   .kx-cmd-list{max-height:52vh;overflow:auto;padding:6px}
+  .kx-cmd-grouphd{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+    color:#7dd3fc;opacity:.7;padding:10px 12px 4px;position:sticky;top:0;background:linear-gradient(#0f1a2e,#0f1a2e)}
   .kx-cmd-item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:9px 12px;border-radius:9px;cursor:pointer}
   .kx-cmd-item.sel,.kx-cmd-item:hover{background:rgba(56,189,248,.16)}
   .kx-cmd-label{font-size:14px}

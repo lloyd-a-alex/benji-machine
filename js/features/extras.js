@@ -106,8 +106,10 @@ function daysTogether() {
 function injectStyles() {
   if (document.getElementById('knitcat-extras-style')) return;
   const css = `
-  .kx-greet{font-size:11px;color:var(--brand-accent,#fb7185);margin-left:8px;opacity:.85;font-style:italic}
-  .kx-days{font-size:11px;color:var(--text-secondary,#cbd5e1);margin-left:6px}
+  /* Fixed-width, ellipsised so the header NEVER reflows when the love text rotates
+     between "ily ♥" and a long sentence — one line, stable layout, always. */
+  .kx-greet{display:inline-block;vertical-align:bottom;width:208px;max-width:208px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--brand-accent,#fb7185);margin-left:8px;opacity:.85;font-style:italic}
+  .kx-days{display:inline-block;vertical-align:bottom;width:96px;max-width:96px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text-secondary,#cbd5e1);margin-left:6px}
   .kx-hbtn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;margin-left:6px;
     border:1px solid var(--brand-accent,#fb7185);border-radius:8px;background:transparent;color:var(--brand-accent,#fb7185);
     cursor:pointer;font-size:15px;line-height:1;transition:background .15s,transform .1s}
@@ -254,7 +256,7 @@ function injectStyles() {
   html[data-theme="light"] #right-sidebar,html[data-theme="light"] .tab-bar,
   html[data-theme="light"] .sidebar-panel,html[data-theme="light"] .tanktop-sidebar{background:#fff;color:#0f172a}
   html[data-theme="light"] #viewport-workspace,html[data-theme="light"] .tab-content{background:#f8fafc}
-  html[data-theme="light"] .brand-title,html[data-theme="light"] .tool-group-title{color:#0f172a}
+  html[data-theme="light"] .brand-title,html[data-theme="light"] .tool-submenu-btn{color:#0f172a}
   html[data-theme="light"] .tab-btn,html[data-theme="light"] .tool-btn,html[data-theme="light"] .btn-action{color:#334155}
   html[data-theme="light"] .btn-action{background:#fff;border-color:#dbe3ee}
   html[data-theme="light"] .canvas-subbar{background:rgba(255,255,255,.9);border-color:#dbe3ee}

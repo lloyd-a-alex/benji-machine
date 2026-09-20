@@ -102,7 +102,9 @@ header#main-header {
   align-items: center;
   justify-content: space-between;
   min-height: 48px;
-  flex-wrap: wrap;
+  /* One line on desktop: never wrap the love text onto a second row. The tablet /
+     phone tiers (<=900px) intentionally switch back to wrap. */
+  flex-wrap: nowrap;
   row-gap: 6px;
   padding: 0 16px;
   background-color: var(--bg-surface);
@@ -114,6 +116,9 @@ header#main-header {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
 }
 
 .brand-icon {
@@ -213,7 +218,7 @@ header#main-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   min-width: 0;
 }
@@ -259,20 +264,19 @@ header#main-header {
   position: relative;
 }
 
-/* --- Left Toolbar Palette --- */
+/* --- Left Toolbar Palette (accessible submenus) --- */
 #left-toolbar {
-  width: 54px;
+  width: 188px;
   background-color: var(--bg-surface);
   border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 10px 0 18px;
-  gap: 16px;
+  padding: 8px;
+  gap: 4px;
   z-index: 10;
-  /* The palette has grown well past one screenful (Draw alone is 10 tools, and
-     the touch tier makes every button 44px). Without this the Transform and View
-     groups fall off the bottom and are simply unreachable. Scroll in place. */
+  /* The palette is now a stack of collapsible submenus. It is still scrollable in
+     place so a narrow window (or every section open at once) never pushes tools off
+     screen. */
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -288,28 +292,90 @@ header#main-header {
 }
 #left-toolbar::-webkit-scrollbar-thumb:hover { background: var(--accent-cyan); }
 
-/* Keep the group captions from being clipped by the rounded tool buttons when
-   the column is packed tight. */
-#left-toolbar .tool-group { flex: 0 0 auto; }
-
 /* Hide left toolbar when context-specific toolbars are active */
 #left-toolbar.hidden {
   display: none;
 }
 
-.tool-group {
+/* One submenu section (Draw / Shapes / Transform / History / View). */
+.tool-submenu {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
+  flex: 0 0 auto;
 }
 
-.tool-group-title {
-  font-size: 9px;
+/* The section header doubles as the only thing visible when collapsed. */
+.tool-submenu-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 7px 8px;
+  cursor: pointer;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.tool-submenu-btn:hover {
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+}
+
+.tool-submenu-btn[aria-expanded="true"] {
+  color: var(--accent-cyan);
+}
+
+.tool-submenu-btn:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 1px;
+}
+
+.tool-submenu-ico {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.tool-submenu-label {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-submenu-chev {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  opacity: 0.55;
+  transition: transform 0.15s ease;
+}
+
+.tool-submenu-btn[aria-expanded="true"] .tool-submenu-chev {
+  transform: rotate(90deg);
+}
+
+/* The tool grid inside an open section. */
+.tool-submenu-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 6px;
+  justify-items: center;
+  padding: 6px 4px 8px;
+}
+
+/* Collapsed sections hide their body purely from the aria state, so the layout is
+   driven by one accessible source of truth (and needs no extra class juggling). */
+.tool-submenu-btn[aria-expanded="false"] + .tool-submenu-body {
+  display: none;
 }
 
 .tool-btn {
@@ -330,6 +396,11 @@ header#main-header {
 .tool-btn:hover {
   background-color: var(--bg-surface-elevated);
   color: var(--text-primary);
+}
+
+.tool-btn:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 1px;
 }
 
 .tool-btn.active {
@@ -2721,8 +2792,20 @@ html[data-theme="light"] .btn-action.btn-primary { color: #fff; }
     -webkit-overflow-scrolling: touch;
   }
   #left-toolbar::-webkit-scrollbar { display: none; }
-  .tool-group { flex-direction: row; flex: 0 0 auto; width: auto; gap: 6px; }
-  .tool-group-title { align-self: center; padding-left: 2px; }
+  /* On a phone the rail is a single horizontal strip: every submenu is forced open
+     so its tools are one tap away, headers become compact icon+label chips, and the
+     grid inside each body flows in a row instead of a wrapped column. */
+  .tool-submenu { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 4px; }
+  .tool-submenu-btn { width: auto; padding: 6px; }
+  .tool-submenu-chev { display: none; }
+  .tool-submenu-btn[aria-expanded="false"] + .tool-submenu-body { display: grid; }
+  .tool-submenu-body {
+    display: grid;
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    justify-content: start;
+    padding: 0 4px 0 0;
+  }
 
   /* Legacy absolute context rails, if present, join the stack. */
   .context-toolbar {

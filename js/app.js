@@ -18,6 +18,7 @@ import { FormatsExporter } from './exporters/formats-dak.js';
 import { readProject } from './project/kcard.js';
 import { PATTERN_PRESETS } from './presets/preset-library.js';
 import { openPresetsBrowser } from './presets/presets-browser.js';
+import { initToolbar } from './ui/toolbar.js';
 import { TankTopCanvas } from './ui/tank-top-canvas.js';
 import { BeanieEngine } from './tailor/beanie-engine.js';
 import { BrotherSimCanvas } from './ui/brother-sim-canvas.js';
@@ -26,6 +27,7 @@ import { installGlobalErrorBoundary, installRoundRectPolyfill, runGuarded } from
 import { getDiagnostics } from './core/diagnostics.js';
 import { createConsolePanel } from './ui/console-panel.js';
 import { createStitchInspector } from './ui/stitch-inspector.js';
+import { createClipShelf } from './ui/clip-shelf.js';
 import { initExtras } from './features/extras.js';
 import { initSound, fx } from './features/sound.js';
 import { initCommandPalette } from './features/command-palette.js';
@@ -68,6 +70,13 @@ class KnitApp {
     runGuarded('DOM wiring', () => this.initDOM(), { notifier: this.notifications, announce: true });
     runGuarded('Components', () => this.initComponents(), { notifier: this.notifications, announce: true });
     runGuarded('Event wiring', () => this.initEvents(), { notifier: this.notifications, announce: true });
+
+    // Left tool palette: turn the grouped sections into accessible, remembered
+    // submenus. Sits after event wiring so every tool button is already live; if it
+    // ever fails the palette simply stays fully expanded (the CSS default).
+    runGuarded('Tool palette', () => {
+      this.toolbar = initToolbar();
+    }, { notifier: this.notifications, announce: true });
 
     // The in-app console sits on top of the diagnostics stream. Mounted after the DOM
     // so it can attach its header button; it replays the whole boot timeline because
@@ -307,6 +316,18 @@ class KnitApp {
           getEditor: () => this.editor,
           getMode: () => this.currentMode,
           getProfile: () => this.currentProfile
+        });
+      }, { notifier: this.notifications, announce: true });
+      // The clip shelf is an additive UI over js/edit/clipboard.js (copy history +
+      // named slots). It only ever *drives* the editor's existing paste path and reads
+      // editor.clipboard on a copy, so it can never corrupt the canvas — a failure
+      // here just means no shelf, never a broken edit.
+      runGuarded('Clip shelf', () => {
+        this.clipShelf = createClipShelf({
+          getEditor: () => this.editor,
+          getMode: () => this.currentMode,
+          getProfile: () => this.currentProfile,
+          notifications: this.notifications
         });
       }, { notifier: this.notifications, announce: true });
     }
@@ -710,9 +731,9 @@ class KnitApp {
         this.editor?.redo();
         e.preventDefault();
       } else if (mod && k === 'c') {
-        if (this.editor?.copySelection()) { e.preventDefault(); this.notifications.info('Copied selection.'); }
+        if (this.editor?.copySelection()) { e.preventDefault(); this.notifications.info('Copied selection.'); this.clipShelf?.capture?.(); }
       } else if (mod && k === 'x') {
-        if (this.editor?.cutSelection()) { e.preventDefault(); this.notifications.info('Cut selection.'); }
+        if (this.editor?.cutSelection()) { e.preventDefault(); this.notifications.info('Cut selection.'); this.clipShelf?.capture?.(); }
       } else if (mod && k === 'v') {
         if (this.editor?.pasteClipboard()) { e.preventDefault(); this.notifications.info('Pasted selection.'); }
       } else if (mod && k === 'd') {
@@ -2236,6 +2257,10 @@ class KnitApp {
     acts.push({ label: 'Toggle console', group: 'Diagnostics', keywords: 'console log terminal debug view panel open close ctrl backtick inspect telemetry', run: () => this.console?.toggle?.() });
     acts.push({ label: 'Open console — Systems status', group: 'Diagnostics', keywords: 'systems status health environment capabilities subsystems boot loaded enabled console diagnostics', run: () => { this.console?.open?.(); this.console?.setView?.('systems'); } });
     acts.push({ label: 'Toggle stitch inspector', group: 'Inspector', keywords: 'inspect hover cell symbol meaning transfer eyelet yarn over inspector hud readout needle', run: () => this._toggleInspector() });
+    acts.push({ label: 'Open clip shelf', group: 'Clipboard', keywords: 'clip clipboard shelf history slot copy paste motif vocabulary library panel open close recent', run: () => this.clipShelf?.open?.() });
+    acts.push({ label: 'Capture selection to clip shelf', group: 'Clipboard', keywords: 'clip clipboard capture copy selection shelf store remember motif', run: () => { if (this.editor?.copySelection()) this.clipShelf?.capture?.(); this.clipShelf?.open?.(); } });
+    acts.push({ label: 'Paste most recent clip', group: 'Clipboard', keywords: 'clip clipboard paste most recent previous shelf duplicate reuse', run: () => this.clipShelf?.pasteMostRecent?.() });
+    acts.push({ label: 'Name this clip (save to slot)', group: 'Clipboard', keywords: 'clip clipboard slot name save persist library motif vocabulary star slot', run: () => this.clipShelf?.promptSaveSlot?.() });
     acts.push({ label: 'Diagnostics snapshot', group: 'Diagnostics', keywords: 'diagnostics debug log error warn health telemetry console inspect', run: () => this._diagnosticsSummary() });
     acts.push({ label: 'Export diagnostics log (JSON)', group: 'Diagnostics', keywords: 'export diagnostics log json debug copy download telemetry error report', run: () => this._exportDiagnostics() });
     return acts;
