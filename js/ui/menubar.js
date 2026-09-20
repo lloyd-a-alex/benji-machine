@@ -39,7 +39,7 @@ export const MENUBAR_ACTIONS = new Set([
   'edit.selectAll', 'edit.invert', 'edit.clear', 'edit.clipshelf',
   'view.fit', 'view.resetPanels', 'view.console', 'view.inspector', 'view.theme',
   'view.status', 'view.structure', 'view.systems',
-  'project.dashboard', 'project.snapshot', 'project.rename', 'project.recent',
+  'project.dashboard', 'project.snapshot', 'project.rename', 'project.recent', 'project.open',
   'design.presets', 'design.math', 'design.image', 'design.knitalong', 'design.legend',
   'design.heritage',
   'machine.feasibility', 'machine.universe', 'machine.fitAll', 'machine.pick',
@@ -186,6 +186,15 @@ function injectStyles() {
 .kx-mb-item .kx-mb-label{flex:1 1 auto;min-width:0}
 .kx-mb-item .kx-mb-key{font:10px var(--font-mono,ui-monospace,monospace);color:var(--text-muted);flex:0 0 auto}
 .kx-mb-sep{height:1px;margin:5px 6px;background:var(--border-subtle)}
+.kx-mb-subhost{position:relative}
+.kx-mb-fly{position:absolute;top:-6px;left:calc(100% + 2px);min-width:184px;max-height:320px;overflow:auto;padding:6px;display:none;
+  background:var(--bg-surface,#0f1830);border:1px solid var(--border-subtle);border-radius:12px;
+  box-shadow:0 22px 55px -12px rgba(0,0,0,.75);z-index:12100}
+.kx-mb-subhost:hover .kx-mb-fly,.kx-mb-subhost:focus-within .kx-mb-fly{display:block}
+.kx-mb-fly-item{display:block;width:100%;text-align:left;background:transparent;border:0;color:inherit;font:inherit;
+  padding:7px 9px;border-radius:8px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kx-mb-fly-item:hover{background:color-mix(in srgb,var(--accent-cyan) 18%,transparent)}
+.kx-mb-fly-empty{padding:7px 9px;font-size:11px;color:var(--text-muted);font-style:italic}
 .kx-mb-foot{display:flex;align-items:center;gap:8px;margin-left:auto}
 .kx-mb-name{font-size:11px;color:var(--text-muted);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .kx-mb-close{width:26px;height:26px;border-radius:7px;border:1px solid var(--border-subtle);background:var(--bg-main);
@@ -277,14 +286,46 @@ export function createMenuBar(deps = {}) {
       for (const item of menu.items) {
         if (item.sep) { const s = doc.createElement('div'); s.className = 'kx-mb-sep'; dd.appendChild(s); continue; }
         if (item.section) { const h = doc.createElement('div'); h.className = 'kx-mb-sep'; dd.appendChild(h); }
+        if (item.submenu === 'recent') {
+          const recent = typeof deps.getRecent === 'function' ? (deps.getRecent() || []) : [];
+          const host = doc.createElement('div');
+          host.className = 'kx-mb-subhost';
+          const parent = doc.createElement('button');
+          parent.type = 'button';
+          parent.className = 'kx-mb-item';
+          parent.setAttribute('role', 'menuitem');
+          parent.setAttribute('aria-haspopup', 'true');
+          parent.innerHTML = `<span class="kx-mb-label">${esc(item.label.replace(' \u25B8', ''))} (${recent.length})</span><span class="kx-mb-key" aria-hidden="true">\u25B8</span>`;
+          parent.addEventListener('click', () => { closeAll(); onSelect('project.recent'); });
+          host.appendChild(parent);
+          const fly = doc.createElement('div');
+          fly.className = 'kx-mb-fly';
+          fly.setAttribute('role', 'menu');
+          if (!recent.length) {
+            const empty = doc.createElement('div');
+            empty.className = 'kx-mb-fly-empty';
+            empty.textContent = 'No recent projects yet';
+            fly.appendChild(empty);
+          }
+          for (const r of recent) {
+            const rb = doc.createElement('button');
+            rb.type = 'button';
+            rb.className = 'kx-mb-fly-item';
+            rb.setAttribute('role', 'menuitem');
+            rb.textContent = r.name || 'Untitled project';
+            rb.addEventListener('click', ev => { ev.stopPropagation(); closeAll(); onSelect('project.open', { id: r.id }); });
+            fly.appendChild(rb);
+          }
+          host.appendChild(fly);
+          dd.appendChild(host);
+          continue;
+        }
         const b = doc.createElement('button');
         b.type = 'button';
         b.className = 'kx-mb-item' + (item.danger ? ' kx-mb-item--danger' : '');
         b.setAttribute('role', 'menuitem');
         if (item.disabled) b.disabled = true;
-        const label = item.action === 'project.recent' && typeof deps.getRecent === 'function'
-          ? `${item.label.replace(' ▸', '')} (${(deps.getRecent() || []).length})` : item.label;
-        b.innerHTML = `<span class="kx-mb-label">${esc(label)}</span>${item.shortcut ? `<span class="kx-mb-key">${esc(item.shortcut)}</span>` : ''}`;
+        b.innerHTML = `<span class="kx-mb-label">${esc(item.label)}</span>${item.shortcut ? `<span class="kx-mb-key">${esc(item.shortcut)}</span>` : ''}`;
         b.addEventListener('click', () => { closeAll(); onSelect(item.action); });
         dd.appendChild(b);
       }

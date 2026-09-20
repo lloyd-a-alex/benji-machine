@@ -58,6 +58,14 @@ import { initContextMenu } from './ui/context-menu.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createTaskbar } from './ui/taskbar.js';
 
+// Commands that can add, rename, reorder (touch) or open a project, so the menu
+// bar's "Recent projects" flyout is refreshed only when the library may have moved.
+const RECENT_CHANGING = new Set([
+  'file.new', 'file.open', 'file.save', 'project.snapshot', 'project.recent', 'project.open',
+  'project.rename', 'project.dashboard', 'app.newProject', 'app.save', 'app.studio',
+  'proj.snapshot', 'proj.open', 'proj.rename', 'proj.delete'
+]);
+
 class KnitApp {
   constructor() {
     this.currentProfile = MACHINE_PROFILES.brother_standard_24;
@@ -374,12 +382,14 @@ class KnitApp {
     if (typeof document === 'undefined') return;
     this.tooltips = initTooltips();
     this.draggables = enableDraggable();
+    this._recentProjects = [];
     this.menubar = createMenuBar({
-      onSelect: id => this.runCommand(id),
+      onSelect: (id, payload) => this.runCommand(id, payload ? { payload } : {}),
       flags: () => this._chromeFlags(),
       cardName: () => (this.projectMeta && this.projectMeta.name) || '',
-      getRecent: () => []
+      getRecent: () => this._recentProjects
     });
+    this._refreshRecentProjects();
     this.contextMenu = initContextMenu({
       onAction: (id, ctx) => this.runCommand(id, ctx),
       getEditor: () => this.editor
@@ -389,10 +399,25 @@ class KnitApp {
       openProject: id => this.projects && this.projects.openProjectById && this.projects.openProjectById(id),
       onDashboard: () => this.projects && this.projects.open && this.projects.open(),
       onSnapshot: () => Promise.resolve(this.projects && this.projects.commit && this.projects.commit())
-        .then(p => { this.taskbar && this.taskbar.refresh && this.taskbar.refresh(); return p; }),
+        .then(p => { this.taskbar && this.taskbar.refresh && this.taskbar.refresh(); this._refreshRecentProjects(); return p; }),
       summaryFor: p => summarizeProject(p),
       activeId: () => (this.projects && this.projects.activeId ? this.projects.activeId() : null)
     });
+  }
+
+  /**
+   * Refresh the menu bar's "Recent projects" flyout from the saved library.
+   * The list already arrives newest-first, so the head of it is the recent set.
+   * Fire-and-forget: it only ever updates a cached array + repaints the bar.
+   * @private
+   */
+  _refreshRecentProjects() {
+    if (!this.projects || !this.projects.list) return;
+    Promise.resolve(this.projects.list()).then(ps => {
+      this._recentProjects = (ps || []).slice(0, 8)
+        .map(p => ({ id: p.id, name: (p.name || 'Untitled project').slice(0, 60) }));
+      if (this.menubar && this.menubar.refresh) { try { this.menubar.refresh(); } catch (_) { /* contained */ } }
+    }).catch(() => { /* keep the last known recents */ });
   }
 
   /** Live enable/disable state for the menu bar (undo depth, a live selection). */
@@ -541,6 +566,8 @@ class KnitApp {
         case 'project.rename':
           Promise.resolve(this.projects && this.projects.rename && this.projects.rename(this.projects.activeId && this.projects.activeId())).then(() => { this.taskbar && this.taskbar.refresh && this.taskbar.refresh(); });
           break;
+        case 'project.open': { const pid = ctx.payload && ctx.payload.id; if (pid && this.projects && this.projects.openProjectById) Promise.resolve(this.projects.openProjectById(pid)).then(() => { this.projects.close && this.projects.close(); this.taskbar && this.taskbar.refresh && this.taskbar.refresh(); }); }
+          break;
 
         // ── Design ───────────────────────────────────────────────────────────
         case 'design.presets': click('#btn-open-presets'); break;
@@ -629,6 +656,7 @@ class KnitApp {
       getDiagnostics().logError('Command', err, { level: 'warn', context: { command: id } });
     }
     // Keep the menu bar's enable/disable state honest for the next open.
+    if (RECENT_CHANGING.has(id)) this._refreshRecentProjects();
     if (this.menubar && this.menubar.refresh) { try { this.menubar.refresh(); } catch (_) { /* contained */ } }
   }
 

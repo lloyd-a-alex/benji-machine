@@ -78,9 +78,12 @@ async function removeProject(id) {
 async function renameProject(id) {
   const p = (await listProjects()).find(x => x.id === id);
   if (!p) return null;
-  const typed = typeof window !== 'undefined' && typeof window.prompt === 'function'
-    ? window.prompt('Rename project', p.name)
-    : null;
+  let typed = null;
+  try {
+    if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+      typed = window.prompt('Rename project', p.name);
+    }
+  } catch (_) { typed = null; /* prompt unavailable: treat as cancelled */ }
   if (typed == null) return p; // cancelled
   const name = String(typed).trim().slice(0, 200);
   if (name) { p.name = name; await _save(p); }
@@ -145,8 +148,16 @@ async function openProjectById(id) {
 
 /** Prompt for a name and start a fresh, empty project (the menu "New project"). */
 async function createNew() {
-  const name = (typeof window !== 'undefined' && window.prompt?.('Project name', 'Untitled project') || 'Untitled project').slice(0, 200);
-  const p = await _save(Project.create({ name }));
+  // Some contexts block window.prompt (automation, embedded frames); never let a
+  // name prompt reject the whole create — fall back to the default title instead.
+  let name = 'Untitled project';
+  try {
+    if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+      const typed = window.prompt('Project name', name);
+      if (typed != null && String(typed).trim()) name = String(typed).trim();
+    }
+  } catch (_) { /* prompt unavailable: keep the default name */ }
+  const p = await _save(Project.create({ name: name.slice(0, 200) }));
   await openProject(p);
   _renderResume();
   return p;

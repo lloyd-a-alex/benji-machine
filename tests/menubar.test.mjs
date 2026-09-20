@@ -32,6 +32,13 @@ test('Help exposes search, the guide and about', () => {
   assert.ok(acts.includes('help.search') && acts.includes('help.about'));
 });
 
+test('Project menu backs its "Recent" flyout with a declared open action', () => {
+  const recent = buildMenus().find(m => m.id === 'project').items.find(i => i.action === 'project.recent');
+  assert.equal(recent.submenu, 'recent', 'project.recent declares a submenu');
+  // The submenu items the DOM layer renders route through this action; it must exist.
+  assert.ok(MENUBAR_ACTIONS.has('project.open'), 'project.open must be a declared action');
+});
+
 test('Undo/Redo and selection verbs disable themselves when they cannot apply', () => {
   const items = buildMenus({ canUndo: false, canRedo: false, hasSelection: false })
     .find(m => m.id === 'edit').items;
