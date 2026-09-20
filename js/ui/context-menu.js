@@ -21,6 +21,8 @@
  * @module ui/context-menu
  */
 
+import { escHtml as escapeHtml } from './text.js';
+
 const MENU_ID = 'kx-ctxmenu';
 const STYLE_ID = 'kx-ctxmenu-style';
 
@@ -206,10 +208,10 @@ const KEY_HINTS = { 'edit.undo': 'Ctrl Z', 'edit.redo': 'Ctrl Y', 'edit.copy': '
  * @param {object} getters
  * @returns {{kind:string, flags:object, anchor:Element}}
  */
-function classify(target, getters) {
+export function classify(target, getters) {
   const near = sel => target.closest && target.closest(sel);
   const ed = getters.getEditor && getters.getEditor();
-  const hasSelection = !!(ed && ed.selectionActive && ed.selectionActive());
+  const hasSelection = !!(ed && ed.getSelectionBounds && ed.getSelectionBounds());
   const hasClipboard = !!(ed && ed.clipboard && (Array.isArray(ed.clipboard) ? ed.clipboard.length : Object.keys(ed.clipboard).length));
   if (near('.kx-proj,[data-open],[data-project]')) return { kind: 'project', flags: {}, anchor: near('.kx-proj') };
   if (near('.mode-btn')) return { kind: 'mode', flags: { mode: near('.mode-btn').dataset.mode }, anchor: near('.mode-btn') };
@@ -283,6 +285,15 @@ export function initContextMenu(deps = {}) {
     const py = Math.min(y, window.innerHeight - r.height - 8);
     menu.style.left = Math.max(6, px) + 'px';
     menu.style.top = Math.max(6, py) + 'px';
+    menu.addEventListener('keydown', e => {
+      const items = Array.from(menu.querySelectorAll('.kx-ctx-item:not([disabled])'));
+      const i = items.indexOf(doc.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); (items[(i + 1) % items.length] || items[0]).focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); (items[(i - 1 + items.length) % items.length] || items[0]).focus(); }
+      else if (e.key === 'Home') { e.preventDefault(); items[0] && items[0].focus(); }
+      else if (e.key === 'End') { e.preventDefault(); items[items.length - 1] && items[items.length - 1].focus(); }
+      else if (e.key === 'Tab') { e.preventDefault(); }
+    });
     menu.querySelector('.kx-ctx-item:not([disabled])')?.focus({ preventScroll: true });
   }
 
@@ -315,6 +326,4 @@ export function initContextMenu(deps = {}) {
   };
 }
 
-function escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-}
+// escapeHtml is imported from ui/text.js so every surface escapes user text identically.

@@ -23,6 +23,8 @@
  * @module ui/menubar
  */
 
+import { escHtml } from './text.js';
+
 const BAR_ID = 'kx-menubar';
 const STYLE_ID = 'kx-menubar-style';
 const HIDE_KEY = 'knitcat.menubar.hidden.v1';
@@ -211,7 +213,25 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function esc(s) { return escHtml(s); }
+
+/**
+ * Which side should a menu dropdown hang from, so it never runs off the right edge?
+ * A dropdown authored at the anchor's left is flipped to the right when the left
+ * placement would overflow. Pure and DOM-free so the geometry is testable.
+ * @param {{left:number,width:number}} anchor  the menu title's rect
+ * @param {{w:number}} box  the dropdown's width
+ * @param {{vw:number,edge?:number}} vp  viewport width + edge keep-out
+ * @returns {{left:string,right:string}} CSS values for the dropdown
+ */
+export function placeMenu(anchor, box, vp) {
+  const vw = (vp && vp.vw) || 1024;
+  const edge = (vp && vp.edge != null) ? vp.edge : 12;
+  const w = (box && box.w) || 0;
+  const ax = anchor && Number.isFinite(anchor.left) ? anchor.left : 0;
+  const leftAligned = ax + w <= vw - edge;
+  return { left: leftAligned ? '0' : 'auto', right: leftAligned ? 'auto' : '0' };
+}
 
 /**
  * Mount the menu bar. Idempotent.
@@ -251,6 +271,9 @@ export function createMenuBar(deps = {}) {
     doc.body.appendChild(reopen);
   }
 
+  let menuEls = [];
+  let openIndex = -1;
+
   render();
   wireGlobal();
   return { render, refresh: render, show, hide, toggle: () => (bar.hidden ? show() : hide()) };
@@ -258,6 +281,7 @@ export function createMenuBar(deps = {}) {
   function render() {
     const menus = buildMenus(typeof deps.flags === 'function' ? deps.flags() : {});
     bar.innerHTML = '';
+    menuEls = [];
     const dash = doc.createElement('button');
     dash.type = 'button';
     dash.className = 'kx-mb-dash';
@@ -267,7 +291,7 @@ export function createMenuBar(deps = {}) {
     dash.addEventListener('click', () => onSelect('project.dashboard'));
     bar.appendChild(dash);
 
-    for (const menu of menus) {
+    menus.forEach((menu, mi) => {
       const wrap = doc.createElement('div');
       wrap.className = 'kx-mb-menu';
       wrap.setAttribute('role', 'none');
@@ -276,6 +300,7 @@ export function createMenuBar(deps = {}) {
       title.className = 'kx-mb-title';
       title.setAttribute('role', 'menuitem');
       title.setAttribute('aria-haspopup', 'true');
+      title.setAttribute('aria-expanded', 'false');
       title.setAttribute('data-no-drag', '');
       title.textContent = menu.title;
       wrap.appendChild(title);
@@ -295,8 +320,14 @@ export function createMenuBar(deps = {}) {
           parent.className = 'kx-mb-item';
           parent.setAttribute('role', 'menuitem');
           parent.setAttribute('aria-haspopup', 'true');
+          parent.setAttribute('aria-expanded', 'false');
           parent.innerHTML = `<span class="kx-mb-label">${esc(item.label.replace(' \u25B8', ''))} (${recent.length})</span><span class="kx-mb-key" aria-hidden="true">\u25B8</span>`;
           parent.addEventListener('click', () => { closeAll(); onSelect('project.recent'); });
+          const openSub = () => parent.setAttribute('aria-expanded', 'true');
+          const closeSub = () => parent.setAttribute('aria-expanded', 'false');
+          parent.addEventListener('mouseenter', openSub);
+          parent.addEventListener('focus', openSub);
+          parent.addEventListener('blur', closeSub);
           host.appendChild(parent);
           const fly = doc.createElement('div');
           fly.className = 'kx-mb-fly';
@@ -335,10 +366,11 @@ export function createMenuBar(deps = {}) {
         e.stopPropagation();
         const wasOpen = wrap.classList.contains('open');
         closeAll();
-        if (!wasOpen) wrap.classList.add('open');
+        if (!wasOpen) openMenu(mi, false);
       });
+      menuEls.push({ wrap, title, dd });
       bar.appendChild(wrap);
-    }
+    });
 
     const foot = doc.createElement('div');
     foot.className = 'kx-mb-foot';
@@ -357,7 +389,64 @@ export function createMenuBar(deps = {}) {
     bar.appendChild(foot);
   }
 
-  function closeAll() { bar.querySelectorAll('.kx-mb-menu.open').forEach(m => m.classList.remove('open')); }
+  /** Enabled, focusable controls inside one open dropdown (items + recent flyout). */
+  function menuItems(wrap) {
+    return Array.from(wrap.querySelectorAll('.kx-mb-dropdown .kx-mb-item:not([disabled]), .kx-mb-dropdown .kx-mb-fly-item'));
+  }
+  function openMenu(mi, focusFirst) {
+    closeAll();
+    const m = menuEls[mi];
+    if (!m) return;
+    m.wrap.classList.add('open');
+    m.title.setAttribute('aria-expanded', 'true');
+    positionDropdown(m.dd);
+    openIndex = mi;
+    if (focusFirst) { const first = menuItems(m.wrap)[0]; if (first) first.focus(); }
+  }
+  function positionDropdown(dd) {
+    const vw = (typeof window !== 'undefined' ? window.innerWidth : 1024);
+    const at = placeMenu(dd.getBoundingClientRect(), { w: dd.offsetWidth || 236 }, { vw, edge: 12 });
+    dd.style.left = at.left;
+    dd.style.right = at.right;
+  }
+  function focusTitle(i) {
+    const m = menuEls[i];
+    if (!m) return;
+    closeAll();
+    m.title.focus();
+  }
+  function onBarKey(e) {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const key = e.key;
+    const active = doc.activeElement;
+    const tIdx = menuEls.findIndex(m => m.title === active);
+    if (tIdx >= 0) {
+      if (key === 'ArrowDown' || key === 'Enter' || key === ' ') { e.preventDefault(); openMenu(tIdx, true); }
+      else if (key === 'ArrowRight') { e.preventDefault(); focusTitle((tIdx + 1) % menuEls.length); }
+      else if (key === 'ArrowLeft') { e.preventDefault(); focusTitle((tIdx - 1 + menuEls.length) % menuEls.length); }
+      return;
+    }
+    const m = menuEls[openIndex];
+    if (m && m.wrap.contains(active)) {
+      const items = menuItems(m.wrap);
+      const i = items.indexOf(active);
+      if (key === 'ArrowDown') { e.preventDefault(); (items[(i + 1) % items.length] || items[0]).focus(); }
+      else if (key === 'ArrowUp') { e.preventDefault(); (items[(i - 1 + items.length) % items.length] || items[0]).focus(); }
+      else if (key === 'Home') { e.preventDefault(); items[0] && items[0].focus(); }
+      else if (key === 'End') { e.preventDefault(); items[items.length - 1] && items[items.length - 1].focus(); }
+      else if (key === 'ArrowRight') { e.preventDefault(); const n = (openIndex + 1) % menuEls.length; openMenu(n, false); menuEls[n].title.focus(); }
+      else if (key === 'ArrowLeft') { e.preventDefault(); const p = (openIndex - 1 + menuEls.length) % menuEls.length; openMenu(p, false); menuEls[p].title.focus(); }
+      else if (key === 'Escape') { e.preventDefault(); const t = openIndex; closeAll(); if (menuEls[t]) menuEls[t].title.focus(); }
+      return;
+    }
+    if (key === 'ArrowDown' && bar.contains(active)) { e.preventDefault(); openMenu(0, true); }
+  }
+
+  function closeAll() {
+    bar.querySelectorAll('.kx-mb-menu.open').forEach(m => m.classList.remove('open'));
+    menuEls.forEach(m => m.title.setAttribute('aria-expanded', 'false'));
+    openIndex = -1;
+  }
   function hide() { bar.hidden = true; try { localStorage.setItem(HIDE_KEY, '1'); } catch (_) {} doc.body.classList.add('kx-mb-collapsed'); }
   function show() { bar.hidden = false; reopen.style.display = 'none'; try { localStorage.setItem(HIDE_KEY, '0'); } catch (_) {} doc.body.classList.remove('kx-mb-collapsed'); }
 
@@ -365,6 +454,7 @@ export function createMenuBar(deps = {}) {
     if (bar.__kxWired) return;
     bar.__kxWired = true;
     reopen.addEventListener('click', show);
+    bar.addEventListener('keydown', onBarKey);
     doc.addEventListener('pointerdown', e => { if (!bar.contains(e.target)) closeAll(); }, true);
     doc.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
     try { if (localStorage.getItem(HIDE_KEY) === '1') hide(); } catch (_) { /* default shown */ }

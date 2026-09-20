@@ -22,6 +22,7 @@
 import { openDriver, STORES } from '../project/storage.js';
 import { Project, summarizeProject, newChart } from '../project/project-model.js';
 import { previewMatrix, renderThumbnail } from '../ui/thumbnail.js';
+import { escHtml as _esc } from '../ui/text.js';
 
 const LIVE_CHART = 'live';
 const ACTIVE_KEY = 'knitcad.activeProject.v1';
@@ -165,9 +166,7 @@ async function createNew() {
 
 // ─── UI: a self-contained modal + a footer trigger ─────────────────────────────
 
-function _esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
-}
+// _esc is imported from ui/text.js (single shared HTML-escaping rule).
 
 function _ensureStyles() {
   if (typeof document === 'undefined' || document.getElementById('kx-studio-style')) return;

@@ -94,9 +94,25 @@ function restore(el) {
 }
 
 let zCounter = 9100;
-function bringForward(el) {
+/**
+ * Raise a draggable surface above its siblings using the shared stacking counter, so
+ * dragged windows and the context menu's "bring to front" climb the same ladder and
+ * never interleave unpredictably. Exported for reuse by the command dispatcher.
+ * @param {HTMLElement} el
+ */
+export function bringForward(el) {
   zCounter += 1;
   el.style.zIndex = String(zCounter);
+}
+
+// One injected rule: the grab handles must not let a touch pan the page while dragging.
+const DRAG_STYLE_ID = 'kx-drag-style';
+function injectStyles(doc) {
+  if (!doc || doc.getElementById(DRAG_STYLE_ID)) return;
+  const style = doc.createElement('style');
+  style.id = DRAG_STYLE_ID;
+  style.textContent = '.kx-panel__bar,.kx-studio-head,.modal-header,[data-drag-handle],[data-drag]{touch-action:none}';
+  doc.head.appendChild(style);
 }
 
 /**
@@ -122,9 +138,9 @@ export function syncDraggables(root) {
 export function enableDraggable(deps = {}) {
   const doc = deps.doc || (typeof document !== 'undefined' ? document : null);
   const win = deps.win || (typeof window !== 'undefined' ? window : null);
-  if (!doc || !win || doc.__kxDragOn) {
-    if (doc && doc.__kxDragHandle) return doc.__kxDragHandle;
-  }
+  if (!doc || !win) return null;
+  if (doc.__kxDragOn && doc.__kxDragHandle) return doc.__kxDragHandle; // idempotent: never double-bind
+  injectStyles(doc);
   if (doc) syncDraggables(doc.body);
 
   let drag = null; // { el, handle, startX, startY, baseX, baseY, rect }

@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { menuFor, CONTEXT_ACTIONS } from '../js/ui/context-menu.js';
+import { menuFor, classify, CONTEXT_ACTIONS } from '../js/ui/context-menu.js';
 
 const ids = items => items.filter(i => i.id).map(i => i.id);
 
@@ -58,4 +58,29 @@ test('menuFor never throws on an unknown kind and returns the default verbs', ()
   const got = ids(menuFor('made-up-kind'));
   assert.ok(got.includes('app.studio'));
   assert.ok(got.includes('app.search'));
+});
+
+// ── classify: the "what did I right-click?" decision (regression: the selection
+// menu was dead because it probed a selectionActive() method the editor lacks).
+
+const canvasTarget = () => ({ tagName: 'CANVAS', closest: sel => (sel === 'canvas' ? { tag: 'canvas' } : null) });
+
+test('classify flags a canvas right-click as a selection only via getSelectionBounds', () => {
+  const ed = { getSelectionBounds: () => ({ r1: 0, c1: 0, r2: 3, c2: 3 }), hoverCell: { r: 0, c: 0 }, matrix: [[0]] };
+  const out = classify(canvasTarget(), { getEditor: () => ed });
+  assert.equal(out.kind, 'selection');
+  assert.ok(ids(menuFor(out.kind, out.flags)).includes('edit.duplicate'), 'the selection verbs really appear');
+});
+
+test('a bare hover (no selection bounds) classifies as a single cell', () => {
+  const ed = { getSelectionBounds: () => null, hoverCell: { r: 0, c: 0 }, matrix: [[0]] };
+  const out = classify(canvasTarget(), { getEditor: () => ed });
+  assert.equal(out.kind, 'cell');
+  assert.equal(out.flags.punched, false);
+});
+
+test('classify survives an editor that is missing entirely', () => {
+  const out = classify(canvasTarget(), { getEditor: () => null });
+  assert.equal(out.kind, 'cell');
+  assert.equal(out.flags.hasClipboard, false);
 });

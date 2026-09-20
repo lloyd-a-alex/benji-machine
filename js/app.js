@@ -48,7 +48,6 @@ import { createFileBridge } from './features/fs-access.js';
 import { ClothesEngine, GARMENTS, CATEGORIES } from './tailor/clothes-catalog.js';
 import { gradeSizes } from './tailor/grading.js';
 import { summarizeProject } from './project/project-model.js';
-import { cellsOfValue } from './features/symbol-legend.js';
 // Desktop chrome — custom tooltips, header-dragging, the menu bar, the right-click
 // context menu and the bottom project taskbar. Each is DOM-free at import and fully
 // guarded at boot, so a failure degrades one surface only.
@@ -57,14 +56,7 @@ import { enableDraggable } from './ui/draggable.js';
 import { initContextMenu } from './ui/context-menu.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createTaskbar } from './ui/taskbar.js';
-
-// Commands that can add, rename, reorder (touch) or open a project, so the menu
-// bar's "Recent projects" flyout is refreshed only when the library may have moved.
-const RECENT_CHANGING = new Set([
-  'file.new', 'file.open', 'file.save', 'project.snapshot', 'project.recent', 'project.open',
-  'project.rename', 'project.dashboard', 'app.newProject', 'app.save', 'app.studio',
-  'proj.snapshot', 'proj.open', 'proj.rename', 'proj.delete'
-]);
+import { runCommand as dispatchCommand } from './ui/commands.js';
 
 class KnitApp {
   constructor() {
@@ -486,179 +478,13 @@ class KnitApp {
 
   /**
    * The single command dispatcher shared by the menu bar and the right-click menu.
-   * Every action id either module can emit is implemented exactly once here, so the
-   * two surfaces can never drift, and it reuses the app's existing methods and real
-   * DOM controls rather than re-deriving their logic.
+   * It lives in ui/commands.js (importable + unit-testable) so this controller stays
+   * about state and wiring; every action id is implemented exactly once there, so
+   * the two surfaces can never drift.
    * @param {string} id
-   * @param {object} [ctx] { anchor, kind, flags, cell } from the context menu
+   * @param {object} [ctx] { anchor, kind, flags, cell, payload } from the context menu
    */
-  runCommand(id, ctx = {}) {
-    if (typeof document === 'undefined') return;
-    const ed = this.editor;
-    const mode = this.currentMode;
-    const punch = m => (m === 'lace' ? STITCH_TYPE.EYELET : 1);
-    const blank = m => (m === 'lace' ? STITCH_TYPE.KNIT : 0);
-    const isBlankCell = (v, m) => v === 0 || v == null || v === '' || v === 'EMPTY' || (m === 'lace' && v === STITCH_TYPE.KNIT);
-    const click = sel => { const el = document.querySelector(sel); if (el) { el.click(); return true; } return false; };
-    const withMatrix = mut => { if (!ed || !ed.matrix) return; const m = ed.matrix.map(r => r.slice()); mut(m); ed.setMatrix(m); };
-    const setCell = (r, c, val) => { if (r == null || c == null) return; withMatrix(m => { if (m[r]) m[r][c] = val; }); };
-    const fillRect = (r1, c1, r2, c2, val) => withMatrix(m => { for (let r = r1; r <= r2; r++) if (m[r]) for (let c = c1; c <= c2; c++) m[r][c] = val; });
-    const doSnapshot = () => Promise.resolve(this.projects && this.projects.commit && this.projects.commit())
-      .then(p => { this.notifications?.success?.(p ? `Saved \u201c${p.name}\u201d.` : 'Nothing on the canvas to save yet.'); this.taskbar && this.taskbar.refresh && this.taskbar.refresh(); });
-
-    try {
-      switch (id) {
-        // ── File / project lifecycle ─────────────────────────────────────────
-        case 'file.new': case 'app.newProject':
-          Promise.resolve(this.projects && this.projects.createNew && this.projects.createNew()).then(p => { if (p) { this.taskbar && this.taskbar.refresh && this.taskbar.refresh(); this.notifications?.success?.(`Created \u201c${p.name}\u201d.`); } });
-          break;
-        case 'file.open': case 'project.dashboard': case 'project.recent': case 'app.studio':
-          this.projects && this.projects.open && this.projects.open();
-          break;
-        case 'file.save': case 'project.snapshot': case 'app.save': case 'proj.snapshot':
-          doSnapshot();
-          break;
-        case 'file.saveAs': this.saveProject(); break;
-        case 'file.export': case 'app.export': click('#btn-open-export'); break;
-        case 'file.backup': this.dataPanel && this.dataPanel.backupAll && this.dataPanel.backupAll(); break;
-        case 'file.restore': document.getElementById('kx-btn-restore')?.click(); break;
-        case 'file.prefs': case 'app.settings': this._openSettingsViaExtras(); break;
-        case 'file.close':
-          if (ed && (!ed.matrix || ed.matrix.length) && (typeof window === 'undefined' || window.confirm?.('Close this project? Unsaved work is kept by autosave and your checkpoints.'))) { ed.clear(); this.recompile(); }
-          break;
-
-        // ── Edit ─────────────────────────────────────────────────────────────
-        case 'edit.undo': ed && ed.undo(); break;
-        case 'edit.redo': ed && ed.redo(); break;
-        case 'edit.cut': if (ed && ed.cutSelection()) { this.clipShelf && this.clipShelf.capture && this.clipShelf.capture(); this.notifications?.info?.('Cut selection.'); }
-          break;
-        case 'edit.copy': if (ed && ed.copySelection()) { this.clipShelf && this.clipShelf.capture && this.clipShelf.capture(); this.notifications?.info?.('Copied selection.'); }
-          break;
-        case 'edit.paste': if (ed && ed.pasteClipboard()) this.notifications?.info?.('Pasted selection.'); break;
-        case 'edit.duplicate': this.duplicateSelection && this.duplicateSelection(); break;
-        case 'edit.selectAll': if (ed) { ed.selection = { r1: 0, c1: 0, r2: ed.rows - 1, c2: ed.cols - 1 }; ed.render && ed.render(); }
-          break;
-        case 'edit.invert': ed && ed.invert(); break;
-        case 'edit.clear': case 'app.clear': ed && ed.clear(); break;
-        case 'edit.clipshelf': case 'app.clipshelf': this.clipShelf && this.clipShelf.open && this.clipShelf.open(); break;
-        case 'edit.clearSelection': case 'edit.delete': ed && ed.deleteSelection(); break;
-        case 'edit.fill': { const b = ed && ed.getSelectionBounds && ed.getSelectionBounds(); if (b) fillRect(Math.min(b.r1, b.r2), Math.min(b.c1, b.c2), Math.max(b.r1, b.r2), Math.max(b.c1, b.c2), punch(mode)); }
-          break;
-        case 'edit.flipH': ed && ed.flipHorizontal(); break;
-        case 'edit.flipV': ed && ed.flipVertical(); break;
-        case 'edit.rotateCW': ed && ed.rotateSelection('cw'); break;
-        case 'edit.rotateCCW': ed && ed.rotateSelection('ccw'); break;
-        case 'clip.capture': if (ed && ed.copySelection()) { this.clipShelf && this.clipShelf.capture && this.clipShelf.capture(); } this.clipShelf && this.clipShelf.open && this.clipShelf.open(); break;
-        case 'clip.pasteMost': this.clipShelf && this.clipShelf.pasteMostRecent && this.clipShelf.pasteMostRecent(); break;
-
-        // ── View ─────────────────────────────────────────────────────────────
-        case 'view.fit': ed && ed.fitToView && ed.fitToView(); break;
-        case 'view.resetPanels': this._resetPanelPositions(); break;
-        case 'view.console': this.console && this.console.toggle && this.console.toggle(); break;
-        case 'view.systems': this.console && this.console.open && this.console.open(); this.console && this.console.setView && this.console.setView('systems'); break;
-        case 'view.inspector': case 'app.inspector': this._toggleInspector(); break;
-        case 'view.structure': case 'app.structure': this.structurePanel && this.structurePanel.toggle && this.structurePanel.toggle(); break;
-        case 'view.theme': case 'app.theme': click('#kx-theme'); break;
-        case 'view.status': { const sb = document.getElementById('status-bar'); if (sb) sb.hidden = !sb.hidden; }
-          break;
-
-        // ── Project ──────────────────────────────────────────────────────────
-        case 'project.rename':
-          Promise.resolve(this.projects && this.projects.rename && this.projects.rename(this.projects.activeId && this.projects.activeId())).then(() => { this.taskbar && this.taskbar.refresh && this.taskbar.refresh(); });
-          break;
-        case 'project.open': { const pid = ctx.payload && ctx.payload.id; if (pid && this.projects && this.projects.openProjectById) Promise.resolve(this.projects.openProjectById(pid)).then(() => { this.projects.close && this.projects.close(); this.taskbar && this.taskbar.refresh && this.taskbar.refresh(); }); }
-          break;
-
-        // ── Design ───────────────────────────────────────────────────────────
-        case 'design.presets': click('#btn-open-presets'); break;
-        case 'design.math': click('#btn-open-math'); break;
-        case 'design.image': click('#btn-open-image'); break;
-        case 'design.knitalong': case 'app.knitAlong': this.knitAlong && this.knitAlong.toggle && this.knitAlong.toggle(); break;
-        case 'design.legend': case 'app.symbolLegend': this.symbolLegend && this.symbolLegend.toggle && this.symbolLegend.toggle(); break;
-        case 'design.heritage': this.heritagePanel && this.heritagePanel.toggle && this.heritagePanel.toggle(); break;
-
-        // ── Machine ──────────────────────────────────────────────────────────
-        case 'machine.feasibility': case 'app.feasibility': this.openFeasibility(); break;
-        case 'machine.universe': case 'app.universe': this.openMachineUniverse(); break;
-        case 'machine.fitAll': { const r = this.universe && this.universe.tuneForAll && this.universe.tuneForAll(); this.recompile(); this.notifications?.[r && r.changed ? 'success' : 'info']?.(r && r.changed ? 'Tuned to fit every machine.' : 'Already fits every machine.'); }
-          break;
-        case 'machine.pick': this.elements.profileSelect && this.elements.profileSelect.focus(); this.elements.profileSelect && this.elements.profileSelect.click(); break;
-
-        // ── Help ─────────────────────────────────────────────────────────────
-        case 'help.about': click('.brand-section .kx-hbtn'); break;
-        case 'help.guide': this.openModal('lace-guide'); break;
-        case 'help.eyelets': document.querySelector('.tab-btn[data-tab="editor"]')?.click(); this.openModal('lace-guide'); break;
-        case 'help.shortcuts': this._showShortcutsCard(); break;
-        case 'help.search': case 'app.search': this.palette && this.palette.open && this.palette.open(); break;
-        case 'help.love': this._showLovePopup(); break;
-
-        // ── Cell / symbol (context menu, needs the hovered cell) ──────────────
-        case 'cell.toggle': { const c = ctx.cell; if (c) setCell(c.r, c.c, isBlankCell(ed.matrix[c.r][c.c], mode) ? punch(mode) : blank(mode)); }
-          break;
-        case 'cell.punch': { const c = ctx.cell; if (c) setCell(c.r, c.c, punch(mode)); }
-          break;
-        case 'cell.blank': { const c = ctx.cell; if (c) setCell(c.r, c.c, blank(mode)); }
-          break;
-        case 'cell.fillRow': { const c = ctx.cell; if (c && ed) fillRect(c.r, 0, c.r, ed.cols - 1, punch(mode)); }
-          break;
-        case 'cell.fillCol': { const c = ctx.cell; if (c && ed) fillRect(0, c.c, ed.rows - 1, c.c, punch(mode)); }
-          break;
-        case 'sym.highlight': { const c = ctx.cell; if (c && ed && ed.setHighlight) { try { ed.setHighlight(cellsOfValue(ed.matrix, ed.matrix[c.r][c.c]), { label: 'this symbol', color: '#a78bfa', fill: 'rgba(167,139,250,0.30)' }); } catch (_) { /* contained */ } } }
-          break;
-        case 'sym.explain': this.symbolLegend && this.symbolLegend.open && this.symbolLegend.open(); break;
-
-        // ── Window / panel (context menu on a draggable surface) ──────────────
-        case 'win.close': ctx.anchor && ctx.anchor.querySelector && ctx.anchor.querySelector('[data-close], .modal-close')?.click?.(); break;
-        case 'win.dragReset':
-          if (ctx.anchor) { ctx.anchor.style.transform = ''; delete ctx.anchor.dataset.kxTx; delete ctx.anchor.dataset.kxTy; if (ctx.anchor.id) { try { localStorage.removeItem('knitcat.drag.v1.' + ctx.anchor.id); } catch (_) { /* storage off */ } } }
-          break;
-        case 'win.bringForward': if (ctx.anchor) { ctx.anchor.style.position = ctx.anchor.style.position || 'relative'; ctx.anchor.style.zIndex = String(9500 + Math.floor(Math.random() * 500)); }
-          break;
-
-        // ── Mode / tool (context menu) ───────────────────────────────────────
-        case 'mode.set': if (ctx.anchor && ctx.anchor.click) ctx.anchor.click(); else if (ctx.flags && ctx.flags.mode) this.setPatternMode(ctx.flags.mode);
-          break;
-        case 'tool.set': if (ctx.anchor && ctx.anchor.click) ctx.anchor.click(); break;
-
-        // ── Project card (context menu on a Studio / taskbar card) ────────────
-        case 'proj.open': {
-          const card = ctx.anchor; const pid = card && (card.dataset.id || card.dataset.project);
-          if (card && card.querySelector && card.querySelector('[data-open]')) card.querySelector('[data-open]').click();
-          else if (pid && this.projects) { Promise.resolve(this.projects.openProjectById(pid)).then(() => { this.projects.close && this.projects.close(); this.taskbar && this.taskbar.refresh && this.taskbar.refresh(); }); }
-          break;
-        }
-        case 'proj.rename': {
-          const card = ctx.anchor; const pid = card && (card.dataset.id || card.dataset.project);
-          if (card && card.querySelector && card.querySelector('[data-ren]')) card.querySelector('[data-ren]').click();
-          else if (pid && this.projects) Promise.resolve(this.projects.rename(pid)).then(() => { this.taskbar && this.taskbar.refresh && this.taskbar.refresh(); });
-          break;
-        }
-        case 'proj.delete': {
-          const card = ctx.anchor; const pid = card && (card.dataset.id || card.dataset.project);
-          if (card && card.querySelector && card.querySelector('[data-del]')) card.querySelector('[data-del]').click();
-          else if (pid && this.projects) {
-            const ok = typeof window === 'undefined' || typeof window.confirm !== 'function' || window.confirm('Delete this project? Your checkpoints and backup files keep their own copies.');
-            if (ok) Promise.resolve(this.projects.remove(pid)).then(() => { this.taskbar && this.taskbar.refresh && this.taskbar.refresh(); });
-          }
-          break;
-        }
-
-        // ── Link / text (context menu) ───────────────────────────────────────
-        case 'link.open': if (ctx.flags && ctx.flags.href && typeof window !== 'undefined') window.open(ctx.flags.href, '_blank', 'noopener'); break;
-        case 'link.copy': if (ctx.flags && ctx.flags.href) { try { navigator.clipboard && navigator.clipboard.writeText(ctx.flags.href); } catch (_) { /* denied */ } }
-          break;
-        case 'text.copy': { const t = typeof window !== 'undefined' && window.getSelection ? String(window.getSelection()) : ''; if (t) { try { navigator.clipboard && navigator.clipboard.writeText(t); } catch (_) { /* denied */ } } }
-          break;
-
-        default: break; // unknown id: harmless
-      }
-    } catch (err) {
-      getDiagnostics().logError('Command', err, { level: 'warn', context: { command: id } });
-    }
-    // Keep the menu bar's enable/disable state honest for the next open.
-    if (RECENT_CHANGING.has(id)) this._refreshRecentProjects();
-    if (this.menubar && this.menubar.refresh) { try { this.menubar.refresh(); } catch (_) { /* contained */ } }
-  }
+  runCommand(id, ctx = {}) { return dispatchCommand(this, id, ctx); }
 
   initComponentEvents() {
     // Status bar tracking - only if editor is ready

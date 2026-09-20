@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMenus, MENUBAR_ACTIONS } from '../js/ui/menubar.js';
+import { buildMenus, placeMenu, MENUBAR_ACTIONS } from '../js/ui/menubar.js';
 
 const titles = () => buildMenus().map(m => m.id);
 const flat = () => buildMenus().flatMap(m => m.items.filter(i => i.action));
@@ -57,4 +57,15 @@ test('menu titles are human labels and none is empty', () => {
     assert.ok(m.title && m.title === m.title.trim(), 'menu has a title');
     for (const i of m.items) if (i.label) assert.ok(i.label.trim().length, 'item label is not blank');
   }
+});
+
+test('placeMenu keeps a dropdown inside the viewport (right-aligns near the edge)', () => {
+  // A roomy left placement hangs from the anchor's left edge.
+  assert.deepEqual(placeMenu({ left: 40 }, { w: 236 }, { vw: 1024 }), { left: '0', right: 'auto' });
+  // The right-most title (e.g. Help) would overflow, so the box flips to hang left.
+  assert.deepEqual(placeMenu({ left: 950 }, { w: 236 }, { vw: 1024, edge: 12 }), { left: 'auto', right: '0' });
+  // Exactly at the keep-out boundary it still fits on the left.
+  assert.deepEqual(placeMenu({ left: 776 }, { w: 236 }, { vw: 1024, edge: 12 }), { left: '0', right: 'auto' });
+  // Missing geometry degrades to sane defaults rather than throwing.
+  assert.deepEqual(placeMenu(undefined, undefined, undefined), { left: '0', right: 'auto' });
 });
