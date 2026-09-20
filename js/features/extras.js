@@ -341,7 +341,9 @@ function buildHeaderUI() {
 
   const aboutBtn = mkBtn('♥', 'About KNITCAT', () => openAbout());
   const gearBtn = mkBtn('⚙', 'Settings', () => openSettings());
-  gearBtn.classList.add('kx-admin-only'); // only the designer can see the gear
+  // Every feature is on by default now — the designer asked for it explicitly,
+  // so the gear is always reachable. The hidden designer key still works; it now
+  // only reveals genuinely designer-only extras, never the core settings.
   const themeBtn = mkBtn('☾', 'Switch to light', () => toggleTheme());
   themeBtn.id = 'kx-theme';
   brand.appendChild(aboutBtn);

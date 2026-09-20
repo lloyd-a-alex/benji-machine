@@ -25,6 +25,7 @@ import { NotificationCenter } from './ui/notifications.js';
 import { installGlobalErrorBoundary, installRoundRectPolyfill, runGuarded } from './ui/safety.js';
 import { getDiagnostics } from './core/diagnostics.js';
 import { createConsolePanel } from './ui/console-panel.js';
+import { createStitchInspector } from './ui/stitch-inspector.js';
 import { initExtras } from './features/extras.js';
 import { initSound, fx } from './features/sound.js';
 import { initCommandPalette } from './features/command-palette.js';
@@ -298,6 +299,16 @@ class KnitApp {
           this.elements.statusCoords.textContent = `Needle: -- | Row: --`;
         }
       });
+      // The stitch inspector is a read-only consumer of the same hover state. Kept
+      // separate from the editor so it can never affect drawing; a failure just means
+      // no inspector, never a broken canvas.
+      runGuarded('Stitch inspector', () => {
+        this.inspector = createStitchInspector({
+          getEditor: () => this.editor,
+          getMode: () => this.currentMode,
+          getProfile: () => this.currentProfile
+        });
+      }, { notifier: this.notifications, announce: true });
     }
 
     // Keyboard shortcuts deliberately live in ONE place (see initEvents). They
@@ -2224,9 +2235,33 @@ class KnitApp {
     acts.push({ label: 'Clear the canvas', group: 'Edit', keywords: 'clear erase reset blank canvas new empty', run: () => this.editor?.clear() });
     acts.push({ label: 'Toggle console', group: 'Diagnostics', keywords: 'console log terminal debug view panel open close ctrl backtick inspect telemetry', run: () => this.console?.toggle?.() });
     acts.push({ label: 'Open console — Systems status', group: 'Diagnostics', keywords: 'systems status health environment capabilities subsystems boot loaded enabled console diagnostics', run: () => { this.console?.open?.(); this.console?.setView?.('systems'); } });
+    acts.push({ label: 'Toggle stitch inspector', group: 'Inspector', keywords: 'inspect hover cell symbol meaning transfer eyelet yarn over inspector hud readout needle', run: () => this._toggleInspector() });
     acts.push({ label: 'Diagnostics snapshot', group: 'Diagnostics', keywords: 'diagnostics debug log error warn health telemetry console inspect', run: () => this._diagnosticsSummary() });
     acts.push({ label: 'Export diagnostics log (JSON)', group: 'Diagnostics', keywords: 'export diagnostics log json debug copy download telemetry error report', run: () => this._exportDiagnostics() });
     return acts;
+  }
+
+  /**
+   * Turn the read-only stitch inspector on or off. Recreating it is cheap and keeps
+   * the enable/disable path identical to boot, so a toggled-back-on inspector behaves
+   * exactly like the one the app started with.
+   * @private
+   */
+  _toggleInspector() {
+    runGuarded('Toggle stitch inspector', () => {
+      if (this.inspector) {
+        this.inspector.destroy();
+        this.inspector = null;
+        this.notifications?.info?.('Stitch inspector off.');
+      } else {
+        this.inspector = createStitchInspector({
+          getEditor: () => this.editor,
+          getMode: () => this.currentMode,
+          getProfile: () => this.currentProfile
+        });
+        this.notifications?.success?.('Stitch inspector on \u2014 hover a needle.');
+      }
+    }, { notifier: this.notifications });
   }
 
   /**
