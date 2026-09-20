@@ -67,6 +67,11 @@ import { initContextMenu } from './ui/context-menu.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createTaskbar } from './ui/taskbar.js';
 import { runCommand as dispatchCommand } from './ui/commands.js';
+// KNITCAT V2 — the fused six-system re-architecture (KnitScript Project + Fit Engine + Yarn Lab
+// + Compiler V2 + Reverse Engineer + Production). Importing the facade pulls every V2 module into
+// the graph (so none is dead source) and gives us `installV2` to mount the runtime `.kv2-` docks.
+// DOM-free at import; `installV2` is guarded at boot so a V2 failure never touches the editor.
+import { installV2 as installV2Systems, V2_VERSION as KNITCAT_V2_VERSION } from './v2/index.js';
 // The Chart/Select command palette entries (js/ui/chart-commands.js) so Ctrl+K can
 // find every row/column/transform/selection verb by name. Same id vocabulary the
 // menu bar and dispatcher use — one source of truth, three surfaces over it.
@@ -196,6 +201,15 @@ class KnitApp {
     // project taskbar. Mounted last so they can see every other subsystem; each is
     // lazy about the editor, so it is fine that initComponents() has not run yet.
     runGuarded('Desktop chrome', () => this._initDesktopChrome(), { notifier: this.notifications, announce: true });
+
+    // KNITCAT V2 — the fused six-system layer. `installV2` builds a launcher strip and mounts the
+    // `.kv2-` docks on demand (nothing renders until a system is opened), each operating on one
+    // shared Project derived from the live machine profile + card name. Fully contained: if any
+    // V2 module ever fails to boot, the classic CAD editor is completely unaffected.
+    runGuarded('KNITCAT V2', () => {
+      this.v2 = installV2Systems(this);
+      getDiagnostics().info(`KNITCAT V2 systems online (v${KNITCAT_V2_VERSION})`);
+    }, { notifier: this.notifications, announce: true });
 
     // Show the Benji love popup ONCE per browser (not on every refresh).
     // It stays reachable again via the "Show love letter" command in the palette.

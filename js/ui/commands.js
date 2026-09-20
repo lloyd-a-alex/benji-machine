@@ -129,6 +129,20 @@ export function runCommand(app, id, ctx = {}) {
       case 'design.legend': case 'app.symbolLegend': app.symbolLegend && app.symbolLegend.toggle && app.symbolLegend.toggle(); break;
       case 'design.heritage': app.heritagePanel && app.heritagePanel.toggle && app.heritagePanel.toggle(); break;
 
+      // ── KNITCAT V2 — the six fused systems (Project · Fit · Yarn · Compiler · Reverse · Production)
+      case 'v2.project': case 'v2.knitscript': app.v2 && app.v2.open('project'); break;
+      case 'v2.fit': app.v2 && app.v2.open('fit'); break;
+      case 'v2.yarn': app.v2 && app.v2.open('yarn'); break;
+      case 'v2.compiler': case 'v2.compile': app.v2 && app.v2.open('compiler'); break;
+      case 'v2.reverse': app.v2 && app.v2.open('reverse'); break;
+      case 'v2.production': app.v2 && app.v2.open('production'); break;
+      case 'v2.launcher': {
+        const strip = typeof document !== 'undefined' && document.getElementById('kv2-launcher');
+        if (strip) { const on = strip.style.display === 'none'; strip.style.display = on ? '' : 'none'; }
+        break;
+      }
+      case 'v2.closeAll': app.v2 && app.v2.closeAll && app.v2.closeAll(); break;
+
       // ── Machine ──────────────────────────────────────────────────────────
       case 'machine.feasibility': case 'app.feasibility': app.openFeasibility(); break;
       case 'machine.universe': case 'app.universe': app.openMachineUniverse(); break;

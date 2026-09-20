@@ -49,6 +49,9 @@ export const MENUBAR_ACTIONS = new Set([
   'project.dashboard', 'project.snapshot', 'project.rename', 'project.recent', 'project.open',
   'design.presets', 'design.math', 'design.image', 'design.knitalong', 'design.legend',
   'design.heritage',
+  // KNITCAT V2 — the six fused systems, mounted as runtime `.kv2-` docks.
+  'v2.project', 'v2.knitscript', 'v2.fit', 'v2.yarn', 'v2.compiler', 'v2.compile',
+  'v2.reverse', 'v2.production', 'v2.launcher', 'v2.closeAll',
   'machine.feasibility', 'machine.universe', 'machine.fitAll', 'machine.pick',
   'help.about', 'help.guide', 'help.eyelets', 'help.shortcuts', 'help.search', 'help.love',
   // Every chart-row/column/transform/region/matrix verb and every selection verb.
@@ -232,6 +235,21 @@ export function buildMenus(flags = {}) {
         it('Knit-Along companion', 'design.knitalong'),
         it('Stitch-symbol legend', 'design.legend'),
         it('Textile heritage', 'design.heritage')
+      ]
+    },
+    {
+      id: 'studio', title: 'Studio V2',
+      items: [
+        sec('The six fused systems'),
+        it('Project · KnitScript', 'v2.project'),
+        it('Fit Engine', 'v2.fit'),
+        it('Yarn Lab', 'v2.yarn'),
+        it('Compiler V2 (all outputs)', 'v2.compiler'),
+        it('Reverse Engineer (photo → pattern)', 'v2.reverse'),
+        it('Production (cost · batch · orders)', 'v2.production'),
+        sep(),
+        it('Toggle the V2 launcher', 'v2.launcher'),
+        it('Close all V2 docks', 'v2.closeAll', { danger: true })
       ]
     },
     {
