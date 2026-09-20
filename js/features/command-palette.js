@@ -290,7 +290,12 @@ function injectTrigger() {
   b.className = 'btn-action kx-search-btn';
   b.id = 'kx-search-btn';
   b.title = 'Search / jump to anything (Ctrl or ⌘ + K)';
-  b.innerHTML = '\u2318 Search';
+  // Show the real keycap for the platform (⌘K on Apple, Ctrl K elsewhere) so the
+  // shortcut is discoverable, not a cryptic glyph.
+  const isMac = /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent);
+  b.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    + 'stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>'
+    + '<span>Search</span><kbd class="kx-kbd" aria-hidden="true">' + (isMac ? '\u2318K' : 'Ctrl K') + '</kbd>';
   b.addEventListener('click', () => open());
   actions.insertBefore(b, actions.firstChild);
 }

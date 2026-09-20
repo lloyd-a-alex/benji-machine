@@ -22,8 +22,12 @@ import { createFeasibilityAdvisor } from './feasibility.js';
 import {
   universalEnvelope, commonCapabilities, riskLabel
 } from '../machine/machine-knowledge.js';
+import { gridSizeMm, formatLength } from '../edit/measure.js';
 import { soft, matrix as validateMatrix } from '../core/validate.js';
 import { getDiagnostics } from '../core/diagnostics.js';
+import {
+  structureIds, loomIds, structureReport, simplestLoomFor, coverageMatrix
+} from '../weave/weave-knowledge.js';
 
 /** Shared diagnostics child logger for the universe feature. */
 const diag = getDiagnostics().child('universe');
@@ -62,6 +66,67 @@ export function createMachineUniverse(app) {
     return createFeasibilityAdvisor(shim);
   }
 
+  /** Stitches × rows of the live card, for turning cells into millimetres. */
+  function designSize() {
+    const m = matrix();
+    const rows = Array.isArray(m) ? m.length : 0;
+    const cols = Array.isArray(m) && Array.isArray(m[0]) ? m[0].length : 0;
+    return { rows, cols };
+  }
+
+  /**
+   * Real-world size of the current card on one machine, as a labelled reading.
+   * The stitches never change between machines — the pitch does — so this is the
+   * field that shows a knitter the same motif is a doily on Chunky and a band on
+   * standard gauge. `0×0` when there is no card yet, formatted as an em-dash.
+   */
+  function fabricFor(profile) {
+    const { rows, cols } = designSize();
+    const g = gridSizeMm(rows, cols, profile);
+    const label = rows && cols
+      ? `${formatLength(g.widthMm, 'cm')} × ${formatLength(g.heightMm, 'cm')}`
+      : '\u2014';
+    return { rows, cols, widthMm: g.widthMm, heightMm: g.heightMm, label };
+  }
+
+  /**
+   * The physical footprint of the current card on every machine at once.
+   * Where the rest of the universe scores *whether* a card fits a bed, this
+   * answers *how big the resulting object actually is* — the question a knitter
+   * asks before committing yarn. Pure over `measure.gridSizeMm`, so it can never
+   * disagree with the editor's own rulers.
+   */
+  function physicalFootprint() {
+    const { rows, cols } = designSize();
+    const machines = Object.values(MACHINE_PROFILES).map((p) => {
+      const f = fabricFor(p);
+      const cap = profileLimits(p).maxNeedles;
+      return { ...f, profileId: p.id, name: p.name, gauge: p.gauge, bedNeedles: cap, fitsBed: cols <= cap };
+    });
+    if (!machines.length || !cols || !rows) {
+      return { rows, cols, machines, minWidthMm: 0, maxWidthMm: 0, spreadRatio: 1 };
+    }
+    const widths = machines.map((m) => m.widthMm);
+    const minWidthMm = Math.min(...widths);
+    const maxWidthMm = Math.max(...widths);
+    return {
+      rows, cols, machines, minWidthMm, maxWidthMm,
+      spreadRatio: minWidthMm > 0 ? maxWidthMm / minWidthMm : 1
+    };
+  }
+
+  /** A one-line headline for the universe tab: same card, wildly different objects. */
+  function physicalSpreadLine() {
+    const f = physicalFootprint();
+    if (!f.cols || !f.rows) return '';
+    const narrow = f.machines.find((m) => m.widthMm === f.minWidthMm);
+    const wide = f.machines.find((m) => m.widthMm === f.maxWidthMm);
+    if (!narrow || !wide || narrow.profileId === wide.profileId) {
+      return `Your ${f.cols}\u00d7${f.rows} card knits up about ${formatLength(f.minWidthMm, 'cm')} wide.`;
+    }
+    return `Same ${f.cols}\u00d7${f.rows} stitches, a different object on every bed \u2014 ${formatLength(narrow.widthMm, 'cm')} wide on the ${narrow.name} versus ${formatLength(wide.widthMm, 'cm')} on the ${wide.name} (${f.spreadRatio.toFixed(1)}\u00d7 bigger).`;
+  }
+
   /** One machine's full verdict for the current card. */
   function evaluate(profile) {
     const adv = advisorFor(profile, false);
@@ -76,6 +141,7 @@ export function createMachineUniverse(app) {
       brand: machine.brand,
       gauge: profile.gauge,
       beds: machine.beds,
+      fabric: fabricFor(profile),
       score: v.score,
       status: v.status,
       risk: v.risk,
@@ -212,5 +278,36 @@ export function createMachineUniverse(app) {
     return bits.join(' ');
   }
 
-  return { analyzeAll, evaluate, bestMachine, compatibility, universalSpec, tune, tuneForAll, summary };
+  /**
+   * The weaving half of the universe — kept entirely separate from the knitting
+   * fleet analysis above so a woven draft's loom requirements never contaminate a
+   * knit feasibility score. It answers, for the reference structures KNITCAT can
+   * draft, which loom class and shaft count each needs and the simplest machine
+   * that would take it. Pure data over `weave/weave-knowledge.js`.
+   */
+  function weaveReport() {
+    const coverage = coverageMatrix();
+    const structures = structureIds().map((id) => {
+      const report = structureReport(id);
+      const simplest = simplestLoomFor(id);
+      return {
+        id,
+        name: report.name,
+        group: report.group,
+        control: report.control,
+        shaftsLabel: report.shaftsLabel,
+        face: report.face,
+        looms: report.looms.map(l => l.id),
+        simplestLoom: simplest ? simplest.loom.name : null
+      };
+    });
+    return {
+      structures,
+      looms: loomIds(),
+      coverage: coverage.cells,
+      blurb: `${structures.length} woven structures mapped across ${coverage.looms.length} loom types, from a four-shaft hand loom to a full Jacquard head.`
+    };
+  }
+
+  return { analyzeAll, evaluate, bestMachine, compatibility, universalSpec, physicalFootprint, physicalSpreadLine, tune, tuneForAll, summary, weaveReport };
 }

@@ -108,8 +108,8 @@ export class CadDxfExporter {
       dxf.push(`20\n${y1.toFixed(4)}`);
       dxf.push('30\n0.0');
       dxf.push(`11\n${x2.toFixed(4)}`);
-      dxf.push(`20\n${y2.toFixed(4)}`);
-      dxf.push('30\n0.0');
+      dxf.push(`21\n${y2.toFixed(4)}`);
+      dxf.push('31\n0.0');
     };
 
     // Entity Helper: Text

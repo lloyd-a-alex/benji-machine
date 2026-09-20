@@ -18,6 +18,7 @@
  */
 
 import { inspectCell, inspectCellWarnings } from '../edit/stitch-info.js';
+import { ensureKitStyles } from './kit.js';
 
 const STYLE_ID = 'kx-stitch-inspector-style';
 const PANEL_ID = 'kx-stitch-inspector';
@@ -41,24 +42,25 @@ export function createStitchInspector(deps) {
   const getProfile = deps.getProfile || (() => null);
 
   injectStyles();
+  ensureKitStyles();
 
   // Reuse a node if one already exists (e.g. a re-init after a hot reload).
   let root = document.getElementById(PANEL_ID);
   if (!root) {
     root = document.createElement('div');
     root.id = PANEL_ID;
-    root.className = 'kxi';
+    root.className = 'kx-hud';
     root.setAttribute('role', 'status');
     root.setAttribute('aria-live', 'polite');
     root.hidden = true;
     root.innerHTML = `
       <div class="kxi-head">
-        <span class="kxi-pos" data-pos>Row — · Needle —</span>
-        <span class="kxi-tag" data-tag></span>
+        <span class="kx-hud__pos" data-pos>Row — · Needle —</span>
+        <span class="kx-tag" data-tag></span>
       </div>
-      <div class="kxi-name" data-name></div>
-      <div class="kxi-does" data-does></div>
-      <div class="kxi-chips" data-chips></div>
+      <div class="kx-hud__name" data-name></div>
+      <div class="kx-hud__does" data-does></div>
+      <div class="kx-hud__row" data-chips></div>
       <div class="kxi-nbrs" data-nbrs></div>
       <ul class="kxi-warns" data-warns></ul>`;
     document.body.appendChild(root);
@@ -125,7 +127,7 @@ export function createStitchInspector(deps) {
 
     root.hidden = false;
     els.pos.textContent = `Row ${info.row} · Needle ${info.needle}`;
-    setText(els.tag, info.punched ? 'punched' : (info.blank ? 'blank' : ''), info.punched ? 'kxi-tag--on' : 'kxi-tag--off');
+    setText(els.tag, info.punched ? 'punched' : (info.blank ? 'blank' : ''), info.punched ? 'kx-tag--on' : 'kx-tag--off');
     els.name.textContent = info.chart ? `${info.name}  ·  ${info.chart}` : (info.name || '—');
     els.does.textContent = info.does || '';
 
@@ -133,7 +135,7 @@ export function createStitchInspector(deps) {
     addChip(els.chips, CARRIAGE_LABEL[info.carriage] || info.carriage || '');
     addChip(els.chips, TRAVEL_LABEL[info.travel] || info.travel || '');
     if (typeof info.stitchDelta === 'number' && info.stitchDelta !== 0) {
-      addChip(els.chips, `${info.stitchDelta > 0 ? '+' : ''}${info.stitchDelta} live stitches`, info.stitchDelta > 0 ? 'kxi-chip--up' : 'kxi-chip--down');
+      addChip(els.chips, `${info.stitchDelta > 0 ? '+' : ''}${info.stitchDelta} live stitches`, info.stitchDelta > 0 ? 'kx-chip--up' : 'kx-chip--down');
     }
     els.chips.hidden = !els.chips.childElementCount;
 
@@ -182,7 +184,7 @@ function setText(el, text, modClass) {
   el.textContent = text || '';
   el.hidden = !text;
   if (modClass) {
-    el.classList.remove('kxi-tag--on', 'kxi-tag--off');
+    el.classList.remove('kx-tag--on', 'kx-tag--off');
     if (text) el.classList.add(modClass);
   }
 }
@@ -191,7 +193,7 @@ function setText(el, text, modClass) {
 function addChip(host, text, modClass) {
   if (!text) return;
   const chip = document.createElement('span');
-  chip.className = 'kxi-chip' + (modClass ? ' ' + modClass : '');
+  chip.className = 'kx-chip' + (modClass ? ' ' + modClass : '');
   chip.textContent = text;
   host.appendChild(chip);
 }
@@ -202,29 +204,14 @@ function injectStyles() {
   if (stylesInjected || typeof document === 'undefined') return;
   if (document.getElementById(STYLE_ID)) { stylesInjected = true; return; }
   const css = `
-  #kx-stitch-inspector{position:fixed;left:12px;bottom:12px;z-index:9000;max-width:320px;
-    background:rgba(18,22,31,.94);backdrop-filter:blur(6px);color:#e7ecf3;
-    border:1px solid var(--border-subtle,#2b3242);border-radius:12px;padding:10px 12px;
-    font:12.5px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-    box-shadow:0 12px 34px rgba(0,0,0,.34);pointer-events:none}
   #kx-stitch-inspector .kxi-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px}
-  #kx-stitch-inspector .kxi-pos{color:#8fb0ff;font-weight:600;letter-spacing:.2px;font-variant-numeric:tabular-nums}
-  #kx-stitch-inspector .kxi-tag{font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:1px 7px;border-radius:20px;border:1px solid #33405c;color:#9fb0cc}
-  #kx-stitch-inspector .kxi-tag--on{color:#0d1017;background:#57c785;border-color:#57c785}
-  #kx-stitch-inspector .kxi-tag--off{color:#0d1017;background:#5b6577;border-color:#5b6577}
-  #kx-stitch-inspector .kxi-name{font-size:14px;font-weight:700;margin-bottom:3px}
-  #kx-stitch-inspector .kxi-does{color:#c3ccdb;margin-bottom:7px}
-  #kx-stitch-inspector .kxi-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
-  #kx-stitch-inspector .kxi-chip{background:#182032;border:1px solid #26314a;color:#aebfe0;border-radius:6px;padding:1px 7px;font-size:11px}
-  #kx-stitch-inspector .kxi-chip--up{color:#8ff0b3;border-color:#265a3a}
-  #kx-stitch-inspector .kxi-chip--down{color:#ffb3b8;border-color:#5a262b}
-  #kx-stitch-inspector .kxi-nbrs{display:flex;flex-wrap:wrap;gap:8px;color:#8a93a6;font-size:11.5px;margin-bottom:4px}
+  #kx-stitch-inspector .kxi-nbrs{display:flex;flex-wrap:wrap;gap:8px;color:var(--panel-muted);font-size:11.5px;margin-bottom:4px}
   #kx-stitch-inspector .kxi-nbr::before{content:'· ';color:#4b556a}
   #kx-stitch-inspector .kxi-warns{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:3px}
-  #kx-stitch-inspector .kxi-warn{font-size:11.5px;line-height:1.4;padding-left:12px;position:relative}
-  #kx-stitch-inspector .kxi-warn::before{content:'';position:absolute;left:0;top:5px;width:6px;height:6px;border-radius:50%;background:#f0b429}
-  #kx-stitch-inspector .kxi-warn--error::before{background:#ff3860}
-  #kx-stitch-inspector .kxi-warn--info::before{background:#6ea8fe}
+  #kx-stitch-inspector .kxi-warn{font-size:11.5px;line-height:1.4;padding-left:12px;position:relative;color:var(--panel-muted)}
+  #kx-stitch-inspector .kxi-warn::before{content:'';position:absolute;left:0;top:5px;width:6px;height:6px;border-radius:50%;background:var(--accent-amber)}
+  #kx-stitch-inspector .kxi-warn--error::before{background:var(--accent-rose)}
+  #kx-stitch-inspector .kxi-warn--info::before{background:var(--accent-cyan)}
   @media (max-width:640px){ #kx-stitch-inspector{max-width:min(76vw,300px)} }
   `;
   try {

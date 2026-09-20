@@ -46,14 +46,18 @@ const CSS = `
   border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;flex:0 0 auto}
 .kx-mini:hover{color:var(--text-primary,#f8fafc);border-color:var(--border-active,#38bdf8)}
 .kx-mini--danger:hover{color:#fecdd3;border-color:var(--accent-rose,#f43f5e)}
-.kx-banner{display:flex;align-items:flex-start;gap:12px;flex:0 0 auto;margin:8px 8px 0;padding:12px 14px;
-  border-radius:var(--radius-md,8px);border:1px solid var(--accent-amber,#fbbf24);
-  background:rgba(251,191,36,.1);color:var(--text-primary,#f8fafc)}
+.kx-banner{display:flex;align-items:flex-start;gap:12px;flex:0 0 auto;margin:8px 8px 0;padding:13px 15px;
+  border-radius:var(--radius-lg,12px);border:1px solid color-mix(in srgb,var(--accent-amber,#fbbf24) 55%,transparent);
+  background:linear-gradient(180deg,rgba(251,191,36,.15),rgba(251,191,36,.06));
+  color:var(--text-primary,#f8fafc);box-shadow:0 10px 28px -14px rgba(0,0,0,.65)}
 .kx-banner[hidden]{display:none}
+.kx-banner-icon{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
+  width:34px;height:34px;border-radius:50%;font-size:18px;line-height:1;
+  background:color-mix(in srgb,var(--accent-amber,#fbbf24) 20%,transparent);color:var(--accent-amber,#fbbf24)}
 .kx-banner-body{flex:1 1 auto;min-width:0}
-.kx-banner-title{font-size:13px;font-weight:700}
-.kx-banner-text{font-size:11px;color:var(--text-secondary,#94a3b8);margin-top:3px;line-height:1.5}
-.kx-banner-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.kx-banner-title{font-size:13px;font-weight:700;letter-spacing:.01em}
+.kx-banner-text{font-size:11px;color:var(--text-secondary,#94a3b8);margin-top:4px;line-height:1.55}
+.kx-banner-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 @media (max-width:720px){
   .kx-banner{margin:6px 6px 0;flex-direction:column}
   .kx-banner-actions .btn-action{flex:1 1 46%}
@@ -221,6 +225,7 @@ export async function initDataPanel(context = {}) {
     banner._document = doc;
     const when = relativeTime(doc.timestamp);
     banner.innerHTML = `
+      <div class="kx-banner-icon" aria-hidden="true">\u21ba</div>
       <div class="kx-banner-body">
         <div class="kx-banner-title">This card was not saved when the tab closed</div>
         <div class="kx-banner-text">

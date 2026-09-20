@@ -40,6 +40,132 @@ export function randomSeed() {
   return (Math.floor(Math.random() * 0xffffffff) >>> 0) || 1;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Pure mathematical primitives.
+ *
+ * These are separated from the generators on purpose: each one is a closed-form
+ * piece of mathematics (number theory, quasi-Monte-Carlo, linear algebra,
+ * discrete geometry) that can be unit-tested against its defining property on
+ * its own, without rasterising anything. The generators below are thin
+ * rasterisers over these facts.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/** Greatest common divisor of two integers (Euclid). */
+export function gcd(a, b) {
+  let x = Math.abs(Math.trunc(a));
+  let y = Math.abs(Math.trunc(b));
+  while (y) { const t = y; y = x % y; x = t; }
+  return x;
+}
+
+/**
+ * Radical inverse (van der Corput): reflect the base-`base` digits of `index`
+ * about the decimal point. This is the 1-D low-discrepancy sequence — the
+ * reason a Halton point set scatters far more evenly than a random draw.
+ *   radicalInverse(5, 2) = (101)₂ reflected = 0.101₂ = 0.625
+ */
+export function radicalInverse(index, base = 2) {
+  let n = Math.max(0, Math.floor(index));
+  const b = base >= 2 ? Math.floor(base) : 2;
+  let inv = 1;
+  let result = 0;
+  while (n > 0) {
+    inv /= b;
+    result += (n % b) * inv;
+    n = Math.floor(n / b);
+  }
+  return result;
+}
+
+/** A Halton quasi-random point in [0,1)^d, one radical-inverse per base. */
+export function haltonPoint(index, bases = [2, 3]) {
+  return bases.map((b) => radicalInverse(index, b));
+}
+
+/**
+ * Distribute `count` marks across `total` slots as evenly as arithmetic allows
+ * (the Christoffel / Bresenham principle). Gaps between consecutive marks differ
+ * by at most one slot — which is exactly the problem a knitter faces when told
+ * "decrease 7 times over 43 rows". Returns a length-`total` 0/1 array summing to
+ * min(count, total).
+ */
+export function distributeEvenly(count, total) {
+  const out = new Array(total).fill(0);
+  if (total <= 0) return out;
+  const c = Math.max(0, Math.min(Math.trunc(count), total));
+  let acc = 0;
+  for (let i = 0; i < total; i++) {
+    acc += c;
+    if (acc >= total) {
+      out[i] = 1;
+      acc -= total;
+    }
+  }
+  return out;
+}
+
+/**
+ * Sylvester–Hadamard matrix of the smallest power-of-two order ≥ `order`,
+ * built by the doubling Kronecker construction
+ *   H₂ = [[1,1],[1,-1]],  H₂ₖ = [[Hₖ, Hₖ],[Hₖ, -Hₖ]].
+ * Every row (except the all-ones first) holds n/2 +1s and n/2 -1s, and any two
+ * distinct rows are orthogonal: H·Hᵀ = nI. That orthogonality is what makes the
+ * tiled pattern free of low-frequency repetition.
+ */
+export function hadamardMatrix(order = 8) {
+  const target = Math.max(1, Math.pow(2, Math.ceil(Math.log2(Math.max(1, order)))));
+  let H = [[1]];
+  while (H.length < target) {
+    const top = H.map((row) => row.concat(row));
+    const bot = H.map((row) => row.concat(row.map((v) => -v)));
+    H = top.concat(bot);
+  }
+  return H;
+}
+
+/**
+ * Gielis' superformula radius — the one-parameter family that contains the
+ * circle, superellipse, and countless flower/starfish outlines:
+ *   r(θ) = ( |cos(mθ/4)/a)^n2 + |sin(mθ/4)/b)^n3 )^(-1/n1)
+ */
+export function superformulaRadius(theta, params = {}) {
+  const { m = 6, n1 = 1, n2 = 1, n3 = 1, a = 1, b = 1 } = params;
+  const t1 = Math.pow(Math.abs(Math.cos((m * theta) / 4) / a), n2);
+  const t2 = Math.pow(Math.abs(Math.sin((m * theta) / 4) / b), n3);
+  const sum = t1 + t2;
+  if (sum === 0) return 0;
+  const r = Math.pow(sum, -1 / n1);
+  return Number.isFinite(r) ? r : 0;
+}
+
+/** Bresenham line rasteriser into a 0/1 matrix (clipped to bounds). Internal. */
+function drawLineToMatrix(matrix, x0, y0, x1, y1) {
+  let x = Math.round(x0);
+  let y = Math.round(y0);
+  const xe = Math.round(x1);
+  const ye = Math.round(y1);
+  const dx = Math.abs(xe - x);
+  const sx = x < xe ? 1 : -1;
+  const dy = -Math.abs(ye - y);
+  const sy = y < ye ? 1 : -1;
+  let err = dx + dy;
+  const rows = matrix.length;
+  const cols = rows ? matrix[0].length : 0;
+  for (;;) {
+    if (x >= 0 && x < cols && y >= 0 && y < rows) matrix[y][x] = 1;
+    if (x === xe && y === ye) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x += sx; }
+    if (e2 <= dx) { err += dx; y += sy; }
+  }
+}
+
+function zeros(rows, cols) {
+  const m = [];
+  for (let r = 0; r < rows; r++) m[r] = new Array(cols).fill(0);
+  return m;
+}
+
 export class MathPatternGenerators {
   /**
    * Gray-Scott Reaction-Diffusion PDE Solver on Toroidal Domain
@@ -663,6 +789,198 @@ export class MathPatternGenerators {
       }
     }
     
+    return matrix;
+  }
+
+  /**
+   * Conway's Game of Life on a torus (rule B3/S23).
+   * A cellular automaton that is Turing-complete: gliders, oscillators and
+   * still-lifes emerge from a random soup. The toroidal wrap means no edge
+   * artefacts, so the card repeats seamlessly. `generations` controls how far
+   * the soup has settled — low values stay busy, high values converge to
+   * still-lifes and oscillators.
+   */
+  static generateGameOfLife(rows, cols, seed = 0, generations = 25, density = 0.3) {
+    const rand = makeRng(seed);
+    let g = [];
+    for (let r = 0; r < rows; r++) {
+      g[r] = [];
+      for (let c = 0; c < cols; c++) g[r][c] = rand() < density ? 1 : 0;
+    }
+    const wrapR = (r) => (r + rows) % rows;
+    const wrapC = (c) => (c + cols) % cols;
+    for (let gen = 0; gen < generations; gen++) {
+      const ng = [];
+      for (let r = 0; r < rows; r++) {
+        ng[r] = [];
+        for (let c = 0; c < cols; c++) {
+          let n = 0;
+          for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+              if (dr === 0 && dc === 0) continue;
+              n += g[wrapR(r + dr)][wrapC(c + dc)];
+            }
+          }
+          const alive = g[r][c];
+          ng[r][c] = alive ? ((n === 2 || n === 3) ? 1 : 0) : (n === 3 ? 1 : 0);
+        }
+      }
+      g = ng;
+    }
+    return g;
+  }
+
+  /**
+   * Sylvester–Hadamard tiling: the ±1 orthogonal matrix (see hadamardMatrix)
+   * mapped to knit/purl and tiled across the card. Because distinct rows are
+   * orthogonal, the resulting checker-of-checkers carries no repeating
+   * low-frequency block — visually it shimmers rather than bands.
+   */
+  static generateHadamardTiling(rows, cols, order = 8) {
+    const H = hadamardMatrix(order);
+    const n = H.length;
+    const matrix = [];
+    for (let r = 0; r < rows; r++) {
+      matrix[r] = [];
+      for (let c = 0; c < cols; c++) matrix[r][c] = H[r % n][c % n] > 0 ? 1 : 0;
+    }
+    return matrix;
+  }
+
+  /**
+   * Low-discrepancy scatter: the first `pointCount` Halton-sequence points
+   * (radical inverse in bases 2 and 3) mapped onto the card. Unlike random
+   * seeding this fills the field evenly with no clumps and no holes — the
+   * right tool for a regular-but-organic sprinkle of eyelets.
+   */
+  static generateHaltonScatter(rows, cols, pointCount = 60) {
+    const matrix = zeros(rows, cols);
+    if (rows === 0 || cols === 0) return matrix;
+    for (let i = 1; i <= pointCount; i++) {
+      const [fx, fy] = haltonPoint(i, [2, 3]);
+      const c = Math.min(cols - 1, Math.floor(fx * cols));
+      const r = Math.min(rows - 1, Math.floor(fy * rows));
+      matrix[r][c] = 1;
+    }
+    return matrix;
+  }
+
+  /**
+   * Christoffel weave: each row distributes its marks by the balanced
+   * (Christoffel / Bresenham) word for slope k/cols, then the whole row is
+   * cyclically shifted to interlace with its neighbours. The mathematics is the
+   * same one a knitter uses to "decrease evenly": no two marks are ever
+   * unnecessarily adjacent, so stress never concentrates in one wale.
+   */
+  static generateChristoffelWeave(rows, cols, repeat = 8) {
+    const L = Math.max(2, Math.min(repeat, cols));
+    const matrix = [];
+    for (let r = 0; r < rows; r++) {
+      const k = (r % L) + 1;
+      const row = distributeEvenly(k, cols);
+      const shift = Math.floor(r / L) % cols;
+      const rotated = row.slice(cols - shift).concat(row.slice(0, cols - shift));
+      matrix[r] = rotated.map((v) => (v ? 1 : 0));
+    }
+    return matrix;
+  }
+
+  /**
+   * Gielis superformula outline (see superformulaRadius). Sweeping `m` and the
+   * three exponents walks the whole family from circles to stars to flowers;
+   * the shape is drawn as a fixed-width band so it reads as a single yarn.
+   */
+  static generateSuperformula(rows, cols, params = {}) {
+    const p = { m: 7, n1: 0.25, n2: 1.7, n3: 1.7, a: 1, b: 1, ...params };
+    const matrix = zeros(rows, cols);
+    const cx = (cols - 1) / 2;
+    const cy = (rows - 1) / 2;
+    let maxR = 0;
+    for (let s = 0; s < 720; s++) maxR = Math.max(maxR, superformulaRadius((s * Math.PI) / 360, p));
+    const scale = Math.min(cx, cy) / (maxR || 1);
+    const band = Math.max(1.0, Math.min(rows, cols) * 0.03);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const dx = c - cx;
+        const dy = r - cy;
+        const rho = Math.hypot(dx, dy);
+        const theta = Math.atan2(dy, dx);
+        const R = superformulaRadius(theta, p) * scale;
+        matrix[r][c] = Math.abs(rho - R) <= band ? 1 : 0;
+      }
+    }
+    return matrix;
+  }
+
+  /**
+   * Rhodonea (rose) curves r = cos((numerator/denominator)·θ), drawn as petals.
+   * When the ratio is p/q in lowest terms the curve closes with p·q petals (p·2q
+   * when p and q are both odd) — a genuinely rational-symmetric motif.
+   */
+  static generateRoseCurves(rows, cols, numerator = 5, denominator = 1, band = 1.4) {
+    const matrix = zeros(rows, cols);
+    const cx = (cols - 1) / 2;
+    const cy = (rows - 1) / 2;
+    const scale = Math.min(cx, cy) || 1;
+    const nb = band / scale;
+    const k = numerator / (denominator || 1);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const dx = (c - cx) / scale;
+        const dy = (r - cy) / scale;
+        const rho = Math.hypot(dx, dy);
+        const theta = Math.atan2(dy, dx);
+        const R = Math.abs(Math.cos(k * theta));
+        matrix[r][c] = Math.abs(rho - R) <= nb ? 1 : 0;
+      }
+    }
+    return matrix;
+  }
+
+  /**
+   * Modular multiplication table (the "times-table cardioid"). Place `modulus`
+   * points on a circle, then chord each point i to (i·factor mod modulus). For
+   * factor 2 the envelope is a cardioid, factor 3 a nephroid, and other factors
+   * reveal the modular structure as delicate string-art. Pure number theory.
+   */
+  static generateModularMultiplication(rows, cols, modulus = 60, factor = 2) {
+    const matrix = zeros(rows, cols);
+    const m = Math.max(2, Math.trunc(modulus));
+    const cx = (cols - 1) / 2;
+    const cy = (rows - 1) / 2;
+    const R = Math.min(cx, cy) * 0.94;
+    const point = (i) => {
+      const th = (i / m) * 2 * Math.PI - Math.PI / 2;
+      return [cx + R * Math.cos(th), cy + R * Math.sin(th)];
+    };
+    for (let i = 0; i < m; i++) {
+      const a = point(i);
+      const b = point((i * Math.trunc(factor)) % m);
+      drawLineToMatrix(matrix, a[0], a[1], b[0], b[1]);
+    }
+    return matrix;
+  }
+
+  /**
+   * Logistic-map bifurcation. One column per growth rate r sweeping
+   * [rStart, rEnd]; after discarding a transient, every subsequent iterate of
+   * xₙ₊₁ = r·xₙ(1−xₙ) is plotted. The period-doubling cascade into chaos is a
+   * genuine picture of deterministic unpredictability, and it is entirely
+   * reproducible — no seed needed.
+   */
+  static generateLogisticBifurcation(rows, cols, rStart = 2.6, rEnd = 4.0, transient = 200) {
+    const matrix = zeros(rows, cols);
+    const span = cols > 1 ? cols - 1 : 1;
+    for (let c = 0; c < cols; c++) {
+      const r = rStart + (rEnd - rStart) * (c / span);
+      let x = 0.5;
+      for (let t = 0; t < transient; t++) x = r * x * (1 - x);
+      for (let t = 0; t < rows; t++) {
+        x = r * x * (1 - x);
+        const px = Math.round((1 - x) * (rows - 1));
+        if (px >= 0 && px < rows) matrix[px][c] = 1;
+      }
+    }
     return matrix;
   }
 

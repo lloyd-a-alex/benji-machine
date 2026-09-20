@@ -15,15 +15,20 @@
   --border-active: #38bdf8;
   --border-focus: #0ea5e9;
 
-  --accent-cyan: #38bdf8;
+  --accent-cyan: #5cc9fb;
   --accent-amber: #fbbf24;
-  --accent-rose: #f43f5e;
+  --accent-rose: #ff97a8;
   --accent-emerald: #34d399;
   --accent-indigo: #6366f1;
 
   --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  /* Tuned against WCAG 3.0's APCA colour model, not the old 2.x ratio: on the
+     darkest surfaces every text tier clears Lc 60 (the readable-text floor) even
+     on the lightest raised surface, so secondary labels and "muted" hints are
+     genuinely legible rather than merely 4.5:1. The gradient primary(104) →
+     secondary(76) → muted(63) is preserved. See js/core/apca.js. */
+  --text-secondary: #c3cfdd;
+  --text-muted: #b0bccb;
 
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -31,7 +36,31 @@
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
+  --radius-xl: 14px;
   --shadow-panel: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+  --shadow-float: 0 16px 40px -6px rgba(0, 0, 0, 0.55);
+
+  /* Floating-surface design tokens. Each feature dock used to hardcode these
+     values in its own injected <style>, which is why the panels looked subtly
+     different from one another. They now all read from here via js/ui/kit.js. */
+  --panel-bg: rgba(15, 23, 42, 0.92);
+  --panel-bar-bg: rgba(15, 23, 42, 0.97);
+  --panel-border: rgba(148, 163, 184, 0.18);
+  --panel-hairline: rgba(148, 163, 184, 0.12);
+  --panel-text: var(--text-primary);
+  --panel-muted: var(--text-secondary);
+  --panel-faint: var(--text-muted);
+  --panel-blur: 8px;
+  --btn-bg: rgba(30, 41, 59, 0.7);
+  --btn-bg-hover: rgba(51, 65, 85, 0.85);
+  --btn-border: rgba(148, 163, 184, 0.22);
+  --btn-text: #cbd5e1;
+
+  /* One canonical accent plus the romance brand accent, so components can use
+     var(--accent) / var(--brand-accent) and finally get a real value instead of
+     the silent per-module fallbacks the docks were each written against. */
+  --accent: var(--accent-cyan);
+  --brand-accent: #fb7185;
 
   /* --- responsive primitives (overridden live by js/app.js) -------------
      --kx-vh  : the *visual* viewport height, so the iOS URL bar and the
@@ -101,14 +130,18 @@ header#main-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 48px;
+  min-height: 52px;
   /* One line on desktop: never wrap the love text onto a second row. The tablet /
      phone tiers (<=900px) intentionally switch back to wrap. */
   flex-wrap: nowrap;
   row-gap: 6px;
   padding: 0 16px;
+  /* A soft top-lit surface reads as depth rather than a flat slab, and the
+     accent hairline under the border ties the bar to the active brand colour. */
+  background-image: linear-gradient(180deg, var(--bg-surface-elevated), var(--bg-surface));
   background-color: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--brand-accent) 45%, transparent);
   z-index: 20;
 }
 
@@ -128,9 +161,9 @@ header#main-header {
 }
 
 .brand-title {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
   color: var(--text-primary);
   text-transform: uppercase;
 }
@@ -156,15 +189,22 @@ header#main-header {
   align-items: center;
   gap: 8px;
   background-color: var(--bg-surface-elevated);
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: border-color 0.15s ease;
+}
+
+.profile-picker:focus-within {
+  border-color: var(--accent-cyan);
 }
 
 .profile-picker label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
   text-transform: uppercase;
 }
 
@@ -183,35 +223,46 @@ header#main-header {
   color: var(--text-primary);
 }
 
+/* A segmented control: a recessed track holding the modes, the active one raised
+   as a filled pill. Reads as one choice, not four loose buttons. */
 .mode-selector {
   display: flex;
-  background-color: #0b0f19;
+  gap: 2px;
+  background-color: var(--bg-main);
   padding: 3px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
 .mode-btn {
   background: transparent;
   color: var(--text-secondary);
   border: none;
-  padding: 5px 14px;
+  padding: 6px 14px;
   font-size: 11px;
-  font-weight: 600;
-  border-radius: var(--radius-sm);
+  font-weight: 700;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
   text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .mode-btn:hover {
   color: var(--text-primary);
+  background: var(--bg-surface-elevated);
+}
+
+.mode-btn:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 1px;
 }
 
 .mode-btn.active {
   background-color: var(--accent-cyan);
   color: #04101e;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35), 0 0 10px color-mix(in srgb, var(--accent-cyan) 40%, transparent);
 }
 
 .header-actions {
@@ -232,17 +283,29 @@ header#main-header {
   background-color: var(--bg-surface-elevated);
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.08s, box-shadow 0.15s;
 }
 
 .btn-action:hover {
-  background-color: #2e3e5c;
+  /* Tint the surface with the live accent instead of a fixed navy, so the hover
+     matches whichever theme (or picked accent) is in play. */
+  background-color: color-mix(in srgb, var(--accent-cyan) 16%, var(--bg-surface-elevated));
   border-color: var(--accent-cyan);
+  transform: translateY(-1px);
+}
+
+.btn-action:active {
+  transform: translateY(0);
+}
+
+.btn-action:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
 }
 
 .btn-action.btn-primary {
@@ -256,6 +319,101 @@ header#main-header {
   box-shadow: 0 0 12px rgba(14, 165, 233, 0.5);
 }
 
+/* --- Header control affordances: make the three "always-on" tools legible as
+       distinct things (a finder, a menu, a panel toggle) rather than mystery
+       buttons. All colours come from tokens so they track theme + picked accent. */
+
+/* Command palette trigger: reads like a search field with its shortcut keycap. */
+.kx-search-btn {
+  color: var(--text-secondary);
+}
+.kx-search-btn:hover { color: var(--text-primary); }
+.kx-search-btn svg { width: 14px; height: 14px; opacity: 0.85; }
+.kx-search-btn .kx-kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--bg-main);
+  border: 1px solid var(--border-subtle);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 2px 5px;
+  margin-left: 2px;
+}
+
+/* Studio menu: icon + label + caret that flips when the drop is open. */
+.kx-menu-btn .kx-menu-ico { width: 14px; height: 14px; }
+.kx-menu-btn .kx-menu-caret {
+  font-size: 9px;
+  opacity: 0.7;
+  transition: transform 0.15s ease;
+}
+.kx-menu-btn[aria-expanded="true"] .kx-menu-caret { transform: rotate(180deg); }
+
+/* Panel toggle: reads clearly pressed-in while the diagnostics drawer is open. */
+.kx-panels-btn[aria-expanded="true"] {
+  background-color: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  color: #04101e;
+}
+
+/* Feasibility live status pill — the button tells you whether the card is safe
+   BEFORE you click it, and pulses when something is genuinely wrong. */
+#btn-feasibility { position: relative; }
+.feas-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 2px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+.feas-status[hidden] { display: none; }
+.feas-status[data-sev="ok"]    { background: color-mix(in srgb, var(--accent-emerald) 22%, transparent); color: var(--accent-emerald); }
+.feas-status[data-sev="warn"]  { background: color-mix(in srgb, var(--accent-amber) 24%, transparent);  color: var(--accent-amber); }
+.feas-status[data-sev="error"] { background: color-mix(in srgb, var(--accent-rose) 26%, transparent);   color: var(--accent-rose); }
+#btn-feasibility[data-status="not-feasible"] { border-color: var(--accent-rose); }
+@media (prefers-reduced-motion: no-preference) {
+  #btn-feasibility[data-status="not-feasible"] .feas-status {
+    animation: feas-pulse 1.6s ease-in-out infinite;
+  }
+}
+@keyframes feas-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-rose) 40%, transparent); }
+}
+
+/* --- Skip link (keyboard a11y): off-screen until focused --- */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 2000;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  background: var(--accent-cyan);
+  color: #04121f;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  transform: translateY(-160%);
+  transition: transform 0.15s ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
 /* --- Main Workbench Area --- */
 #workbench {
   display: flex;
@@ -266,7 +424,9 @@ header#main-header {
 
 /* --- Left Toolbar Palette (accessible submenus) --- */
 #left-toolbar {
-  width: 188px;
+  /* Slim icon rail: wide enough to hold a 2-up tool grid and the section label,
+     but no longer eating 188px of canvas for a handful of buttons. */
+  width: 152px;
   background-color: var(--bg-surface);
   border-right: 1px solid var(--border-subtle);
   display: flex;
@@ -302,6 +462,13 @@ header#main-header {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
+}
+
+/* A hairline between sections keeps the stack readable without heavy chrome. */
+.tool-submenu + .tool-submenu {
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 /* The section header doubles as the only thing visible when collapsed. */
@@ -363,13 +530,18 @@ header#main-header {
   transform: rotate(90deg);
 }
 
-/* The tool grid inside an open section. */
+/* The tool grid inside an open section, set on a soft inset panel so an expanded
+   group reads as one surface holding its tools. */
 .tool-submenu-body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
   gap: 6px;
   justify-items: center;
-  padding: 6px 4px 8px;
+  padding: 8px 6px;
+  margin: 2px 2px 2px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
 }
 
 /* Collapsed sections hide their body purely from the aria state, so the layout is
@@ -407,6 +579,7 @@ header#main-header {
   background-color: rgba(56, 189, 248, 0.15);
   border-color: var(--accent-cyan);
   color: var(--accent-cyan);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35), 0 2px 10px rgba(14, 165, 233, 0.28);
 }
 
 .tool-btn svg {
@@ -1326,11 +1499,12 @@ button, [role="button"], label, a, input[type="range"], input[type="checkbox"], 
   border-radius: 2px;
 }
 
-/* Ensure all modals have consistent styling */
+/* Ensure all modals share the themed gradient surface + hairline border.
+   (The canonical .modal-card geometry/shadow lives further down; we only add
+   the cosmetic background + border here so we never fight that block.) */
 .modal-card {
   background: linear-gradient(145deg, var(--bg-surface) 0%, var(--bg-surface-elevated) 100%);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 }
 
 /* Ensure all panels have consistent spacing */
@@ -1927,15 +2101,22 @@ body.theme-romance {
   --border-active: #f472b6;
   --border-focus: #ec4899;
 
-  --accent-cyan: #f472b6;    /* Romantic Pink */
-  --accent-amber: #fde047;   /* Champagne Gold */
-  --accent-rose: #fb7185;    /* Strawberry Rose */
-  --accent-emerald: #4ade80; /* Spring green — kept as the SUCCESS colour so "✓ OK" / collision-free stays readable-positive; romance identity lives in --accent-rose */
-  --accent-indigo: #e879f9;
+  /* WCAG 3.0 / APCA-tuned (see js/core/apca.js). These win the cascade for all
+     page content because body.theme-romance redeclares the tokens on the closest
+     ancestor, shadowing both :root and the runtime accent picker — so this block
+     is the source of truth for what is actually rendered. Each text/foreground
+     accent now clears Lc 60 on the *lightest* purple surface (#37114a), which
+     means it clears it on every darker one too. Hues are preserved: the pinks
+     stay pink, the purples stay purple, just lifted a step for legibility. */
+  --accent-cyan: #f799ca;    /* Romantic Pink (was #f472b6, Lc 48) */
+  --accent-amber: #fde047;   /* Champagne Gold (Lc 85) */
+  --accent-rose: #fc9caa;    /* Strawberry Rose (was #fb7185, Lc 47) */
+  --accent-emerald: #4ade80; /* Spring green — SUCCESS colour, kept readable-positive (Lc 68) */
+  --accent-indigo: #ed96fa;  /* (was #e879f9, Lc 51) */
 
   --text-primary: #fff1f2;
   --text-secondary: #fbcfe8;
-  --text-muted: #c084fc;
+  --text-muted: #d0a4fd;     /* (was #c084fc, Lc 48) */
 }
 
 body.theme-romance header#main-header {
@@ -2581,6 +2762,32 @@ html[data-theme="light"] .btn-action.btn-primary { color: #fff; }
 #punchcard-canvas { height: auto; max-width: none; }
 
 
+/* Header brand-section toggles (console, sound, theme, structure, clip shelf, …).
+   Owned here in the global sheet — every feature module just stamps class="kx-hbtn",
+   so none of them has to load first for these to look right. Its responsive
+   (pointer:coarse) and (hover:none) refinements live in the tiers below. */
+.kx-hbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-left: 6px;
+  border: 1px solid var(--brand-accent);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--brand-accent);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  transition: background 0.15s, transform 0.1s;
+}
+.kx-hbtn:hover {
+  background: rgba(251, 113, 133, 0.15);
+  transform: translateY(-1px);
+}
+
+
 /* ---- Tier 1 — anything touched by a finger ------------------------------ */
 
 @media (pointer: coarse) {
@@ -2804,7 +3011,17 @@ html[data-theme="light"] .btn-action.btn-primary { color: #fff; }
     grid-template-columns: none;
     grid-auto-flow: column;
     justify-content: start;
-    padding: 0 4px 0 0;
+    padding: 0 6px;
+    margin: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+  }
+  .tool-submenu + .tool-submenu {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    border-left: 1px solid var(--border-subtle);
   }
 
   /* Legacy absolute context rails, if present, join the stack. */
@@ -3195,4 +3412,106 @@ html[data-theme="light"] .btn-action.btn-primary { color: #fff; }
 @media (forced-colors: active) {
   .pwa-banner, .net-status, #btn-install-app { border: 1px solid CanvasText; }
   .pwa-banner-action { background: ButtonFace; color: ButtonText; }
+}
+
+
+/* ============================================================================
+   TRIPLE-A POLISH LAYER — the global "last-mile" craft primitives.
+   ----------------------------------------------------------------------------
+   The layers above already handle each component with real care. This tier adds
+   the handful of *document-level* refinements that separate a good UI from a
+   product-grade one — the things a component-by-component audit tends to miss:
+     · a themed text selection and text caret (the OS default clashing with the
+       dark theme is the most subconscious "amateur" tell there is);
+     · tabular numerals on every live readout, so counts, coordinates and gauge
+       values stop horizontally jittering as they tick (mono-font spots and the
+       floating docks were already safe — this covers the proportional markup);
+     · a keyboard focus-visible safety net so no control can ever be tabbed to
+       invisibly. It also repairs .select-control, which shipped `outline: none`
+       with no focus replacement — a genuine a11y hole;
+     · balanced headings / orphan-free body copy, and a calm thin scrollbar for
+       the scroll regions the per-component rules never reached;
+     · a single motion vocabulary (--dur-*, --ease-*) so the shell, the docks and
+       any future UI share one easing scale instead of ad-hoc `0.15s ease`.
+   Nothing here redeclares a property a component already owns on the same
+   selector: every rule is either a brand-new pseudo-element or a brand-new
+   property, so it layers on without fighting the cascade. Locks green against
+   tests/css-collisions.test.mjs.
+   ========================================================================== */
+
+:root {
+  /* One easing + duration scale for the whole shell. */
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --focus-ring: 2px solid var(--accent);
+}
+
+/* Themed selection: a cyan wash that keeps text light over the dark canvas. */
+::selection {
+  background: rgba(56, 189, 248, 0.30);
+  color: var(--text-primary);
+}
+
+/* Fields never show a jarring default caret or placeholder. */
+input, textarea, select {
+  caret-color: var(--accent-cyan);
+}
+input::placeholder, textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* Live readouts: stop the per-digit jitter as values change. The floating docks
+   (js/ui/kit.js) already set this on their own elements; this is the tab and
+   legacy markup. font-variant-numeric is a new property on every one of these
+   selectors, so it can never collide with a component's existing declarations. */
+.num-input, .stat-value, .stat-label, .property-value, .property-row,
+.cnc-speed-val, .param-slider-val, .stroke-num, .instruction-step-num,
+.preset-tab-count, .preset-group-count, .badge, .preset-badge,
+#status-bar, #status-profile {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Keyboard focus safety net. Specificity (0,1,0) is the *floor*, so it only
+   surfaces on a control that has no focus ring of its own; every component's
+   `.x:focus-visible` outranks it and keeps its branded ring. This is what gives
+   .select-control (previously outline:none, no replacement) a visible focus. */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Typographic calm: balanced headings, orphan-free body copy. */
+h1, h2, h3, h4, .brand-title, .modal-title, .tanktop-section-title {
+  text-wrap: balance;
+}
+.preset-desc, .clothes-blurb, .modal-body, .schedule-desc {
+  text-wrap: pretty;
+}
+
+/* A quiet thin scrollbar for scroll regions the component layer never styled
+   (modals, drawers, schedule & preset lists). Elements that set their own
+   scrollbar-color keep it — an id/class selector outranks `*`. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
+}
+
+/* Honesty for users who ask their OS for more contrast. Design tokens keep a
+   single source of truth (tests/css-collisions.test.mjs forbids a second `:root`
+   re-pointing them, because app.js owns the live overrides), so this tier nudges
+   concrete properties at the point of use instead: structural borders read
+   stronger and purely decorative glows drop out. */
+@media (prefers-contrast: more) {
+  header#main-header, #left-toolbar, #right-sidebar, #status-bar, .modal-card, .kx-modal {
+    border-color: #64748b;
+  }
+  .tool-btn.active, .tab-btn.active, .mode-btn.active, .btn-action.btn-primary:hover {
+    box-shadow: none;
+  }
 }

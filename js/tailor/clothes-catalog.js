@@ -11,6 +11,15 @@
  * the flag just groups the fiddly ones. This file only describes what exists.
  */
 
+import { buildGeometry } from './garment-geometry.js';
+import { outlineToDxf, outlineToSvg } from './garment-export.js';
+import { buildFashioning } from './machine-steps.js';
+import { gradeSizes } from './grading.js';
+import { estimateYarn } from './yarn-estimate.js';
+import { BeanieEngine } from './beanie-engine.js';
+import { TankTopTailoringEngine } from './tank-top-engine.js';
+import { MACHINE_PROFILES } from '../machine/profiles.js';
+
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const round = Math.round;
 const toF = (v, d) => parseFloat(Number(v).toFixed(d == null ? 1 : d));
@@ -113,6 +122,22 @@ export const GARMENTS = [
       { key: 'rib', label: 'Hem rib height', unit: 'cm', min: 1, max: 5, step: 0.5, default: 2 },
       { key: 'sleeve', label: 'Straps (no sleeves)', unit: 'cm', min: 0, max: 0, step: 1, default: 0 },
       { key: 'neckdrop', label: 'Neck drop', unit: 'cm', min: 4, max: 20, step: 0.5, default: 12, advanced: true }
+    ]
+  },
+  {
+    id: 'tank', name: 'Tank Top', category: 'Tops', structure: 'tank', icon: '\uD83D\uDC5A',
+    blurb: 'Continuous-curve bodice: clothoid armhole scye, elliptical scoop neck, straps and hem ribbing.',
+    params: [
+      { key: 'chestCircumferenceCm', label: 'Chest / bust circumference', unit: 'cm', min: 60, max: 160, step: 1, default: 92 },
+      { key: 'bodyLengthCm', label: 'Hem to underarm', unit: 'cm', min: 25, max: 60, step: 1, default: 38 },
+      { key: 'shoulderWidthCm', label: 'Shoulder width', unit: 'cm', min: 25, max: 50, step: 1, default: 35 },
+      { key: 'neckWidthCm', label: 'Neck width', unit: 'cm', min: 12, max: 26, step: 1, default: 18 },
+      { key: 'ribbingHeightCm', label: 'Hem ribbing height', unit: 'cm', min: 0, max: 8, step: 0.5, default: 4.5 },
+      { key: 'easeCm', label: 'Ease', unit: 'cm', min: 0, max: 10, step: 1, default: 4, advanced: true },
+      { key: 'armholeDepthCm', label: 'Armhole depth', unit: 'cm', min: 12, max: 30, step: 1, default: 21, advanced: true },
+      { key: 'frontNeckDropCm', label: 'Front neck drop', unit: 'cm', min: 8, max: 24, step: 1, default: 13, advanced: true },
+      { key: 'backNeckDropCm', label: 'Back neck drop', unit: 'cm', min: 1, max: 8, step: 0.5, default: 3.5 },
+      { key: 'strapWidthCm', label: 'Strap width', unit: 'cm', min: 2, max: 10, step: 0.5, default: 5 }
     ]
   },
 
@@ -259,12 +284,13 @@ export class ClothesEngine {
 
     const plan = {
       garment: { id: garment.id, name: garment.name, category: garment.category, structure: garment.structure, icon: garment.icon, blurb: garment.blurb },
-      params: p, gauge: { stitchesPer10Cm: stsPer10, rowsPer10Cm: rpc },
+      params: p, gauge: { stitchesPer10Cm: stsPer10, rowsPer10Cm: rowsPer10 },
       parts: [], instructions: [], footprintCm: { w: 0, h: 0 }
     };
 
     switch (garment.structure) {
-      case 'hat': this._hat(plan, p, spc, rpc, N); break;
+      case 'hat': this._hatBeanie(plan, p, spc, rpc, N); break;
+      case 'tank': this._tank(plan, p, spc, rpc, N); break;
       case 'tube': this._tube(plan, p, spc, rpc, N); break;
       case 'flat': this._flat(plan, p, spc, rpc, N); break;
       case 'body': this._body(plan, p, spc, rpc, N); break;
@@ -273,36 +299,69 @@ export class ClothesEngine {
       case 'triangle': this._triangle(plan, p, spc, rpc, N); break;
       default: this._tube(plan, p, spc, rpc, N);
     }
+    this._augment(plan, garment, p);
     return plan;
   }
 
-  _hat(plan, p, spc, rpc, N) {
-    const segs = clamp(round(N(p.segments)) || 6, 4, 12);
-    const circ = Math.max(30, N(p.head) - N(p.ease));
-    const height = N(p.height) + Math.max(0, N(p.fold)); // fold-over brim adds working length
-    const rib = N(p.rib);
-    const divisor = segs * (p.ribtype === '2x2' ? 4 : 1); // 2×2 needs a multiple of 4
-    let bodySts = round(circ * spc);
-    bodySts = Math.max(divisor, Math.floor(bodySts / divisor) * divisor);
-    const ribSts = Math.max(divisor, Math.floor(bodySts * 0.86 / 2) * 2);
-    const ribRows = round(rib * rpc), bodyRows = Math.max(4, round((height - rib) * rpc));
-    const crownScale = clamp((N(p.crowndepth) || 100) / 100, 0.6, 1.4);
-    const crown = []; let remaining = bodySts, guard = 0;
-    const crownTarget = round(segs * crownScale) || segs;
-    while (remaining > crownTarget && guard < 10) {
-      guard++;
-      const dec = Math.max(segs, Math.floor(remaining / 5 / segs) * segs || segs);
-      remaining -= dec; crown.push({ dec, remaining });
+  // Route hats through the dedicated beanie engine so the catalogue benefits from
+  // its crown maths (segment-snapped cast-on, even decrease rounds, negative ease).
+  _hatBeanie(plan, p, spc, rpc, N) {
+    const model = new BeanieEngine().compute({
+      headCircumferenceCm: N(p.head), beanieHeightCm: N(p.height),
+      ribbingHeightCm: N(p.rib), crownSegments: N(p.segments),
+      ribbingType: p.ribtype || '1x1', negativeEaseCm: N(p.ease),
+      foldBrimCm: N(p.fold), crownDepthPct: N(p.crowndepth) || 100
+    }, { stitchesPer10Cm: spc * 10, rowsPer10Cm: rpc * 10 });
+    plan.parts.push({
+      name: 'Body (brim→crown)', castOn: model.ribbingSts, rows: model.totalRows,
+      circumferenceCm: toF(model.circumferenceMm / 10), heightCm: toF(model.heightMm / 10)
+    });
+    plan.instructions = model.instructions.map((it, i) => ({ step: i + 1, title: it.title, text: it.text }));
+    plan.footprintCm = { w: toF(model.circumferenceMm / 31.4), h: toF(model.heightMm / 10) };
+    plan.beanie = model;
+  }
+
+  // The tank top keeps its gold-standard CAD maths: build the real pattern through
+  // TankTopTailoringEngine so the catalogue garment is identical to the old tab.
+  _tank(plan, p, spc, rpc, N) {
+    const engine = new TankTopTailoringEngine(p);
+    engine.setGauge({ stitchesPer10Cm: spc * 10, rowsPer10Cm: rpc * 10 });
+    const pattern = engine.computePattern();
+    const d = pattern.dimensions;
+    plan.parts.push({
+      name: 'Front panel', castOn: d.castOnStitches, rows: d.totalRows,
+      widthCm: toF(d.halfChestCm), heightCm: toF(d.heightMm / 10)
+    });
+    plan.instructions = pattern.instructions.map((it, i) => ({ step: i + 1, title: it.title, text: it.text }));
+    plan.footprintCm = { w: toF(d.widthMm / 10), h: toF(d.heightMm / 10) };
+    plan.tank = pattern;
+  }
+
+  // Attach the shared, garment-agnostic capabilities every structure now gets:
+  // a continuous outline, KH-830 fashioning, a yarn estimate and a graded size run.
+  _augment(plan, garment, p) {
+    try {
+      const g = plan.gauge;
+      const cellW = g.stitchesPer10Cm > 0 ? 100 / g.stitchesPer10Cm : 4.5;
+      const cellH = g.rowsPer10Cm > 0 ? 100 / g.rowsPer10Cm : 5.0;
+      const part = plan.parts[0] || {};
+      const cols = Math.max(2, Math.round(part.castOn || 24));
+      const rows = Math.max(2, Math.round(part.rows || 24));
+      const spec = garment.structure === 'tank'
+        ? { params: p, gauge: { stitchesPer10Cm: g.stitchesPer10Cm, rowsPer10Cm: g.rowsPer10Cm }, cols, rows }
+        : { cols, rows, cellW, cellH };
+      plan.geometry = buildGeometry(garment.structure, spec);
+      plan.fashioning = buildFashioning(plan, MACHINE_PROFILES.brother_standard_24);
+      plan.yarn = estimateYarn(plan, g, {});
+      plan.sizes = gradeSizes(garment, p, {});
+    } catch (_) {
+      // Augmentation is additive polish — never let it break a valid plan.
     }
-    plan.parts.push({ name: 'Body (brim→crown)', castOn: ribSts, rows: ribRows + bodyRows, circumferenceCm: toF(circ), heightCm: toF(height) });
-    plan.instructions = [
-      { step: 1, title: 'Cast on & rib', text: `Cast on ${ribSts} sts, join in the round. Work ${rib} cm (${ribRows} rounds) of rib on reduced tension.` },
-      { step: 2, title: 'Body', text: `Increase to ${bodySts} sts. Knit even until the piece measures ${toF(height - rib)} cm above the rib (${bodyRows} rounds).` },
-      { step: 3, title: 'Crown', text: `Place ${segs} markers (${Math.round(bodySts / segs)} sts apart).` },
-      ...crown.map((c, i) => ({ step: 4 + i, title: `Crown dec ${i + 1}`, text: `Decrease ${c.dec} sts evenly (every ${Math.max(1, Math.round(bodySts / segs))}st st this round) → ${c.remaining} sts.` })),
-      { step: 4 + crown.length, title: 'Finish', text: `Break yarn, thread the last ${segs} sts, cinch and fasten off. Weave in ends.` }
-    ];
-    plan.footprintCm = { w: toF(circ / 3.14), h: toF(height) };
+  }
+
+  _hat(plan, p, spc, rpc, N) {
+    // Deprecated: hats now route through _hatBeanie (the dedicated crown engine).
+    return this._hatBeanie(plan, p, spc, rpc, N);
   }
 
   _tube(plan, p, spc, rpc, N) {
@@ -410,6 +469,15 @@ export class ClothesEngine {
   /** 1:1 printable SVG of the plan outline(s). */
   toSvg(plan) {
     if (!plan) return '';
+    // Prefer the continuous garment outline (the tank-top machinery, generalised).
+    if (plan.geometry && Array.isArray(plan.geometry.outlineMm) && plan.geometry.outlineMm.length >= 3) {
+      const first = plan.parts[0] || {};
+      return outlineToSvg(plan.geometry.outlineMm, {
+        widthMm: plan.geometry.widthMm, heightMm: plan.geometry.heightMm, seamAllowance: 10,
+        title: plan.garment.name, castOn: first.castOn, rows: first.rows,
+        gauge: `Gauge ${plan.gauge.stitchesPer10Cm} sts / ${plan.gauge.rowsPer10Cm} rows per 10 cm`
+      });
+    }
     const mm = 1; // work in mm
     const m = 15;
     const w = Math.max(60, (plan.footprintCm.w || 10)) * 10 + m * 2;
@@ -426,5 +494,13 @@ export class ClothesEngine {
   ${lines}
   <text x="${w / 2}" y="${h - 3}" text-anchor="middle" font-family="monospace" font-size="4" fill="#334155">Gauge ${plan.gauge.stitchesPer10Cm} sts / ${plan.gauge.rowsPer10Cm} rows per 10 cm · made for Benji ♥</text>
 </svg>`;
+  }
+
+  /** Laser / CNC-ready DXF of the plan's continuous outline. */
+  toDxf(plan) {
+    if (!plan || !plan.geometry || !Array.isArray(plan.geometry.outlineMm)) return '';
+    return outlineToDxf(plan.geometry.outlineMm, {
+      heightMm: plan.geometry.heightMm, grainLineMm: plan.geometry.grainLineMm
+    });
   }
 }

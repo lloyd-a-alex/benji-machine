@@ -137,6 +137,8 @@
 </head>
 
 <body class="theme-romance">
+  <!-- Keyboard users land on the workspace without tabbing the whole header + rail. -->
+  <a class="skip-link" href="#viewport-workspace">Skip to the stitch chart</a>
   <noscript>
     <!-- Without JS the canvas tool can't run, and the love overlay (visible in
          markup) would cover a blank page — so hide it and say something useful. -->
@@ -290,7 +292,7 @@
             <path d="M9 11l3 3L22 4" />
             <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
           </svg>
-          Feasibility
+          Feasibility<span class="feas-status" data-sev="ok" aria-hidden="true" hidden></span>
         </button>
         <button class="btn-action" id="btn-open-presets" title="Browse authentic historical &amp; algorithmic patterns">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -346,20 +348,20 @@
             <svg class="tool-submenu-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg>
           </button>
           <div class="tool-submenu-body" id="submenu-draw" role="group" aria-label="Drawing tools">
-            <button class="tool-btn active" data-tool="pencil" id="tool-pencil" title="Pencil (P / B)">
+            <button class="tool-btn active" data-tool="pencil" id="tool-pencil" aria-label="Pencil" title="Pencil (P / B)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
                 <path d="m15 5 4 4" />
               </svg>
             </button>
-            <button class="tool-btn" data-tool="eraser" id="tool-eraser" title="Eraser (E)">
+            <button class="tool-btn" data-tool="eraser" id="tool-eraser" aria-label="Eraser" title="Eraser (E)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
                 <path d="M22 21H7" />
                 <path d="m5 11 9 9" />
               </svg>
             </button>
-            <button class="tool-btn" data-tool="fill" id="tool-fill" title="Flood fill (G)">
+            <button class="tool-btn" data-tool="fill" id="tool-fill" aria-label="Flood fill" title="Flood fill (G)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z" />
                 <path d="m5 2 5 5" />
@@ -367,7 +369,7 @@
                 <path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z" />
               </svg>
             </button>
-            <button class="tool-btn" data-tool="select" id="tool-select" title="Marquee select (S) — then Ctrl+C / Ctrl+X / Ctrl+V, [ and ] to rotate">
+            <button class="tool-btn" data-tool="select" id="tool-select" aria-label="Marquee select" title="Marquee select (S) — then Ctrl+C / Ctrl+X / Ctrl+V, [ and ] to rotate">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3">
                 <rect width="18" height="18" x="3" y="3" rx="1" />
               </svg>
@@ -384,32 +386,32 @@
             <svg class="tool-submenu-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg>
           </button>
           <div class="tool-submenu-body" id="submenu-shapes" role="group" aria-label="Shape tools">
-            <button class="tool-btn" data-tool="line" id="tool-line" title="Straight line (L)">
+            <button class="tool-btn" data-tool="line" id="tool-line" aria-label="Straight line" title="Straight line (L)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="5" y1="19" x2="19" y2="5" />
               </svg>
             </button>
-            <button class="tool-btn" data-tool="rect" id="tool-rect" title="Filled rectangle (R)">
+            <button class="tool-btn" data-tool="rect" id="tool-rect" aria-label="Filled rectangle" title="Filled rectangle (R)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect width="18" height="18" x="3" y="3" rx="2" />
               </svg>
             </button>
-            <button class="tool-btn" data-tool="rectOutline" id="tool-rect-outline" title="Rectangle outline (O)">
+            <button class="tool-btn" data-tool="rectOutline" id="tool-rect-outline" aria-label="Rectangle outline" title="Rectangle outline (O)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2">
                 <rect width="18" height="18" x="3" y="3" rx="2" />
               </svg>
             </button>
-            <button class="tool-btn" data-tool="circle" id="tool-circle" title="Filled ellipse (C)">
+            <button class="tool-btn" data-tool="circle" id="tool-circle" aria-label="Filled ellipse" title="Filled ellipse (C)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="9" />
               </svg>
             </button>
-            <button class="tool-btn" data-tool="circleOutline" id="tool-circle-outline" title="Ellipse outline (I)">
+            <button class="tool-btn" data-tool="circleOutline" id="tool-circle-outline" aria-label="Ellipse outline" title="Ellipse outline (I)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2">
                 <circle cx="12" cy="12" r="9" />
               </svg>
             </button>
-            <button class="tool-btn" data-tool="heart" id="tool-heart" title="Heart stamp — drag a whole field of them, or click one needle at a time ♥">
+            <button class="tool-btn" data-tool="heart" id="tool-heart" aria-label="Heart stamp" title="Heart stamp — drag a whole field of them, or click one needle at a time ♥">
               <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1">
                 <path d="M12 21s-7.5-4.9-10-9.2C.5 8.6 2 5 5.5 5 8 5 12 8 12 8s4-3 6.5-3C22 5 23.5 8.6 22 11.8 19.5 16.1 12 21 12 21z" />
               </svg>
@@ -426,27 +428,27 @@
             <svg class="tool-submenu-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg>
           </button>
           <div class="tool-submenu-body" id="submenu-transform" role="group" aria-label="Transform tools">
-            <button class="tool-btn" id="btn-flip-h" title="Flip Horizontal">
+            <button class="tool-btn" id="btn-flip-h" aria-label="Flip horizontal" title="Flip Horizontal">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="12" y1="2" x2="12" y2="22" />
                 <path d="m18 16 4-4-4-4" />
                 <path d="m6 8-4 4 4 4" />
               </svg>
             </button>
-            <button class="tool-btn" id="btn-flip-v" title="Flip Vertical">
+            <button class="tool-btn" id="btn-flip-v" aria-label="Flip vertical" title="Flip Vertical">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="2" y1="12" x2="22" y2="12" />
                 <path d="m8 6 4-4 4 4" />
                 <path d="m16 18-4 4-4-4" />
               </svg>
             </button>
-            <button class="tool-btn" id="btn-invert" title="Invert the card — punched holes become blanks and blanks become holes">
+            <button class="tool-btn" id="btn-invert" aria-label="Invert card" title="Invert the card — punched holes become blanks and blanks become holes">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="10" />
                 <path d="M12 2a10 10 0 0 1 0 20Z" />
               </svg>
             </button>
-            <button class="tool-btn" id="btn-clear" title="Clear the whole card (Ctrl+Z brings it back)">
+            <button class="tool-btn" id="btn-clear" aria-label="Clear card" title="Clear the whole card (Ctrl+Z brings it back)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 6h18" />
                 <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
@@ -465,13 +467,13 @@
             <svg class="tool-submenu-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg>
           </button>
           <div class="tool-submenu-body" id="submenu-history" role="group" aria-label="History">
-            <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)">
+            <button class="tool-btn" id="btn-undo" aria-label="Undo" title="Undo (Ctrl+Z)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 7v6h6" />
                 <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
               </svg>
             </button>
-            <button class="tool-btn" id="btn-redo" title="Redo (Ctrl+Y)">
+            <button class="tool-btn" id="btn-redo" aria-label="Redo" title="Redo (Ctrl+Y)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 7v6h-6" />
                 <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
@@ -489,12 +491,12 @@
             <svg class="tool-submenu-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg>
           </button>
           <div class="tool-submenu-body" id="submenu-view" role="group" aria-label="View controls">
-            <button class="tool-btn" id="btn-pan" title="Pan the view (Shift + drag)">
+            <button class="tool-btn" id="btn-pan" aria-label="Pan view" title="Pan the view (Shift + drag)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 12h18M12 3v18" />
               </svg>
             </button>
-            <button class="tool-btn" id="btn-fit" title="Fit the card to the window">
+            <button class="tool-btn" id="btn-fit" aria-label="Fit card to window" title="Fit the card to the window">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
               </svg>
@@ -504,17 +506,17 @@
       </aside>
 
       <!-- Center Viewport Workspace -->
-      <main id="viewport-workspace">
+      <main id="viewport-workspace" tabindex="-1">
         <!-- Viewport Tabs Bar -->
-        <nav class="tab-bar">
-          <button class="tab-btn active" data-tab="editor">
+        <nav class="tab-bar" role="tablist" aria-label="Workspace views" aria-orientation="horizontal">
+          <button class="tab-btn active" data-tab="editor" role="tab" id="tab-btn-editor" aria-controls="panel-editor" aria-selected="true" tabindex="0">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect width="18" height="18" x="3" y="3" rx="2" />
               <path d="M3 9h18M9 21V9" />
             </svg>
             Pattern CAD Editor
           </button>
-          <button class="tab-btn" data-tab="schedule">
+          <button class="tab-btn" data-tab="schedule" role="tab" id="tab-btn-schedule" aria-controls="panel-schedule" aria-selected="false" tabindex="-1">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <polyline points="14 2 14 8 20 8" />
@@ -524,14 +526,14 @@
             </svg>
             Carriage Pass Schedule
           </button>
-          <button class="tab-btn" data-tab="yarn">
+          <button class="tab-btn" data-tab="yarn" role="tab" id="tab-btn-yarn" aria-controls="panel-yarn" aria-selected="false" tabindex="-1">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path
                 d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
             </svg>
             3D Physical Fabric Simulation
           </button>
-          <button class="tab-btn" data-tab="punchcard">
+          <button class="tab-btn" data-tab="punchcard" role="tab" id="tab-btn-punchcard" aria-controls="panel-punchcard" aria-selected="false" tabindex="-1">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect width="14" height="20" x="5" y="2" rx="2" />
               <circle cx="9" cy="8" r="1.5" />
@@ -541,7 +543,7 @@
             </svg>
             Punchcard Ribbon & 1:1 Scale
           </button>
-          <button class="tab-btn" data-tab="cnc">
+          <button class="tab-btn" data-tab="cnc" role="tab" id="tab-btn-cnc" aria-controls="panel-cnc" aria-selected="false" tabindex="-1">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3" />
               <path
@@ -549,29 +551,13 @@
             </svg>
             CNC Toolpath Visualizer
           </button>
-          <button class="tab-btn" data-tab="tanktop" id="tab-btn-tanktop">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
-              <path d="M3 6h18" />
-              <path d="M16 10a4 4 0 0 1-8 0" />
-            </svg>
-            Tank Top Tailor CAD
-          </button>
-         <button class="tab-btn" data-tab="beanie" id="tab-btn-beanie" title="Knit a beanie to fit a head and your yarn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 15a8 8 0 0 1 16 0" />
-              <rect x="3" y="15" width="18" height="4" rx="1" />
-              <circle cx="12" cy="6" r="1.4" />
-            </svg>
-            Beanie
-          </button>
-          <button class="tab-btn" data-tab="clothes" id="tab-btn-clothes" title="A catalogue of everything you can knit - hats, tops, scarves, socks and more">
+          <button class="tab-btn" data-tab="clothes" role="tab" id="tab-btn-clothes" aria-controls="panel-clothes" aria-selected="false" tabindex="-1" title="Tailor everything you can knit - hats, tops, scarves, socks and more - to fit your body and your yarn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z" />
             </svg>
             Clothes
           </button>
-          <button class="tab-btn" data-tab="brother" id="tab-btn-brother">
+          <button class="tab-btn" data-tab="brother" role="tab" id="tab-btn-brother" aria-controls="panel-brother" aria-selected="false" tabindex="-1">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10" />
               <path d="m14 15-4-6M10 15l4-6" />
@@ -583,7 +569,7 @@
         <!-- Tab Contents -->
         <div class="tab-content">
           <!-- Tab 1: Pattern Editor -->
-          <div class="tab-panel active" id="panel-editor">
+          <div class="tab-panel active" id="panel-editor" role="tabpanel" aria-labelledby="tab-btn-editor" tabindex="0">
             <div class="canvas-subbar">
               <!-- Lace Stitch Palette -->
               <div class="stitch-selector" id="lace-palette">
@@ -597,6 +583,14 @@
                   R</button>
                 <button class="stitch-btn" data-stitch="CDD"
                   title="Centred double decrease — 3 loops into 1, leaning nowhere. Needs two transfers meeting on the middle needle (L→R, then R→L), so the decompiler splits them across passes.">∧ Double Dec</button>
+                <button class="stitch-btn" data-stitch="DDL"
+                  title="Double decrease, left leaning — 3 loops become 1 with the left stitch on top. Compiled as two transfers into the centre needle, same schedule as the centred one; pairs with two eyelets to hold the count.">‹ Double Dec L</button>
+                <button class="stitch-btn" data-stitch="DDR"
+                  title="Double decrease, right leaning — 3 loops become 1 with the right stitch on top. Mirror of Double Dec L; the same two-transfer schedule.">› Double Dec R</button>
+                <button class="stitch-btn" data-stitch="T2L"
+                  title="Transfer two needles left — moves one loop two places left, over the needle between them, and empties the source. Watch that the jumped needle has somewhere to go or the strands twist.">⇤ Transfer 2 L</button>
+                <button class="stitch-btn" data-stitch="T2R"
+                  title="Transfer two needles right — mirror of Transfer 2 L: one loop jumps two needles right, over the one in between.">⇥ Transfer 2 R</button>
                 <button class="stitch-btn" data-stitch="K"
                   title="Plain knit loop — no hole, no lean. These are also the anchor rows a Brother lace carriage can't knit for you: two plain passes lock each eyelet in place.">| Plain Knit</button>
                 <button class="stitch-btn lace-guide-btn" id="btn-lace-guide" type="button"
@@ -632,12 +626,12 @@
             </div>
 
             <div class="canvas-wrapper">
-              <canvas id="editor-canvas"></canvas>
+              <canvas id="editor-canvas" role="img" aria-label="Stitch chart editor — a grid of needles you can draw on"></canvas>
             </div>
           </div>
 
           <!-- Tab 2: Carriage Pass Schedule -->
-          <div class="tab-panel" id="panel-schedule">
+          <div class="tab-panel" id="panel-schedule" role="tabpanel" aria-labelledby="tab-btn-schedule" tabindex="0">
             <div class="schedule-toolbar">
               <div class="toolbar-group">
                 <span class="toolbar-label">Schedule Actions</span>
@@ -754,7 +748,7 @@
           </div>
 
           <!-- Tab 3: 3D Physical Yarn Simulation -->
-          <div class="tab-panel" id="panel-yarn">
+          <div class="tab-panel" id="panel-yarn" role="tabpanel" aria-labelledby="tab-btn-yarn" tabindex="0">
             <div class="yarn-toolbar">
               <div class="toolbar-group">
                 <span class="toolbar-label">Physics</span>
@@ -851,12 +845,12 @@
               </div>
             </div>
             <div class="canvas-wrapper">
-              <canvas id="yarn-canvas"></canvas>
+              <canvas id="yarn-canvas" role="img" aria-label="3D yarn simulation of the current fabric"></canvas>
             </div>
           </div>
 
           <!-- Tab 4: Punchcard Ribbon View -->
-          <div class="tab-panel" id="panel-punchcard">
+          <div class="tab-panel" id="panel-punchcard" role="tabpanel" aria-labelledby="tab-btn-punchcard" tabindex="0">
             <div class="punchcard-toolbar">
               <div class="toolbar-group">
                 <span class="toolbar-label">Card Actions</span>
@@ -947,12 +941,12 @@
               </div>
             </div>
             <div class="canvas-wrapper" style="overflow-y: auto;">
-              <canvas id="punchcard-canvas"></canvas>
+              <canvas id="punchcard-canvas" role="img" aria-label="Punchcard view of the pattern"></canvas>
             </div>
           </div>
 
           <!-- Tab 5: CNC Toolpath Simulation -->
-          <div class="tab-panel" id="panel-cnc">
+          <div class="tab-panel" id="panel-cnc" role="tabpanel" aria-labelledby="tab-btn-cnc" tabindex="0">
             <div class="cnc-toolbar">
               <div class="toolbar-group">
                 <span class="toolbar-label">Simulation</span>
@@ -1078,326 +1072,12 @@
               </div>
             </div>
             <div class="canvas-wrapper">
-              <canvas id="toolpath-canvas"></canvas>
-            </div>
-          </div>
-
-          <!-- Tab 6: Benji's Tank Top Tailor CAD -->
-          <div class="tab-panel" id="panel-tanktop">
-            <div class="tanktop-toolbar">
-              <div class="toolbar-group">
-                <span class="toolbar-label">Pattern Actions</span>
-                <button class="toolbar-btn" id="btn-tank-auto-fit" title="Auto-fit to measurements">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 2v20M2 12h20" />
-                  </svg>
-                  Auto-Fit
-                </button>
-                <button class="toolbar-btn" id="btn-tank-symmetry" title="Toggle symmetry">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 3v18M5 12h14" />
-                  </svg>
-                  Symmetry
-                </button>
-                <button class="toolbar-btn" id="btn-tank-reset" title="Reset to default">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" />
-                  </svg>
-                  Reset
-                </button>
-              </div>
-              <div class="toolbar-divider"></div>
-              <div class="toolbar-group">
-                <span class="toolbar-label">Design Style</span>
-                <button class="toolbar-btn" id="btn-tank-classic" title="Classic tank top">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10" />
-                  </svg>
-                  Classic
-                </button>
-                <button class="toolbar-btn" id="btn-tank-cropped" title="Cropped style">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect width="18" height="12" x="3" y="6" rx="2" />
-                  </svg>
-                  Cropped
-                </button>
-                <button class="toolbar-btn" id="btn-tank-oversized" title="Oversized fit">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect width="20" height="20" x="2" y="2" rx="2" />
-                  </svg>
-                  Oversized
-                </button>
-              </div>
-              <div class="toolbar-divider"></div>
-              <div class="toolbar-group">
-                <span class="toolbar-label">Measurements</span>
-                <button class="toolbar-btn" id="btn-tank-import-measurements" title="Import measurements">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" x2="12" y1="15" y2="3" />
-                  </svg>
-                  Import
-                </button>
-                <button class="toolbar-btn" id="btn-tank-export-measurements" title="Export measurements">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="17 8 12 3 7 8" />
-                    <line x1="12" y1="3" x2="12" y2="15" />
-                  </svg>
-                  Export
-                </button>
-              </div>
-              <div class="toolbar-divider"></div>
-              <div class="toolbar-group">
-                <span class="toolbar-label">Export Pattern</span>
-                <button class="toolbar-btn" id="btn-tank-svg" title="Export SVG pattern">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect width="18" height="18" x="3" y="3" rx="2" />
-                  </svg>
-                  SVG
-                </button>
-                <button class="toolbar-btn" id="btn-tank-dxf" title="Export DXF pattern">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                  </svg>
-                  DXF
-                </button>
-                <button class="toolbar-btn" id="btn-tank-print" title="Print pattern">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="6 9 6 2 18 2 18 9" />
-                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                    <rect width="12" height="12" x="6" y="14" />
-                  </svg>
-                  Print
-                </button>
-              </div>
-            </div>
-            <div class="tanktop-sidebar">
-              <div class="tanktop-section-title">Anatomic Body Parameters</div>
-
-              <div class="param-slider-row">
-                <div class="param-slider-header">
-                  <span>Chest Circumference:</span>
-                  <span class="param-slider-val" id="val-tanktop-chest">92 cm</span>
-                </div>
-                <input type="range" id="tanktop-chest" min="70" max="130" step="1" value="92">
-              </div>
-
-              <div class="param-slider-row">
-                <div class="param-slider-header">
-                  <span>Garment Ease:</span>
-                  <span class="param-slider-val" id="val-tanktop-ease">+4 cm</span>
-                </div>
-                <input type="range" id="tanktop-ease" min="-4" max="12" step="1" value="4">
-              </div>
-
-              <div class="param-slider-row">
-                <div class="param-slider-header">
-                  <span>Body Length (Hem to Scye):</span>
-                  <span class="param-slider-val" id="val-tanktop-length">38 cm</span>
-                </div>
-                <input type="range" id="tanktop-length" min="26" max="60" step="1" value="38">
-              </div>
-
-              <div class="param-slider-row">
-                <div class="param-slider-header">
-                  <span>Armhole Scye Depth:</span>
-                  <span class="param-slider-val" id="val-tanktop-armhole">21 cm</span>
-                </div>
-                <input type="range" id="tanktop-armhole" min="16" max="30" step="0.5" value="21">
-              </div>
-
-              <div class="param-slider-row">
-                <div class="param-slider-header">
-                  <span>Shoulder Width:</span>
-                  <span class="param-slider-val" id="val-tanktop-shoulder">35 cm</span>
-                </div>
-                <input type="range" id="tanktop-shoulder" min="28" max="46" step="1" value="35">
-              </div>
-
-              <div class="param-slider-row">
-                <div class="param-slider-header">
-                  <span>Neck Opening Width:</span>
-                  <span class="param-slider-val" id="val-tanktop-neck-w">18 cm</span>
-                </div>
-                <input type="range" id="tanktop-neck-w" min="12" max="26" step="1" value="18">
-              </div>
-
-              <div class="param-slider-row">
-                <div class="param-slider-header">
-                  <span>Front Scoop Drop:</span>
-                  <span class="param-slider-val" id="val-tanktop-neck-drop">13 cm</span>
-                </div>
-                <input type="range" id="tanktop-neck-drop" min="6" max="22" step="0.5" value="13">
-              </div>
-
-              <div class="param-slider-row">
-                <div class="param-slider-header">
-                  <span>Strap Width:</span>
-                  <span class="param-slider-val" id="val-tanktop-strap-w">5 cm</span>
-                </div>
-                <input type="range" id="tanktop-strap-w" min="2.5" max="9" step="0.5" value="5">
-              </div>
-
-              <!-- Extra fit tweaks -->
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Back Neck Drop:</span><span class="param-slider-val" id="val-tanktop-back-neck">3.5 cm</span></div>
-                <input type="range" id="tanktop-back-neck" min="1" max="12" step="0.5" value="3.5">
-              </div>
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Hem Ribbing Height:</span><span class="param-slider-val" id="val-tanktop-rib">4.5 cm</span></div>
-                <input type="range" id="tanktop-rib" min="1" max="9" step="0.5" value="4.5">
-              </div>
-              <div class="param-slider-row">
-                <div style="display:flex;gap:14px;align-items:center;">
-                  <label style="font-size:12px;display:flex;gap:6px;align-items:center;">Rib type
-                    <select id="tanktop-ribtype" class="num-input" style="width:auto;">
-                      <option value="1x1">1×1</option>
-                      <option value="2x2">2×2</option>
-                    </select>
-                  </label>
-                </div>
-              </div>
-
-             <div class="tanktop-section-title" style="margin-top: 14px;">Your Yarn Gauge</div>
-              <div class="param-slider-row">
-                <div class="param-slider-header">
-                  <span>Stitches / 10 cm:</span>
-                </div>
-                <input type="number" id="tanktop-gauge-sts" class="num-input" value="28" min="8" max="120" step="0.5"
-                  title="Type your swatch result (or a pattern's listed gauge) so the stitch grid fits your yarn">
-              </div>
-              <div class="param-slider-row">
-                <div class="param-slider-header">
-                  <span>Rows / 10 cm:</span>
-                </div>
-                <input type="number" id="tanktop-gauge-rows" class="num-input" value="40" min="8" max="200" step="0.5"
-                  title="Rows per 10 cm from your swatch">
-              </div>
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Swatch helper</span></div>
-                <div style="display: flex; gap: 6px; align-items: center;">
-                  <input type="number" id="swatch-sts" class="num-input" placeholder="sts" min="1" step="0.5" title="Stitches you counted" style="width: 62px;">
-                  <span style="color:#94a3b8; font-size:11px;">over</span>
-                  <input type="number" id="swatch-cm" class="num-input" placeholder="cm" min="1" step="0.1" title="...measured over this many cm" style="width: 62px;">
-                  <button class="btn-action" id="btn-swatch-calc" title="Convert your swatch into stitches / 10 cm" style="padding: 4px 8px;">→ sts/10cm</button>
-                </div>
-                <div style="display: flex; gap: 6px; align-items: center; margin-top: 6px;">
-                  <input type="number" id="swatch-rows" class="num-input" placeholder="rows" min="1" step="0.5" title="Rows you counted" style="width: 62px;">
-                  <span style="color:#94a3b8; font-size:11px;">over</span>
-                  <input type="number" id="swatch-rows-cm" class="num-input" placeholder="cm" min="1" step="0.1" title="...measured over this many cm" style="width: 62px;">
-                  <button class="btn-action" id="btn-swatch-calc-rows" title="Convert your swatch into rows / 10 cm" style="padding: 4px 8px;">→ rows/10cm</button>
-                </div>
-              </div>
-
-              <div class="tanktop-section-title" style="margin-top: 14px;">Draw on the Stitch Grid</div>
-              <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                <button class="btn-action" id="btn-tank-draw" style="flex: 1; justify-content: center;" title="Toggle draw mode">
-                  ✏ Draw
-                </button>
-                <button class="btn-action" id="btn-tank-symmetry-side" style="flex: 1; justify-content: center;" title="Mirror stitches left/right across the centre">
-                  ⇋ Symmetry
-                </button>
-                <button class="btn-action" id="btn-tank-clear-draw" style="flex: 1; justify-content: center;" title="Erase all drawn stitches">
-                  Clear
-                </button>
-              </div>
-              <p style="font-size: 10px; color: #64748b; line-height: 1.5; margin: 0 0 6px;">
-                Turn on <b>Draw</b>, then click or drag on the grid to knit stitches. Right-drag erases.
-                <b>Symmetry</b> mirrors each stitch across the centre line. The grid squares are real
-                stitches sized to your gauge above.
-              </p>
-
-              <div style="display: flex; gap: 8px; margin-top: 6px;">
-                <button class="btn-action btn-primary" id="btn-tanktop-svg"
-                  style="flex: 1; justify-content: center;">Print 1:1 SVG</button>
-                <button class="btn-action" id="btn-tanktop-dxf" style="flex: 1; justify-content: center;">Laser
-                  DXF</button>
-              </div>
-
-              <div class="tanktop-section-title" style="margin-top: 14px;">Row-by-Row Knitting Steps</div>
-              <div id="tanktop-instructions-list"></div>
-            </div>
-
-            <div class="tanktop-viewport">
-              <canvas id="tanktop-canvas"></canvas>
-            </div>
-          </div>
-
-          <!-- Tab 6b: Beanie (self-contained tailor) -->
-          <div class="tab-panel" id="panel-beanie">
-            <div class="tanktop-sidebar">
-              <div class="tanktop-section-title">Beanie Fit ♥</div>
-              <p style="font-size:10px;color:#64748b;line-height:1.5;margin:0 0 10px;">Enter a head size and your swatch gauge. Everything below is calculated for you — cast-on, rib, rows and an even crown that closes shut.</p>
-
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Head circumference:</span><span class="param-slider-val" id="val-beanie-head">56 cm</span></div>
-                <input type="range" id="beanie-head" min="46" max="68" step="1" value="56">
-              </div>
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Beanie height:</span><span class="param-slider-val" id="val-beanie-height">20 cm</span></div>
-                <input type="range" id="beanie-height" min="14" max="30" step="1" value="20">
-              </div>
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Ribbing height:</span><span class="param-slider-val" id="val-beanie-rib">5 cm</span></div>
-                <input type="range" id="beanie-rib" min="2" max="10" step="1" value="5">
-              </div>
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Crown segments:</span><span class="param-slider-val" id="val-beanie-seg">6</span></div>
-                <input type="range" id="beanie-segments" min="5" max="10" step="1" value="6">
-              </div>
-              <div class="param-slider-row" style="display:flex;gap:14px;align-items:center;">
-                <label style="font-size:12px;display:flex;gap:6px;align-items:center;">Rib
-                  <select id="beanie-ribtype" class="num-input" style="width:auto;">
-                    <option value="1x1">1×1</option>
-                    <option value="2x2">2×2</option>
-                  </select>
-                </label>
-                <label style="font-size:12px;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="beanie-pom" checked> Pom-pom</label>
-              </div>
-
-              <!-- Extra fit tweaks -->
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Negative ease:</span><span class="param-slider-val" id="val-beanie-ease">2 cm</span></div>
-                <input type="range" id="beanie-ease" min="0" max="5" step="0.5" value="2">
-              </div>
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Fold-over brim:</span><span class="param-slider-val" id="val-beanie-fold">0 cm</span></div>
-                <input type="range" id="beanie-fold" min="0" max="8" step="1" value="0">
-              </div>
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Crown depth:</span><span class="param-slider-val" id="val-beanie-crown">100%</span></div>
-                <input type="range" id="beanie-crown" min="70" max="130" step="5" value="100">
-              </div>
-
-              <div class="tanktop-section-title" style="margin-top:14px;">Your Yarn Gauge</div>
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Stitches / 10 cm:</span></div>
-                <input type="number" id="beanie-gauge-sts" class="num-input" value="28" min="8" max="120" step="0.5">
-              </div>
-              <div class="param-slider-row">
-                <div class="param-slider-header"><span>Rows / 10 cm:</span></div>
-                <input type="number" id="beanie-gauge-rows" class="num-input" value="40" min="8" max="200" step="0.5">
-              </div>
-
-              <div style="display:flex;gap:8px;margin-top:10px;">
-                <button class="btn-action btn-primary" id="btn-beanie-svg" style="flex:1;justify-content:center;">Print 1:1 SVG</button>
-                <button class="btn-action" id="btn-beanie-reversible" style="flex:1;justify-content:center;" title="Load a balanced two-colour chevron that reads on both faces. It knits stranded on a single bed; a true reversible rib needs a second (double) bed.">Reversible repeat</button>
-              </div>
-
-              <div class="tanktop-section-title" style="margin-top:14px;">Round-by-Round Steps</div>
-              <div id="beanie-instructions-list"></div>
-            </div>
-
-            <div class="tanktop-viewport">
-             <canvas id="beanie-canvas"></canvas>
+              <canvas id="toolpath-canvas" role="img" aria-label="CNC toolpath preview"></canvas>
             </div>
           </div>
 
           <!-- Tab 6c: Clothes catalogue (every garment, one planner) -->
-          <div class="tab-panel" id="panel-clothes">
+          <div class="tab-panel" id="panel-clothes" role="tabpanel" aria-labelledby="tab-btn-clothes" tabindex="0">
             <div class="tanktop-sidebar clothes-sidebar">
               <div class="clothes-picker-wrap">
                 <input type="text" id="clothes-search" class="num-input" style="width:100%;" placeholder="Search garments…" autocomplete="off">
@@ -1418,22 +1098,71 @@
                 <input type="number" id="clothes-gauge-rows" class="num-input" value="40" min="8" max="200" step="0.5">
               </div>
 
-              <div style="display:flex;gap:8px;margin-top:12px;">
-                <button class="btn-action btn-primary" id="btn-clothes-svg" style="flex:1;justify-content:center;">Print 1:1 SVG</button>
-                <button class="btn-action" id="btn-clothes-editor" style="flex:1;justify-content:center;" title="Send a cast-on swatch to the pattern editor">To Editor</button>
+              <div class="param-slider-row">
+                <div class="param-slider-header"><span>Swatch helper</span></div>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <input type="number" id="swatch-sts" class="num-input" placeholder="sts" min="1" step="0.5" title="Stitches you counted" style="width: 62px;">
+                  <span style="color:var(--text-secondary); font-size:11px;">over</span>
+                  <input type="number" id="swatch-cm" class="num-input" placeholder="cm" min="1" step="0.1" title="...measured over this many cm" style="width: 62px;">
+                  <button class="btn-action" id="btn-swatch-calc" title="Convert your swatch into stitches / 10 cm" style="padding: 4px 8px;">→ sts/10cm</button>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center; margin-top: 6px;">
+                  <input type="number" id="swatch-rows" class="num-input" placeholder="rows" min="1" step="0.5" title="Rows you counted" style="width: 62px;">
+                  <span style="color:var(--text-secondary); font-size:11px;">over</span>
+                  <input type="number" id="swatch-rows-cm" class="num-input" placeholder="cm" min="1" step="0.1" title="...measured over this many cm" style="width: 62px;">
+                  <button class="btn-action" id="btn-swatch-calc-rows" title="Convert your swatch into rows / 10 cm" style="padding: 4px 8px;">→ rows/10cm</button>
+                </div>
               </div>
 
-              <div class="tanktop-section-title" style="margin-top:14px;">Row-by-Row Steps</div>
+              <div class="tanktop-section-title" style="margin-top: 14px;">Draw on the Stitch Grid</div>
+              <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <button class="btn-action" id="btn-clothes-draw" style="flex: 1; justify-content: center;" title="Toggle draw mode" aria-label="Toggle draw mode">✏ Draw</button>
+                <button class="btn-action" id="btn-clothes-symmetry" style="flex: 1; justify-content: center;" title="Mirror stitches left/right across the centre" aria-label="Toggle symmetry mirror">⇋ Symmetry</button>
+                <button class="btn-action" id="btn-clothes-clear" style="flex: 1; justify-content: center;" title="Erase all drawn stitches" aria-label="Clear drawn stitches">Clear</button>
+              </div>
+              <p style="font-size: 10px; color: #64748b; line-height: 1.5; margin: 0 0 6px;">
+                Turn on <b>Draw</b>, then click or drag on the grid to knit contrast stitches. Right-drag erases.
+                <b>Symmetry</b> mirrors each stitch across the centre line. Grid squares are real stitches sized to your gauge.
+              </p>
+
+              <div class="tanktop-section-title" style="margin-top: 14px;">Grading</div>
+              <div class="param-slider-row">
+                <label style="font-size:12px;display:flex;gap:6px;align-items:center;">Size set
+                  <select id="clothes-grade-mode" class="num-input" style="width:auto;" aria-label="Choose size grading set">
+                    <option value="alpha">XS – XL</option>
+                    <option value="head">Head sizes</option>
+                    <option value="foot">Foot sizes</option>
+                  </select>
+                </label>
+              </div>
+              <div id="clothes-grade-table" class="clothes-grade-table"></div>
+
+              <div class="tanktop-section-title" style="margin-top: 14px;">Yarn Estimate</div>
+              <p id="clothes-yarn-out" class="clothes-blurb">Enter your gauge to estimate yarn.</p>
+              <div class="param-slider-row">
+                <div class="param-slider-header"><span>grams / metre (optional)</span></div>
+                <input type="number" id="clothes-grams-per-metre" class="num-input" placeholder="g/m" min="0" step="0.1" title="Your yarn's weight per metre to convert length to grams">
+              </div>
+
+              <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+                <button class="btn-action btn-primary" id="btn-clothes-svg" style="flex:1;justify-content:center;" aria-label="Export seam-allowance SVG">SVG</button>
+                <button class="btn-action" id="btn-clothes-dxf" style="flex:1;justify-content:center;" aria-label="Export laser DXF">DXF</button>
+                <button class="btn-action" id="btn-clothes-print" style="flex:1;justify-content:center;" aria-label="Print pattern 1:1">Print</button>
+                <button class="btn-action" id="btn-clothes-editor" style="flex:1;justify-content:center;" title="Send the drawn / graded stitch matrix to the pattern editor" aria-label="Send to editor">To Editor</button>
+                <button class="btn-action" id="btn-clothes-feasibility" style="flex:1;justify-content:center;" title="Run the feasibility advisor on the sent card" aria-label="Check feasibility">Check Feasibility</button>
+              </div>
+
+              <div class="tanktop-section-title" style="margin-top:14px;">Machine Steps</div>
               <div id="clothes-instructions"></div>
             </div>
 
             <div class="tanktop-viewport">
-              <canvas id="clothes-canvas"></canvas>
+              <canvas id="clothes-canvas" role="img" aria-label="Garment catalogue preview"></canvas>
             </div>
           </div>
 
           <!-- Tab 7: Brother KH-830 Kinematics Mechanism -->
-          <div class="tab-panel" id="panel-brother">
+          <div class="tab-panel" id="panel-brother" role="tabpanel" aria-labelledby="tab-btn-brother" tabindex="0">
             <div class="brother-toolbar">
               <div class="toolbar-group">
                 <span class="toolbar-label">Simulation</span>
@@ -1514,7 +1243,7 @@
               </div>
             </div>
             <div class="canvas-wrapper">
-              <canvas id="brother-canvas"></canvas>
+              <canvas id="brother-canvas" role="img" aria-label="Brother knitting carriage mechanism simulation"></canvas>
             </div>
           </div>
         </div>
@@ -1751,6 +1480,14 @@
             <option value="penrose">Penrose Quasi-Periodic Tiling</option>
             <option value="phyllotaxis">Golden Angle Phyllotaxis</option>
             <option value="moire">Moiré Interference Patterns</option>
+            <option value="life">Conway's Game of Life (Turing-Complete CA, Toroidal)</option>
+            <option value="hadamard">Sylvester–Hadamard Orthogonal Tiling</option>
+            <option value="halton">Halton Low-Discrepancy Scatter (Quasi-Random)</option>
+            <option value="christoffel">Christoffel Balanced Weave (Even Decreases)</option>
+            <option value="superformula">Gielis Superformula (Natural Shapes)</option>
+            <option value="rose">Rhodonea Rose Curves (Rational Petals)</option>
+            <option value="modular">Modular Multiplication Table (Times-Table Cardioid)</option>
+            <option value="logistic">Logistic Map Bifurcation (Route to Chaos)</option>
           </select>
         </div>
 
@@ -1833,7 +1570,7 @@
 
           <div
             style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #080c14; border: 1px solid #1e293b; border-radius: 6px; padding: 10px;">
-            <canvas id="image-preview-canvas" style="max-width: 100%; max-height: 200px;"></canvas>
+            <canvas id="image-preview-canvas" aria-hidden="true" style="max-width: 100%; max-height: 200px;"></canvas>
             <span style="font-size: 10px; color: #64748b; margin-top: 6px;">1-Bit Punch Preview</span>
           </div>
         </div>

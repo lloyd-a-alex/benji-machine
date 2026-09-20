@@ -6,8 +6,9 @@
  *     existing nodes' behaviour beyond appending children.
  *   • Every public entry point is wrapped by the caller in runGuarded(), and is
  *     itself defensive: missing elements are no-ops, never throws.
- *   • No imports from the app; talks to the world via localStorage + DOM + a tiny
- *     optional notifier passed in init.
+ *   • Only pure, DOM-free core utilities may be imported (currently js/core/apca.js
+ *     for WCAG 3.0 colour math); it never imports the app itself. It talks to the
+ *     world via localStorage + DOM + a tiny optional notifier passed in init.
  *
  * Features:
  *   Part 3: settings modal (localStorage), About modal, rotating greeting,
@@ -15,6 +16,8 @@
  *   Part 5: Escape closes modals, focus trap, optional soft "export" chime,
  *           optional hearts-on-mousemove.
  */
+
+import { ensureContrast, WCAG3_LC } from '../core/apca.js';
 
 // Historic `knitcad.` prefix is deliberate: it holds the anniversary, names, photo
 // and theme, so renaming the key would wipe someone's saved love.
@@ -78,14 +81,20 @@ function esc(s) {
 
 function applyTheme() {
   const root = document.documentElement;
-  root.style.setProperty('--brand-accent', settings.accent);
+  // WCAG 3.0 / APCA: an accent the user picks must never be unreadable as text.
+  // Lift it just enough to clear the Lc 60 floor against the lightest themed
+  // surface (passing there covers every darker background too), preserving hue —
+  // a deep pick is nudged lighter, a pale pick is left alone.
+  const ACCENT_REF_BG = '#37114a';
+  const minLc = WCAG3_LC.textMinimum;
+  root.style.setProperty('--brand-accent', ensureContrast(settings.accent, ACCENT_REF_BG, minLc));
   // The picked accent now genuinely drives the UI (no more placebo): every
   // component reads var(--accent-cyan)/var(--accent-rose), so re-pointing those
   // at --brand-accent makes the whole surface respond — unless it's the default
   // romantic pink, in which case we keep the calm cyan CAD accent for legibility.
   const warm = /^#f[0-9ab]/i.test(settings.accent) || /^#e[0-9ab]/i.test(settings.accent) || /^#b[0-9e-f]/i.test(settings.accent) || /^#9[0-9a-f]/i.test(settings.accent);
-  root.style.setProperty('--accent-cyan', (settings.accent && settings.accent !== '#fb7185' && !warm) ? settings.accent : '#f472b6');
-  root.style.setProperty('--accent-rose', settings.accent || '#f43f5e');
+  root.style.setProperty('--accent-cyan', ensureContrast((settings.accent && settings.accent !== '#fb7185' && !warm) ? settings.accent : '#f472b6', ACCENT_REF_BG, minLc));
+  root.style.setProperty('--accent-rose', ensureContrast(settings.accent || '#f43f5e', ACCENT_REF_BG, minLc));
   // Additive light mode: only applied when the user opts in, and scoped to a
   // data-attribute so the core dark CAD canvas is never affected by default.
   if (settings.theme === 'light') root.setAttribute('data-theme', 'light');
@@ -110,10 +119,6 @@ function injectStyles() {
      between "ily ♥" and a long sentence — one line, stable layout, always. */
   .kx-greet{display:inline-block;vertical-align:bottom;width:208px;max-width:208px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--brand-accent,#fb7185);margin-left:8px;opacity:.85;font-style:italic}
   .kx-days{display:inline-block;vertical-align:bottom;width:96px;max-width:96px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text-secondary,#cbd5e1);margin-left:6px}
-  .kx-hbtn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;margin-left:6px;
-    border:1px solid var(--brand-accent,#fb7185);border-radius:8px;background:transparent;color:var(--brand-accent,#fb7185);
-    cursor:pointer;font-size:15px;line-height:1;transition:background .15s,transform .1s}
-  .kx-hbtn:hover{background:rgba(251,113,133,.15);transform:translateY(-1px)}
   .kx-avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;margin-left:8px;border:1px solid var(--brand-accent,#fb7185)}
   .kx-backdrop{position:fixed;inset:0;background:rgba(10,4,16,.72);backdrop-filter:blur(3px);z-index:1200;
     display:flex;align-items:center;justify-content:center;padding:20px}
@@ -165,7 +170,7 @@ function injectStyles() {
   .clothes-item:hover{background:rgba(56,189,248,.1);border-color:var(--border-subtle,#1e293b);transform:translateX(2px)}
   .clothes-item.active{background:rgba(244,114,182,.16);border-color:var(--accent-cyan,#f472b6);color:#fff}
   .clothes-item-icon{font-size:15px;width:18px;text-align:center}
-  .clothes-blurb{font-size:10px;color:#64748b;line-height:1.5;margin:0 0 10px}
+  .clothes-blurb{font-size:10px;color:var(--text-muted);line-height:1.5;margin:0 0 10px}
   .clothes-params{display:flex;flex-direction:column}
   /* ── feasibility advisor modal ── */
   .kx-feas{width:min(680px,94vw);max-height:86vh;overflow:auto;background:#0f1a2e;border:1px solid #24406e;border-radius:16px;
@@ -175,18 +180,18 @@ function injectStyles() {
   .kx-feas-badge{font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px;border:1px solid}
   .kx-feas-badge.kx-feas-feasible{color:#34d399;border-color:#34d399;background:rgba(52,211,153,.12)}
   .kx-feas-badge.kx-feas-needs-attention{color:#fbbf24;border-color:#fbbf24;background:rgba(251,191,36,.12)}
-  .kx-feas-badge.kx-feas-not-feasible{color:#f43f5e;border-color:#f43f5e;background:rgba(244,63,94,.12)}
+  .kx-feas-badge.kx-feas-not-feasible{color:var(--accent-rose);border-color:var(--accent-rose);background:rgba(244,63,94,.12)}
   .kx-feas-sub{font-size:12px;opacity:.6;margin:6px 0 16px}
   .kx-feas-list{display:flex;flex-direction:column;gap:10px}
   .kx-feas-card{background:#0c1526;border:1px solid #1e2f4d;border-left-width:3px;border-radius:11px;padding:12px 14px}
   .kx-feas-card.kx-feas-ok{border-left-color:#34d399}
   .kx-feas-card.kx-feas-info{border-left-color:#38bdf8}
   .kx-feas-card.kx-feas-warn{border-left-color:#fbbf24}
-  .kx-feas-card.kx-feas-error{border-left-color:#f43f5e}
+  .kx-feas-card.kx-feas-error{border-left-color:var(--accent-rose)}
   .kx-feas-head{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:4px}
   .kx-feas-dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.7}
   .kx-feas-prob{font-size:12.5px;line-height:1.5;color:#cbd5e1}
-  .kx-feas-phil{font-size:11px;font-style:italic;color:#64748b;margin-top:6px}
+  .kx-feas-phil{font-size:11px;font-style:italic;color:var(--text-muted);margin-top:6px}
   .kx-feas-fix{margin-top:10px;background:rgba(56,189,248,.14);border:1px solid #2f5fa0;color:#bae6fd;border-radius:8px;
     padding:6px 12px;font-size:12px;cursor:pointer;transition:background .12s}
   .kx-feas-fix:hover{background:rgba(56,189,248,.28)}
@@ -194,7 +199,7 @@ function injectStyles() {
   /* ── machine intelligence: score, tabs, chips, universe matrix ── */
   .kx-feas-topright{display:flex;align-items:center;gap:12px}
   .kx-feas-tabs{display:flex;gap:4px;margin:14px 0 4px;border-bottom:1px solid #24406e}
-  .kx-feas-tab{background:transparent;border:0;border-bottom:2px solid transparent;color:#94a3b8;
+  .kx-feas-tab{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--text-secondary);
     padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
   .kx-feas-tab:hover{color:#e2e8f0}
   .kx-feas-tab.active{color:#bae6fd;border-bottom-color:#38bdf8}
@@ -207,44 +212,65 @@ function injectStyles() {
   .kx-feas-narr{background:#0c1526;border:1px solid #1e2f4d;border-left:3px solid #38bdf8;border-radius:10px;
     padding:10px 13px;font-size:13px;line-height:1.6;color:#cbd5e1;margin:0 0 12px}
   .kx-feas-narr-label,.kx-unv-spec .kx-feas-narr-label{font-size:9px;font-weight:700;text-transform:uppercase;
-    letter-spacing:.08em;color:#64748b;margin-bottom:4px}
+    letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px}
   .kx-feas-narr-label{margin-bottom:4px}
   .kx-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
   .kx-chip{font-size:11px;color:#bae6fd;background:rgba(56,189,248,.1);border:1px solid #2f5fa0;
     border-radius:999px;padding:2px 9px;white-space:nowrap}
-  .kx-feas-cat{margin-left:8px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;
+  .kx-feas-cat{margin-left:8px;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);
     border:1px solid #1e2f4d;border-radius:6px;padding:1px 6px}
+  .kx-feas-dossier{background:#0a1120;border:1px solid #1e2f4d;border-radius:11px;margin:0 0 14px;overflow:hidden}
+  .kx-feas-dossier>summary{cursor:pointer;list-style:none;padding:10px 14px;font-size:12px;font-weight:700;
+    color:#bae6fd;background:rgba(56,189,248,.06);letter-spacing:.01em}
+  .kx-feas-dossier>summary::-webkit-details-marker{display:none}
+  .kx-feas-dossier>summary::before{content:'\\25B8';display:inline-block;margin-right:8px;transition:transform .15s ease;color:#38bdf8}
+  .kx-feas-dossier[open]>summary::before{transform:rotate(90deg)}
+  .kx-feas-dossier-in{padding:12px 14px;display:flex;flex-direction:column;gap:12px}
+  .kx-feas-dossier-hist{margin:0;font-size:12.5px;line-height:1.65;color:#cbd5e1}
+  .kx-feas-facts{display:grid;grid-template-columns:1fr;gap:8px}
+  .kx-feas-fact{display:grid;grid-template-columns:104px 1fr;gap:10px;align-items:baseline}
+  .kx-feas-fact>span{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)}
+  .kx-feas-fact>p{margin:0;font-size:12px;line-height:1.55;color:#e2e8f0}
+  .kx-feas-dlist>h4{margin:0 0 5px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted)}
+  .kx-feas-dlist>ul{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:4px}
+  .kx-feas-dlist>ul>li{font-size:12px;line-height:1.5;color:#cbd5e1}
+  .kx-feas-good>ul>li::marker{color:#34d399}
+  .kx-feas-warn>ul>li::marker{color:#fbbf24}
+  .kx-feas-bad>ul>li::marker{color:var(--accent-rose)}
+  .kx-feas-kit>ul>li::marker{color:#38bdf8}
   .kx-unv-counts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
   .kx-unv-count{font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px;border:1px solid}
   .kx-unv-ok{color:#34d399;border-color:#34d399;background:rgba(52,211,153,.12)}
   .kx-unv-warn{color:#fbbf24;border-color:#fbbf24;background:rgba(251,191,36,.12)}
-  .kx-unv-bad{color:#f43f5e;border-color:#f43f5e;background:rgba(244,63,94,.12)}
+  .kx-unv-bad{color:var(--accent-rose);border-color:var(--accent-rose);background:rgba(244,63,94,.12)}
+  .kx-unv-phys{font-size:12.5px;line-height:1.5;color:#cbd5e1;background:rgba(56,189,248,.08);
+    border:1px solid #1e3a5f;border-left:3px solid #38bdf8;border-radius:10px;padding:9px 12px;margin-bottom:12px}
   .kx-unv-spec{margin:0 0 12px;padding-bottom:12px;border-bottom:1px solid #1e2f4d}
   .kx-unv-list{display:flex;flex-direction:column;gap:8px}
   .kx-unv-row{display:flex;align-items:center;gap:12px;background:#0c1526;border:1px solid #1e2f4d;
     border-left-width:3px;border-radius:10px;padding:10px 12px}
   .kx-unv-row.kx-unv-feasible{border-left-color:#34d399}
   .kx-unv-row.kx-unv-needs-attention{border-left-color:#fbbf24}
-  .kx-unv-row.kx-unv-not-feasible{border-left-color:#f43f5e}
+  .kx-unv-row.kx-unv-not-feasible{border-left-color:var(--accent-rose)}
   .kx-unv-main{flex:1 1 auto;min-width:0}
   .kx-unv-name{font-size:13px;font-weight:600;color:#e2e8f0;overflow-wrap:anywhere}
-  .kx-unv-sub{font-size:11px;color:#64748b;overflow-wrap:anywhere;margin-top:2px}
+  .kx-unv-sub{font-size:11px;color:var(--text-muted);overflow-wrap:anywhere;margin-top:2px}
   .kx-unv-acts{flex:0 0 auto;display:flex;align-items:center;gap:6px}
-  .kx-unv-cur{font-size:11px;color:#64748b;font-style:italic;padding:0 4px}
+  .kx-unv-cur{font-size:11px;color:var(--text-muted);font-style:italic;padding:0 4px}
   .kx-unv-foot{margin-top:14px}
-  .kx-mini{border:1px solid #24406e;background:transparent;color:#94a3b8;border-radius:7px;padding:6px 10px;
+  .kx-mini{border:1px solid #24406e;background:transparent;color:var(--text-secondary);border-radius:7px;padding:6px 10px;
     font-size:12px;cursor:pointer;font-family:inherit;flex:0 0 auto}
   .kx-mini:hover{color:#e2e8f0;border-color:#38bdf8;background:rgba(56,189,248,.12)}
   /* ── right-sidebar design-health panel ── */
   #kx-health-panel .kx-health-score b{font-size:22px;color:#e2e8f0;font-family:var(--font-mono,monospace)}
-  #kx-health-panel .kx-health-score i{font-size:11px;color:#64748b;font-style:normal}
+  #kx-health-panel .kx-health-score i{font-size:11px;color:var(--text-muted);font-style:normal}
   .kx-health-ring{height:8px;border-radius:999px;background:#0c1526;border:1px solid #1e2f4d;overflow:hidden;margin:6px 0 8px}
   .kx-health-ring-fill{height:100%;width:100%;background:linear-gradient(90deg,#0ea5e9,#34d399);transition:width .3s ease,background .3s}
   .kx-health-ring-fill[data-sev="needs-attention"]{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
   .kx-health-ring-fill[data-sev="not-feasible"]{background:linear-gradient(90deg,#be123c,#f43f5e)}
-  .kx-health-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;color:#94a3b8;margin-bottom:10px}
+  .kx-health-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;color:var(--text-secondary);margin-bottom:10px}
   .kx-health-label{font-weight:700;color:#e2e8f0}
-  .kx-health-break{color:#64748b}
+  .kx-health-break{color:var(--text-muted)}
   .kx-health-fit{margin-left:auto;color:#7dd3fc;white-space:nowrap}
   .kx-health-acts{display:flex;gap:8px}
   .kx-health-acts .btn-action{flex:1 1 auto;justify-content:center}
@@ -275,7 +301,6 @@ function injectStyles() {
   .kx-egg.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
   /* ── responsive: these are overlays, so this layer owns their mobile shape ── */
   @media (pointer:coarse){
-    .kx-hbtn{width:40px;height:40px;font-size:17px}
     .kx-row input,.kx-row textarea{font-size:16px;min-height:44px}   /* stops iOS zoom-to-focus */
     .kx-check{font-size:15px}
     .kx-menu-btn{min-height:44px}
@@ -308,7 +333,6 @@ function injectStyles() {
     .kx-letter p{font-size:clamp(13px,2.6vh,17px);line-height:1.55}
   }
   @media (hover:none){
-    .kx-hbtn:hover{transform:none}
     .clothes-item:hover{transform:none}
     .kx-menu-item:active,.kx-btn:active{filter:brightness(1.2)}
   }
@@ -393,7 +417,14 @@ function buildStudioMenu() {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'btn-action kx-menu-btn';
-  btn.textContent = 'Studio \u25be';
+  btn.setAttribute('aria-haspopup', 'menu');
+  btn.setAttribute('aria-expanded', 'false');
+  // A layers glyph + caret make it read as "a group of studio tools" at a glance,
+  // instead of the flat text "Studio ▾" that looked like a disabled label.
+  btn.innerHTML = '<svg class="kx-menu-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" '
+    + 'stroke="currentColor" stroke-width="2" aria-hidden="true">'
+    + '<path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>'
+    + '<span>Studio</span><span class="kx-menu-caret" aria-hidden="true">\u25be</span>';
   const drop = document.createElement('div');
   drop.className = 'kx-menu-drop';
 
@@ -414,8 +445,12 @@ function buildStudioMenu() {
 
   wrap.appendChild(btn);
   wrap.appendChild(drop);
-  on(btn, 'click', e => { e.stopPropagation(); drop.classList.toggle('open'); });
-  on(document, 'click', () => drop.classList.remove('open'));
+  on(btn, 'click', e => {
+    e.stopPropagation();
+    const open = drop.classList.toggle('open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  on(document, 'click', () => { drop.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); });
 
   actions.insertBefore(wrap, actions.firstChild);
   targets.forEach(t => { t.style.display = 'none'; });

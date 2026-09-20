@@ -194,6 +194,27 @@ export class LaceCompiler {
               `T_${r}_${c}_R`, r, c, target, DIRECTION.LEFT_TO_RIGHT, stitch
             ));
           }
+        } else if (stitch === STITCH_TYPE.TRANSFER_DOUBLE_L) {
+          // A two-needle jump moves ONE loop two places, over the needle between
+          // them, and vacates the source — the same single sideways move as a normal
+          // transfer, just landing two needles away (see the STITCH_INFO note).
+          const target = c - 2;
+          if (target < 0) {
+            result.addWarning(`Transfer two left at edge col ${c} runs off the bed.`, r, c);
+          } else {
+            transferOps.push(new TransferOp(
+              `T_${r}_${c}_DL`, r, c, target, DIRECTION.RIGHT_TO_LEFT, stitch
+            ));
+          }
+        } else if (stitch === STITCH_TYPE.TRANSFER_DOUBLE_R) {
+          const target = c + 2;
+          if (target >= cols) {
+            result.addWarning(`Transfer two right at edge col ${c} runs off the bed.`, r, c);
+          } else {
+            transferOps.push(new TransferOp(
+              `T_${r}_${c}_DR`, r, c, target, DIRECTION.LEFT_TO_RIGHT, stitch
+            ));
+          }
         } else if (stitch === STITCH_TYPE.EYELET) {
           // An eyelet is the yarnover of hand knitting: a hole and nothing else.
           // A machine feeds no yarn out of thin air, so the only way to vacate a
@@ -216,8 +237,12 @@ export class LaceCompiler {
               `EYE_${r}_${c}`, r, c, target, dir, STITCH_TYPE.TRANSFER_RIGHT
             ));
           }
-        } else if (stitch === STITCH_TYPE.CENTER_DEC || stitch === STITCH_TYPE.DOUBLE_DEC_LEFT) {
-          // Double decrease requires two transfers: left loop into center, right loop into center
+        } else if (stitch === STITCH_TYPE.CENTER_DEC || stitch === STITCH_TYPE.DOUBLE_DEC_LEFT || stitch === STITCH_TYPE.DOUBLE_DEC_RIGHT) {
+          // Double decrease requires two transfers: left loop into center, right loop into center.
+          // The right-leaning form is the mirror of the left-leaning one and uses the SAME
+          // two-transfer schedule (STITCH_INFO: "the same two-transfer schedule applies"), so
+          // it must not fall through here uncompiled — that was the disagreement with
+          // transfersInRow(), which already treats all three double decreases alike.
           if (c > 0) {
             transferOps.push(new TransferOp(
               `DD_${r}_${c}_L`, r, c - 1, c, DIRECTION.LEFT_TO_RIGHT, STITCH_TYPE.TRANSFER_RIGHT

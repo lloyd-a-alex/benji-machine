@@ -34,6 +34,7 @@ export class ToolpathViewer {
     // Offscreen buffer — render here, blit to display canvas each frame
     this.offscreen = document.createElement('canvas');
     this.offCtx    = this.offscreen.getContext('2d', { alpha: false });
+    this.dpr       = 1;
 
     this.profile    = options.profile || null;
     this.cardMatrix = options.cardMatrix || [];
@@ -163,8 +164,9 @@ export class ToolpathViewer {
 
   /** Zoom around the viewport centre by a multiplicative factor */
   zoomBy(factor) {
-    const cx = this.canvas.width  / 2;
-    const cy = this.canvas.height / 2;
+    const dpr = this.dpr || 1;
+    const cx = this.canvas.width  / dpr / 2;
+    const cy = this.canvas.height / dpr / 2;
     this._zoomAround(factor, cx, cy);
   }
 
@@ -180,8 +182,9 @@ export class ToolpathViewer {
     const cols = this.cardMatrix[0] ? this.cardMatrix[0].length : 24;
     const dims = calculateCardDimensions(this.profile, rows, cols);
 
-    const cw = this.canvas.width;
-    const ch = this.canvas.height;
+    const dpr = this.dpr || 1;
+    const cw = this.canvas.width / dpr;
+    const ch = this.canvas.height / dpr;
     const margin = 0.88;
     const zx = (cw * margin) / dims.widthMm;
     const zy = (ch * margin) / dims.heightMm;
@@ -204,8 +207,14 @@ export class ToolpathViewer {
     const parent = this.canvas.parentElement;
     // Skip while the tab is hidden — a 0×0 layout would bake in a stale buffer
     if (!parent || parent.clientWidth <= 0 || parent.clientHeight <= 0) return;
-    const w = parent.clientWidth;
-    const h = parent.clientHeight;
+    // Back both the display buffer and the offscreen render target with
+    // devicePixelRatio device pixels; _render keeps drawing in CSS px via a base dpr
+    // transform so the 1:1 blit stays crisp, and the view math (fit/zoom/pan) also
+    // works in CSS px, matching pointer events that read getBoundingClientRect.
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    this.dpr = dpr;
+    const w = Math.round(parent.clientWidth * dpr);
+    const h = Math.round(parent.clientHeight * dpr);
     this.canvas.width        = w;
     this.canvas.height       = h;
     this.offscreen.width     = w;
@@ -384,8 +393,10 @@ export class ToolpathViewer {
 
   _render() {
     const ctx = this.offCtx;
-    const w   = this.offscreen.width;
-    const h   = this.offscreen.height;
+    const dpr = this.dpr || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w   = this.offscreen.width / dpr;
+    const h   = this.offscreen.height / dpr;
 
     ctx.fillStyle = '#06040d';
     ctx.fillRect(0, 0, w, h);

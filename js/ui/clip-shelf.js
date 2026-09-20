@@ -31,6 +31,7 @@
 
 import { createClipboard, entrySummary, labelForMode } from '../edit/clipboard.js';
 import { getDiagnostics } from '../core/diagnostics.js';
+import { buildPanel } from './kit.js';
 
 const STYLE_ID = 'kx-clipshelf-style';
 const PANEL_ID = 'kx-clipshelf';
@@ -72,39 +73,35 @@ export function createClipShelf(deps = {}) {
     (document.querySelector('.brand-section') || document.body).appendChild(button);
   }
 
-  // ── the drawer ───────────────────────────────────────────────────────────────
+  // ── the drawer (shared kit chrome; only the body groups are ours) ─────────────
   let panel = document.getElementById(PANEL_ID);
+  let body;
   if (!panel) {
-    panel = document.createElement('section');
-    panel.id = PANEL_ID;
-    panel.className = 'kx-clip';
-    panel.setAttribute('role', 'region');
-    panel.setAttribute('aria-label', 'Clip shelf');
-    panel.hidden = true;
-    panel.innerHTML = `
-      <header class="kxc-bar">
-        <div class="kxc-title"><span class="kxc-glyph" aria-hidden="true">\uD83D\uDCCB</span> Clip Shelf</div>
-        <div class="kxc-stat" data-count></div>
-        <div class="kxc-actions">
-          <button class="kxc-act" data-act="copy-last" title="Copy the current selection into the shelf now">Capture</button>
-          <button class="kxc-act" data-act="clear" title="Clear the copy history">Clear history</button>
-          <button class="kxc-act kxc-close" data-act="close" title="Close" aria-label="Close clip shelf">\u2715</button>
-        </div>
-      </header>
-      <div class="kxc-body">
-        <section class="kxc-group">
-          <h3 class="kxc-h3">Recent copies <span class="kxc-sub" data-hist-n></span></h3>
-          <ul class="kxc-list" data-history></ul>
-        </section>
-        <section class="kxc-group">
-          <h3 class="kxc-h3">Named slots <span class="kxc-sub">saved across reloads</span></h3>
-          <ul class="kxc-list" data-slots></ul>
-        </section>
-      </div>
-      <footer class="kxc-foot">
-        <span>Paste uses the editor's own paste \u2014 it lands at your selection or hover.</span>
-      </footer>`;
+    const shell = buildPanel({
+      id: PANEL_ID,
+      className: 'kx-clip',
+      glyph: '\uD83D\uDCCB',
+      title: 'Clip Shelf',
+      pos: 'br',
+      ariaLabel: 'Clip shelf',
+      actionsHtml: '<button class="kx-btn" data-act="copy-last" title="Copy the current selection into the shelf now">Capture</button>'
+        + '<button class="kx-btn" data-act="clear" title="Clear the copy history">Clear history</button>',
+      footHtml: "<span>Paste uses the editor's own paste \u2014 it lands at your selection or hover.</span>"
+    });
+    panel = shell.panel;
+    body = shell.body;
+    body.innerHTML = `
+      <section>
+        <h3 class="kx-panel__h3">Recent copies <span class="kx-panel__sub" data-hist-n></span></h3>
+        <ul class="kx-list" data-history></ul>
+      </section>
+      <section>
+        <h3 class="kx-panel__h3">Named slots <span class="kx-panel__sub">saved across reloads</span></h3>
+        <ul class="kx-list" data-slots></ul>
+      </section>`;
     document.body.appendChild(panel);
+  } else {
+    body = panel.querySelector('.kx-panel__body');
   }
 
   const el = {
@@ -253,15 +250,15 @@ export function createClipShelf(deps = {}) {
   function clipRow(entry, kicker, opts) {
     const sum = entrySummary(entry);
     const li = document.createElement('li');
-    li.className = 'kxc-item';
+    li.className = 'kx-row';
     const info = document.createElement('div');
-    info.className = 'kxc-item-info';
+    info.className = 'kx-row__info';
     const title = document.createElement('span');
-    title.className = 'kxc-item-name';
+    title.className = 'kx-row__name';
     title.textContent = entry.name || sum.short || 'clip';
     info.appendChild(title);
     const meta = document.createElement('span');
-    meta.className = 'kxc-item-meta';
+    meta.className = 'kx-row__meta';
     meta.textContent = [
       `${entry.rows}\u00D7${entry.cols}`,
       `${entry.punched} punched`,
@@ -272,7 +269,7 @@ export function createClipShelf(deps = {}) {
     li.appendChild(info);
 
     const btns = document.createElement('div');
-    btns.className = 'kxc-item-actions';
+    btns.className = 'kx-row__actions';
     btns.appendChild(actionBtn('paste', 'Paste onto the card', '\u25B6', () => paste(entry)));
     if (opts && opts.save) btns.appendChild(actionBtn('save', 'Save to a named slot', '\u2605', () => saveNamed(entry)));
     if (opts && opts.remove) {
@@ -295,7 +292,7 @@ export function createClipShelf(deps = {}) {
 
   function emptyRow(text) {
     const li = document.createElement('li');
-    li.className = 'kxc-empty';
+    li.className = 'kx-empty';
     li.textContent = text;
     return li;
   }
@@ -303,7 +300,7 @@ export function createClipShelf(deps = {}) {
   function actionBtn(kind, title, glyph, handler) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = `kxc-ib kxc-ib--${kind}`;
+    b.className = `kx-iconbtn kx-iconbtn--${kind}`;
     b.title = title;
     b.setAttribute('aria-label', title);
     b.textContent = glyph;
@@ -388,46 +385,12 @@ function injectStyles() {
   if (stylesInjected || typeof document === 'undefined') return;
   if (document.getElementById(STYLE_ID)) { stylesInjected = true; return; }
   const css = `
+  #kx-clipshelf{width:min(360px,92vw);max-height:min(70vh,560px)}
   #kx-clipshelf-btn{position:relative}
   #kx-clipshelf-btn .kx-clip-badge{position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;
-    padding:0 3px;border-radius:9px;background:var(--accent,#f7b955);color:#14161d;font-size:10px;
+    padding:0 3px;border-radius:9px;background:var(--accent-amber);color:#14161d;font-size:10px;
     font-weight:700;line-height:16px;text-align:center;pointer-events:none}
-  #kx-clipshelf-btn.is-on{background:rgba(247,185,85,.16)}
-  #kx-clipshelf{position:fixed;right:14px;bottom:14px;z-index:9000;width:min(360px,92vw);
-    max-height:min(70vh,560px);display:flex;flex-direction:column;
-    background:rgba(18,22,31,.96);backdrop-filter:blur(8px);color:#e7ecf3;
-    border:1px solid var(--border-subtle,#2b3242);border-radius:14px;overflow:hidden;
-    box-shadow:0 18px 48px rgba(0,0,0,.42);
-    font:13px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-  #kx-clipshelf .kxc-bar{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #262c3a}
-  #kx-clipshelf .kxc-title{font-weight:700;display:flex;align-items:center;gap:7px}
-  #kx-clipshelf .kxc-glyph{opacity:.85}
-  #kx-clipshelf .kxc-stat{margin-left:auto;font-size:11px;color:#8a93a6;white-space:nowrap}
-  #kx-clipshelf .kxc-actions{display:flex;gap:6px}
-  #kx-clipshelf .kxc-act{background:#182032;border:1px solid #26314a;color:#aebfe0;border-radius:7px;
-    padding:3px 9px;font-size:11.5px;cursor:pointer}
-  #kx-clipshelf .kxc-act:hover{background:#1e293f}
-  #kx-clipshelf .kxc-close{border-color:#3a2630;color:#e7a4ae}
-  #kx-clipshelf .kxc-body{overflow-y:auto;padding:6px 10px 4px}
-  #kx-clipshelf .kxc-group{margin:8px 0 12px}
-  #kx-clipshelf .kxc-h3{margin:4px 2px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#7f8aa1;font-weight:600}
-  #kx-clipshelf .kxc-sub{text-transform:none;letter-spacing:0;color:#5f6a80;font-weight:400}
-  #kx-clipshelf .kxc-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
-  #kx-clipshelf .kxc-item{display:flex;align-items:center;gap:8px;background:#141a28;border:1px solid #222a3b;
-    border-radius:10px;padding:7px 9px}
-  #kx-clipshelf .kxc-item-info{min-width:0;flex:1 1 auto;display:flex;flex-direction:column}
-  #kx-clipshelf .kxc-item-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  #kx-clipshelf .kxc-item-meta{font-size:11px;color:#8a93a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  #kx-clipshelf .kxc-item-actions{display:flex;gap:4px;flex:0 0 auto}
-  #kx-clipshelf .kxc-ib{width:26px;height:26px;border-radius:7px;border:1px solid #2a3448;background:#182032;
-    color:#cdd8ee;cursor:pointer;font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
-  #kx-clipshelf .kxc-ib:hover{transform:translateY(-1px)}
-  #kx-clipshelf .kxc-ib--paste{color:#8ff0b3;border-color:#265a3a}
-  #kx-clipshelf .kxc-ib--save{color:#f5d68a;border-color:#5a4a26}
-  #kx-clipshelf .kxc-ib--delete{color:#e7a4ae;border-color:#5a2630}
-  #kx-clipshelf .kxc-empty{color:#6b7688;font-size:12px;padding:6px 4px;font-style:italic}
-  #kx-clipshelf .kxc-foot{padding:7px 12px;border-top:1px solid #262c3a;font-size:10.5px;color:#6b7688}
-  @media (max-width:520px){ #kx-clipshelf{right:8px;left:8px;width:auto} }
+  #kx-clipshelf-btn.is-on{background:rgba(251,191,36,.16)}
   `;
   try {
     const style = document.createElement('style');

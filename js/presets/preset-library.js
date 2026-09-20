@@ -21,6 +21,7 @@ import {
   EDGES_PRESETS,
   SHAPING_PRESETS
 } from './patterns-generative-edges.js';
+import { WEAVE_PRESETS } from './patterns-weave.js';
 
 const CLASSIC_PRESETS = [
   {
@@ -988,7 +989,8 @@ export const PATTERN_PRESETS = [
   ...DOUBLE_BED_PRESETS,
   ...GENERATIVE_PRESETS,
   ...EDGES_PRESETS,
-  ...SHAPING_PRESETS
+  ...SHAPING_PRESETS,
+  ...WEAVE_PRESETS
 ].map(p => {
   const raw = p.generate.bind(p);
   return {

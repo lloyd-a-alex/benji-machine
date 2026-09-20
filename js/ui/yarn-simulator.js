@@ -11,6 +11,7 @@ export class YarnSimulator {
   constructor(canvasElement, options = {}) {
     this.canvas = canvasElement;
     this.ctx = canvasElement.getContext('2d');
+    this.dpr = 1;
 
     this.rows = options.rows || 24;
     this.cols = options.cols || 24;
@@ -148,8 +149,8 @@ export class YarnSimulator {
   }
 
   centerFabric() {
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const w = this.canvas.width / (this.dpr || 1);
+    const h = this.canvas.height / (this.dpr || 1);
     this.panX = w / 2;
     this.panY = h / 2;
   }
@@ -158,8 +159,13 @@ export class YarnSimulator {
     const parent = this.canvas.parentElement;
     // Ignore resize events fired while the tab is hidden (0×0 layout)
     if (parent && parent.clientWidth > 0 && parent.clientHeight > 0) {
-      this.canvas.width = parent.clientWidth;
-      this.canvas.height = parent.clientHeight;
+      // Back the buffer with devicePixelRatio device pixels while the pan/zoom view
+      // keeps working in CSS pixels: render sets a base dpr transform and the layout
+      // helpers divide by it, so the fabric stays crisp on HiDPI screens.
+      const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+      this.dpr = dpr;
+      this.canvas.width = Math.round(parent.clientWidth * dpr);
+      this.canvas.height = Math.round(parent.clientHeight * dpr);
       this.centerFabric();
       // The canvas buffer was just reallocated (and cleared). The physics loop may
       // be parked, so paint immediately or the view stays blank until something
@@ -308,8 +314,10 @@ export class YarnSimulator {
 
   render() {
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const dpr = this.dpr || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w = this.canvas.width / dpr;
+    const h = this.canvas.height / dpr;
 
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, w, h);

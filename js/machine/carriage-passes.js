@@ -556,6 +556,10 @@ export function transfersInRow(patternRow = [], { cols = patternRow.length, acco
     } else if (stitch === STITCH_TYPE.DOUBLE_DEC_LEFT || stitch === STITCH_TYPE.DOUBLE_DEC_RIGHT || stitch === STITCH_TYPE.CENTER_DEC) {
       if (c - 1 >= 0) transfers.push({ from: c - 1, to: c, kind: 'transfer', stitchType: STITCH_TYPE.TRANSFER_RIGHT });
       if (c + 1 < cols) transfers.push({ from: c + 1, to: c, kind: 'transfer', stitchType: STITCH_TYPE.TRANSFER_LEFT });
+    } else if (stitch === STITCH_TYPE.TRANSFER_DOUBLE_L) {
+      if (c - 2 >= 0) transfers.push({ from: c, to: c - 2, kind: 'transfer', stitchType: stitch });
+    } else if (stitch === STITCH_TYPE.TRANSFER_DOUBLE_R) {
+      if (c + 2 < cols) transfers.push({ from: c, to: c + 2, kind: 'transfer', stitchType: stitch });
     } else if (accountForEyelets && stitch === STITCH_TYPE.EYELET) {
       const paired =
         (c > 0 && patternRow[c - 1] === STITCH_TYPE.TRANSFER_LEFT) ||

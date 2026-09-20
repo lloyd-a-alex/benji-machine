@@ -119,6 +119,19 @@ test('long fair-isle floats are detected and offer a safe fix', () => {
   assert.ok(!again, 'float cleared after fix');
 });
 
+test('fair-isle floats are checked for BOTH colours, not just the punched one', () => {
+  // Isolated punches with a wide background between them: the punched (1) cells never
+  // run long, so the old check saw nothing — yet yarn B is carried behind ten blanks,
+  // a real float. This is the case the single-colour check silently missed.
+  const row = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+  const app = fakeApp('fair_isle', [row.slice()]);
+  const adv = createFeasibilityAdvisor(app);
+  const float = adv.verdict().issues.find(i => /float/i.test(i.title) && !/slip/i.test(i.title));
+  assert.ok(float, 'the carried-background float is flagged');
+  float.fix.run();
+  assert.ok(!adv.verdict().issues.find(i => /float/i.test(i.title)), 'and the fix clears it');
+});
+
 test('slip-mode float detection uses slipped cells, not punched ones', () => {
   // A run of slipped (0) cells is the slip float; here a long gap between punches.
   const row = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];

@@ -1,29 +1,39 @@
 /**
- * Interactive Tank Top Tailoring CAD Visualizer
+ * KNITCAT — unified interactive garment tailor canvas.
  *
- * Renders the parametric 2D garment silhouette with:
- * 1. Anatomic armhole scye curves & scoop neckline
- * 2. A real STITCH grid whose cell size is driven by the knitter's gauge
- *    (stitches / rows per 10cm swatch) so the grid genuinely fits their yarn
- * 3. Free-hand drawing directly onto that stitch grid, keeping the
- *    left/right symmetry mirror ("keep the symmetry thing but just draw")
- * 4. Dimension callout lines, ribbing divider and grain line
+ * The tank-top CAD visualizer was the best preview in the app: a continuous 2D
+ * silhouette, a real stitch grid whose cell size is driven by the knitter's gauge,
+ * free-hand painting with a left/right mirror, and CAD dimension callouts. But it
+ * only ever drew a tank top. This class generalises it to *any* garment in the
+ * catalogue by rendering the `plan.geometry.outlineMm` that ClothesEngine now
+ * produces for every structure — so a hat, a sock, a sweater and the tank top all
+ * get the same gauge-aware, paintable, mirror-capable preview.
+ *
+ * @module ui/garment-canvas
  */
 
+import { ClothesEngine } from '../tailor/clothes-catalog.js';
 import { TankTopTailoringEngine } from '../tailor/tank-top-engine.js';
+import { buildGeometry } from '../tailor/garment-geometry.js';
 
-export class TankTopCanvas {
+export class GarmentCanvas {
   constructor(canvasElement, options = {}) {
     this.canvas = canvasElement;
     this.ctx = canvasElement.getContext('2d');
+    this.dpr = 1;
 
-    this.engine = new TankTopTailoringEngine(options);
+    this.clothes = new ClothesEngine();
+    // Legacy tank engine kept for the exports / estimators the old tank wiring calls.
+    this.engine = new TankTopTailoringEngine(options.tankParams || {});
+    this.garment = null;
+    this.plan = null;
+    this.geometry = buildGeometry('tank', { params: this.engine.params, gauge: this.engine.gauge, cols: 24, rows: 24 });
+
     this.zoom = 0.8;
     this.panX = 0;
     this.panY = 0;
 
-    // Drawing layer (stitch grid painting). Kept fully independent from the
-    // parametric silhouette so turning it off leaves the old view untouched.
+    // Drawing layer (stitch grid painting), independent of the parametric silhouette.
     this.drawMode = false;
     this.symmetry = true;          // mirror left/right across centre (default on)
     this.painted = new Set();      // "r,c" keys of contrast stitches
@@ -35,17 +45,49 @@ export class TankTopCanvas {
     this.render();
   }
 
+  // ---- Garment selection ----------------------------------------------------
+  /**
+   * Show a catalogue garment. The plan's continuous geometry drives everything.
+   * @param {object} garment a GARMENTS entry
+   * @param {object} params  measured values
+   * @param {object} gauge   { stitchesPer10Cm, rowsPer10Cm }
+   */
+  setGarment(garment, params = {}, gauge = {}) {
+    this.garment = garment;
+    this.plan = this.clothes.compute(garment, params, gauge);
+    this.geometry = this.plan.geometry || this.geometry;
+    this.painted.clear();
+    this.centerView();
+    this.render();
+    return this.plan;
+  }
+
+  /** Recompute the current garment from new params / gauge (slider live-update). */
+  refresh(params = {}, gauge = {}) {
+    if (!this.garment) return null;
+    this.plan = this.clothes.compute(this.garment, { ...(this.plan?.params || {}), ...params }, { ...(this.plan?.gauge || {}), ...gauge });
+    this.geometry = this.plan.geometry || this.geometry;
+    this.render();
+    return this.plan;
+  }
+
   setParams(newParams) {
-    this.engine.setParams(newParams);
+    Object.assign(this.engine.params, newParams);
+    if (!this.garment) {
+      this.geometry = buildGeometry('tank', { params: this.engine.params, gauge: this.engine.gauge, cols: 24, rows: 24 });
+    }
     this.render();
   }
 
   getCurrentParams() {
-    return this.engine.params;
+    return this.plan?.params || this.engine.params;
   }
 
   setGauge(newGauge) {
-    this.engine.setGauge(newGauge);
+    Object.assign(this.engine.gauge, newGauge);
+    if (!this.garment) {
+      this.geometry = buildGeometry('tank', { params: this.engine.params, gauge: this.engine.gauge, cols: 24, rows: 24 });
+    }
     this.render();
   }
 
@@ -71,18 +113,18 @@ export class TankTopCanvas {
     this.render();
   }
 
-  // ---- Stitch grid geometry (derived from the engine's gauge-aware pattern) ----
+  // ---- Stitch grid geometry (derived from the current continuous outline) ----
   computeGrid() {
-    const pattern = this.engine.computePattern();
-    const dims = pattern.dimensions;
-    const cols = Math.max(2, dims.castOnStitches);
-    const rows = Math.max(2, dims.totalRows);
-    const halfW = dims.widthMm / 2;
-    const top = dims.heightMm;
+    const geo = this.geometry;
+    const cols = Math.max(2, geo.cols || 2);
+    const rows = Math.max(2, geo.rows || 2);
+    const halfW = geo.widthMm / 2;
+    const top = geo.heightMm;
     return {
-      pattern, dims, cols, rows,
+      geo, cols, rows,
+      outline: geo.outlineMm,
       left: -halfW, right: halfW, bottom: 0, top,
-      cellW: dims.widthMm / cols,
+      cellW: geo.widthMm / cols,
       cellH: top / rows
     };
   }
@@ -108,15 +150,13 @@ export class TankTopCanvas {
     return { r, c, g };
   }
 
+  /** Point-in-polygon against the already-full closed outline. */
   isInsideGarment(g, x, y) {
-    const pts = g.pattern.frontProfileMm;
-    // Build the full closed outline (right half + mirrored left half).
-    const poly = pts.map(p => [p.x, p.y]);
-    for (let i = pts.length - 1; i >= 0; i--) poly.push([-pts[i].x, pts[i].y]);
+    const poly = g.outline;
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const [xi, yi] = poly[i];
-      const [xj, yj] = poly[j];
+      const xi = poly[i].x, yi = poly[i].y;
+      const xj = poly[j].x, yj = poly[j].y;
       const intersect = ((yi > y) !== (yj > y)) &&
         (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-9) + xi);
       if (intersect) inside = !inside;
@@ -129,7 +169,7 @@ export class TankTopCanvas {
     if (!cell) return;
     const { r, c, g } = cell;
     const centre = this.cellCenterMm(g, r, c);
-    if (!this.isInsideGarment(g, centre.x, centre.y)) return; // stay inside the tee
+    if (!this.isInsideGarment(g, centre.x, centre.y)) return; // stay inside the piece
 
     const apply = (rr, cc) => {
       if (cc < 0 || cc >= g.cols) return;
@@ -152,7 +192,7 @@ export class TankTopCanvas {
       for (let c = 0; c < g.cols; c++) if (this.painted.has(`${r},${c}`)) row[c] = 1;
       m.push(row);
     }
-    return { matrix: m, cols: g.cols, rows: g.rows, dims: g.dims };
+    return { matrix: m, cols: g.cols, rows: g.rows, geometry: g.geo };
   }
 
   setupEvents() {
@@ -266,43 +306,49 @@ export class TankTopCanvas {
     const parent = this.canvas.parentElement;
     // Skip while the tab is hidden — a 0×0 layout would bake in a stale buffer
     if (parent && parent.clientWidth > 0 && parent.clientHeight > 0) {
-      this.canvas.width = parent.clientWidth;
-      this.canvas.height = parent.clientHeight;
+      // Back the buffer with devicePixelRatio device pixels while the pan/zoom view
+      // keeps working in CSS pixels (render sets a base dpr transform, the helpers
+      // divide by it), so HiDPI screens get a crisp schematic and pointer→cell
+      // mapping — which reads CSS px from getBoundingClientRect — still lines up.
+      const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+      this.dpr = dpr;
+      this.canvas.width = Math.round(parent.clientWidth * dpr);
+      this.canvas.height = Math.round(parent.clientHeight * dpr);
       this.centerView();
       this.render();
     }
   }
 
   centerView() {
-    this.panX = this.canvas.width / 2;
-    this.panY = this.canvas.height * 0.82;
+    this.panX = this.canvas.width / (this.dpr || 1) / 2;
+    this.panY = this.canvas.height / (this.dpr || 1) * 0.82;
   }
 
   render() {
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const dpr = this.dpr || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w = this.canvas.width / dpr;
+    const h = this.canvas.height / dpr;
 
     // Dark atelier CAD background
     ctx.fillStyle = '#080c14';
     ctx.fillRect(0, 0, w, h);
 
     const g = this.computeGrid();
-    const pts = g.pattern.frontProfileMm;
-    const dims = g.dims;
+    const pts = g.outline;
 
     ctx.save();
     ctx.translate(this.panX, this.panY);
     ctx.scale(this.zoom, -this.zoom); // Invert Y so up is positive mm
 
-    const halfWidthMm = dims.widthMm / 2;
-    const totalHeightMm = dims.heightMm;
+    const halfWidthMm = g.geo.widthMm / 2;
+    const totalHeightMm = g.geo.heightMm;
 
     // 1. Garment body fill (drawn first so the stitch grid sits on top of it)
     ctx.beginPath();
-    ctx.moveTo(0, pts[0].y);
+    ctx.moveTo(pts[0].x, pts[0].y);
     for (const pt of pts) ctx.lineTo(pt.x, pt.y);
-    for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(-pts[i].x, pts[i].y);
     ctx.closePath();
     ctx.fillStyle = 'rgba(56, 189, 248, 0.08)';
     ctx.fill();
@@ -335,26 +381,27 @@ export class TankTopCanvas {
 
     // 4. Cutting boundary stroke (redraw on top so it stays crisp)
     ctx.beginPath();
-    ctx.moveTo(0, pts[0].y);
+    ctx.moveTo(pts[0].x, pts[0].y);
     for (const pt of pts) ctx.lineTo(pt.x, pt.y);
-    for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(-pts[i].x, pts[i].y);
     ctx.closePath();
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 2.0 / this.zoom;
     ctx.stroke();
 
-    // 5. Hem Ribbing Divider Line
-    const ribbingYMm = this.engine.params.ribbingHeightCm * 10;
-    ctx.strokeStyle = '#fbbf24';
-    ctx.lineWidth = 1.2 / this.zoom;
-    ctx.setLineDash([4 / this.zoom, 4 / this.zoom]);
-    ctx.beginPath();
-    ctx.moveTo(-halfWidthMm, ribbingYMm);
-    ctx.lineTo(halfWidthMm, ribbingYMm);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    // 5. Hem ribbing divider (only the tank block tracks an exact rib height).
+    if (!this.garment) {
+      const ribbingYMm = this.engine.params.ribbingHeightCm * 10;
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 1.2 / this.zoom;
+      ctx.setLineDash([4 / this.zoom, 4 / this.zoom]);
+      ctx.beginPath();
+      ctx.moveTo(-halfWidthMm, ribbingYMm);
+      ctx.lineTo(halfWidthMm, ribbingYMm);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
-    // 6. Center Grain Line
+    // 6. Center grain line
     ctx.strokeStyle = '#f43f5e';
     ctx.lineWidth = 1.0 / this.zoom;
     ctx.beginPath();
@@ -365,21 +412,21 @@ export class TankTopCanvas {
     ctx.restore();
 
     // 7. On-screen CAD dimension overlays (screen space)
-    this.renderDimensionOverlays(ctx, g.pattern);
+    this.renderDimensionOverlays(ctx, g);
   }
 
-  renderDimensionOverlays(ctx, pattern) {
-    const dims = pattern.dimensions;
+  renderDimensionOverlays(ctx, g) {
+    const geo = g.geo;
+    const plan = this.plan;
     const p = this.engine.params;
-    const g = this.engine.gauge;
+    const gauge = plan ? plan.gauge : this.engine.gauge;
+    const title = plan ? plan.garment.name : "Benji's Tank Top Shaping Specifications";
 
-    // Overlay Card in top-left
     ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
     ctx.strokeStyle = '#1e293b';
     ctx.lineWidth = 1;
-
     const cardW = 340;
-    const cardH = 232;
+    const cardH = 168;
     ctx.beginPath();
     ctx.roundRect(20, 20, cardW, cardH, 8);
     ctx.fill();
@@ -387,19 +434,17 @@ export class TankTopCanvas {
 
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 13px -apple-system, sans-serif';
-    ctx.fillText("Benji's Tank Top Shaping Specifications", 35, 42);
+    ctx.fillText(title, 35, 42);
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = '11px monospace';
-    ctx.fillText(`Gauge (your yarn):    ${g.stitchesPer10Cm.toFixed(1)} sts × ${g.rowsPer10Cm.toFixed(1)} rows / 10cm`, 35, 62);
-    ctx.fillText(`Chest Circumference:  ${p.chestCircumferenceCm} cm (Ease: +${p.easeCm} cm)`, 35, 82);
-    ctx.fillText(`Cast-On Needles:      ${dims.castOnStitches} sts (L${dims.halfStitches} to R${dims.halfStitches})`, 35, 100);
-    ctx.fillText(`Hem Ribbing:          ${dims.ribbingRows} rows (${p.ribbingType} rib)`, 35, 118);
-    ctx.fillText(`Underarm Bind-Off:    ${dims.initialBindOffSts} sts each side`, 35, 136);
-    ctx.fillText(`Armhole Scye Dec:     1 st every 2 rows × ${dims.gradualDecSts}`, 35, 154);
-    ctx.fillText(`Front Scoop Split:    Row ${dims.frontNeckSplitRow} (Hold ${dims.neckStitchesTotal} sts)`, 35, 172);
-    ctx.fillText(`Strap Width:          ${dims.strapStitches} sts (${p.strapWidthCm} cm)`, 35, 190);
-    ctx.fillText(`Total Rows to Knit:   ${dims.totalRows} rows`, 35, 208);
-    ctx.fillText(`Stitches drawn:       ${this.painted.size}`, 35, 226);
+    ctx.fillText(`Gauge (your yarn):    ${gauge.stitchesPer10Cm.toFixed?.(1) ?? gauge.stitchesPer10Cm} sts × ${gauge.rowsPer10Cm.toFixed?.(1) ?? gauge.rowsPer10Cm} rows / 10cm`, 35, 62);
+    ctx.fillText(`Grid:                 ${g.cols} sts × ${g.rows} rows`, 35, 80);
+    ctx.fillText(`Outline:              ${geo.widthMm.toFixed(0)} × ${geo.heightMm.toFixed(0)} mm`, 35, 98);
+    if (plan && plan.garment.structure === 'tank') {
+      ctx.fillText(`Chest Circumference:  ${p.chestCircumferenceCm} cm (Ease: +${p.easeCm} cm)`, 35, 116);
+    }
+    ctx.fillText(`Symmetry mirror:      ${this.symmetry ? 'ON (left/right)' : 'off'}`, 35, 134);
+    ctx.fillText(`Stitches drawn:       ${this.painted.size}`, 35, 152);
   }
 }

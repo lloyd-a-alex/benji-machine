@@ -121,6 +121,20 @@ export const FAMILIES = [
     ]
   },
   {
+    id: 'weave',
+    name: 'Weave Structures',
+    icon: '\u25a4',
+    blurb:
+      'Woven cloth, drafted. A weave is a warp-up / weft-up grid \u2014 the same rectangle a punchcard carries \u2014 so the classic structures drop straight into the card engine. Each names its shaft count and the loom that would weave it.',
+    groups: [
+      { id: 'plain', name: 'Plain & Basket', blurb: 'Tabby and its doubled, ribbed and shot-silk relatives \u2014 the balanced floor of weaving.' },
+      { id: 'twill', name: 'Twill Family', blurb: 'Diagonals: 2/2, warp- and weft-faced, herringbone, diamond, gabardine, whipcord.' },
+      { id: 'satin', name: 'Satin & Sateen', blurb: 'Scattered binding points, unbroken floats, deep gloss \u2014 no visible diagonal.' },
+      { id: 'dobby', name: 'Dobby Structures', blurb: 'Geometric figures the dobby head selects: piqu\u00e9, leno, double cloth, pile, charvet.' },
+      { id: 'jacquard', name: 'Jacquard & Figure', blurb: 'Individually controlled ends \u2014 damask, brocade, lampas, coverlet stars \u2014 whole pictures in cloth.' }
+    ]
+  },
+  {
     id: 'garments',
     name: 'Whole Garments',
     icon: '\u2307',

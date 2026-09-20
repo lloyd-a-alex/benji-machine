@@ -20,7 +20,7 @@
 import {
   encodeCard, decodeCard, buildShareUrl, readShareUrl, stripShareUrl, PRACTICAL_URL_LIMIT
 } from '../project/url-state.js';
-import { encodeQr, qrToSvg, drawQrToCanvas, byteCapacity } from '../exporters/qr-code.js';
+import { encodeQr, qrToSvg, drawQrToCanvas, maxByteCapacity } from '../exporters/qr-code.js';
 import { buildProjectDocument } from '../project/kcard.js';
 import { printHtml, escapeHtml } from '../ui/printing.js';
 
@@ -484,7 +484,7 @@ export function initShare(context = {}) {
     fill.classList.add(ratio > 1 ? 'kx-meter-fill--bad' : ratio > 0.75 ? 'kx-meter-fill--warn' : 'kx-meter-fill--ok');
     modal.querySelector('#kx-size-note').textContent = payload.tooLong
       ? `${payload.chars} characters is past the ${payload.limit} KNITCAT will promise a link for. Use the file below.`
-      : `${payload.chars} characters · ${payload.bytes} bytes of card · the QR holds ${byteCapacity(5)} bytes, so ${qr.ok ? 'this one scans' : 'this one is too big for the QR'}.`;
+      : `${payload.chars} characters · ${payload.bytes} bytes of card · the QR holds up to ${maxByteCapacity()} bytes, so ${qr.ok ? 'this one scans' : 'this one is past even a QR — copy the link or save a .kcard'}.`;
     modal.querySelector('#kx-btn-copy').addEventListener('click', async () => {
       const input = modal.querySelector('#kx-share-url');
       input.select?.();

@@ -17,6 +17,7 @@ export class BrotherSimCanvas {
     this.ctx = canvasElement.getContext('2d');
 
     this.mechanism = new BrotherSelectorMechanism(200, 24, 8);
+    this.dpr = 1;
     this.isDraggingCarriage = false;
     this.animating = true;
     this.autoSweep = true;
@@ -188,21 +189,27 @@ export class BrotherSimCanvas {
     const parent = this.canvas.parentElement;
     // Skip while the tab is hidden — a 0×0 layout would bake in a stale buffer
     if (parent && parent.clientWidth > 0 && parent.clientHeight > 0) {
-      this.canvas.width = parent.clientWidth;
-      this.canvas.height = parent.clientHeight;
+      // Back the buffer with devicePixelRatio device pixels but keep drawing in CSS
+      // pixels (render sets a base dpr transform; the layout helpers divide by it),
+      // so the schematic stays crisp on HiDPI screens and pointer mapping — which
+      // already reads CSS px from getBoundingClientRect — keeps matching.
+      const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+      this.dpr = dpr;
+      this.canvas.width = Math.round(parent.clientWidth * dpr);
+      this.canvas.height = Math.round(parent.clientHeight * dpr);
       this.render();
     }
   }
 
   needleToScreenX(needleIndex) {
-    const w = this.canvas.width;
+    const w = this.canvas.width / (this.dpr || 1);
     const bedMargin = 50;
     const bedWidth = w - (bedMargin * 2);
     return bedMargin + (needleIndex / (this.mechanism.totalNeedles - 1)) * bedWidth;
   }
 
   screenXToNeedle(screenX) {
-    const w = this.canvas.width;
+    const w = this.canvas.width / (this.dpr || 1);
     const bedMargin = 50;
     const bedWidth = w - (bedMargin * 2);
     const norm = (screenX - bedMargin) / bedWidth;
@@ -237,8 +244,10 @@ export class BrotherSimCanvas {
 
   render() {
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const dpr = this.dpr || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w = this.canvas.width / dpr;
+    const h = this.canvas.height / dpr;
 
     // Dark engineering workspace background
     ctx.fillStyle = '#070a12';

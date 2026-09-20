@@ -107,13 +107,25 @@ export function createFeasibilityAdvisor(app) {
     }
 
     if (mode === 'fair_isle') {
-      let worst = 0, count = 0;
-      for (const row of M) { const r = runsAbove(row, 1, limit); if (r) { count++; worst = Math.max(worst, r); } }
+      // Two colours, two kinds of float. A run of punched needles (1) works yarn B at
+      // the front and carries yarn A behind it; a run of blanks (0) is the mirror —
+      // yarn A knits and yarn B is floated. Both snag, so the check has to look at
+      // each colour, not just the punched one (which is all this used to do, so a
+      // field of background could hide arbitrarily long carried B floats).
+      let worst = 0;
+      const floatRows = new Set();
+      for (let i = 0; i < M.length; i++) {
+        for (const want of [1, 0]) {
+          const r = runsAbove(M[i], want, limit);
+          if (r) { floatRows.add(i); worst = Math.max(worst, r); }
+        }
+      }
+      const count = floatRows.size;
       if (count) {
         issues.push(mk('warn', `${count} long float${count > 1 ? 's' : ''} (up to ${worst} sts)`,
-          `A carried yarn over ${limit} needles snags on needles and puckers the fabric.`,
+          `A carried yarn over ${limit} needles snags on needles and puckers the fabric — either colour floats when the other is the one being carried across a long gap.`,
           PHIL.peakEnd,
-          { label: 'Auto-catch every long float', safe: true, run: () => catchFloats(M, 1, limit) }));
+          { label: 'Auto-catch every long float', safe: true, run: () => { catchFloats(M, 1, limit); catchFloats(M, 0, limit); } }));
       }
     } else if (mode === 'slip') {
       let worst = 0, count = 0;
@@ -359,11 +371,15 @@ export function createFeasibilityAdvisor(app) {
       aka: know.aka || [],
       gauge: profile.gauge,
       beds: limits.beds,
+      history: know.history,
       carriage: know.carriage,
+      tension: know.tension,
+      accessories: know.accessories || [],
       yarnWeights: know.yarnWeights || [],
       yarnGauge: know.yarnGauge,
       strengths: know.strengths || [],
       caveats: know.caveats || [],
+      commonFailures: know.commonFailures || [],
       modeSupported: techniqueSupported(profile, mode),
       limits
     };
@@ -392,6 +408,9 @@ export function createFeasibilityAdvisor(app) {
       bits.push('Nothing here breaks the machine.');
     }
     if (know.caveats && know.caveats[0]) bits.push(`Worth remembering about this bed: ${know.caveats[0]}.`);
+    if ((errs.length || warns.length) && know.commonFailures && know.commonFailures[0]) {
+      bits.push(`The failure this usually turns into: ${know.commonFailures[0]}.`);
+    }
     // Lead the next step with the highest-severity actionable fix available.
     const next = errs.find(i => i.fix && i.fix.safe) || warns.find(i => i.fix && i.fix.safe);
     if (next) bits.push(`Fastest improvement: “${next.fix.label}” — ${status === 'not-feasible' ? 'it clears a blocker' : 'it sharpens the fabric'}.`);

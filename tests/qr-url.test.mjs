@@ -13,8 +13,8 @@ import {
   buildShareUrl, readShareUrl, CODEC_VERSION, PRACTICAL_URL_LIMIT
 } from '../js/project/url-state.js';
 import {
-  encodeQr, byteCapacity, pickVersion, rsGenerator, rsRemainder, formatBits,
-  penaltyScore, qrToSvg, utf8Bytes
+  encodeQr, byteCapacity, maxByteCapacity, pickVersion, rsGenerator, rsRemainder, formatBits,
+  penaltyScore, qrToSvg, utf8Bytes, ecBlocks, totalCodewords, versionInfoBits
 } from '../js/exporters/qr-code.js';
 import { STITCH_TYPE } from '../js/math/knit-topology.js';
 
@@ -144,6 +144,19 @@ const L_TABLE = {
   5: { total: 134, data: 108, ec: 26 }
 };
 
+// Independent alignment-centre rule (ISO 18004 §7.2), not the encoder's table.
+function alignmentCentres(version) {
+  if (version === 1) return [];
+  const numAlign = Math.floor(version / 7) + 2;
+  const step = version === 32
+    ? 26
+    : Math.floor((version * 4 + numAlign * 2 + 1) / (numAlign * 2 - 2)) * 2;
+  const result = new Array(numAlign);
+  result[0] = 6;
+  for (let i = numAlign - 1, pos = version * 4 + 10; i >= 1; i--, pos -= step) result[i] = pos;
+  return result;
+}
+
 function functionMap(size, version) {
   const fn = Array.from({ length: size }, () => new Uint8Array(size));
   const mark = (r, c) => { if (r >= 0 && r < size && c >= 0 && c < size) fn[r][c] = 1; };
@@ -151,9 +164,23 @@ function functionMap(size, version) {
     for (let dr = -4; dr <= 4; dr++) for (let dc = -4; dc <= 4; dc++) mark(r + dr, c + dc);
   }
   for (let i = 0; i < size; i++) { mark(6, i); mark(i, 6); }
-  if (version >= 2) {
-    const centre = version * 4 + 10;
-    for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) mark(centre + dr, centre + dc);
+  // Alignment patterns at every centre, except the three under the finders.
+  const centres = alignmentCentres(version);
+  const n = centres.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if ((i === 0 && j === 0) || (i === 0 && j === n - 1) || (i === n - 1 && j === 0)) continue;
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) mark(centres[i] + dr, centres[j] + dc);
+    }
+  }
+  // Version information: two 18-module triangles, versions 7 and up.
+  if (version >= 7) {
+    for (let i = 0; i < 18; i++) {
+      const a = size - 11 + (i % 3);
+      const b = Math.floor(i / 3);
+      mark(a, b);
+      mark(b, a);
+    }
   }
   for (let i = 0; i <= 8; i++) { mark(8, i); mark(i, 8); }
   for (let i = 0; i < 8; i++) mark(8, size - 1 - i);
@@ -236,7 +263,10 @@ test('the version table matches the standard, and capacity follows from it', () 
   assert.equal(pickVersion(17), 1);
   assert.equal(pickVersion(18), 2);
   assert.equal(pickVersion(106), 5);
-  assert.equal(pickVersion(107), null, 'and no version 6 — refused, not guessed');
+  assert.equal(pickVersion(107), 6, 'and version 6 exists — chosen, not refused');
+  // The full-range rewrite: the whole 1–40 span is now reachable.
+  assert.equal(pickVersion(maxByteCapacity()), 40, 'the byte ceiling maps to v40 at level L');
+  assert.equal(pickVersion(maxByteCapacity() + 1), null, 'one byte past the ceiling is refused');
 });
 
 test('the symbol is the right size with the right fixed patterns', () => {
@@ -336,6 +366,91 @@ test('a code can be read back, and its error correction really divides', () => {
   }
 });
 
+/**
+ * Read a finished symbol back with no help from the encoder's placement code: reserve
+ * the patterns with this file's own geometry, undo the mask, walk the zigzag, then split
+ * the interleaved stream into its Reed–Solomon blocks and prove each one divides and the
+ * payload decodes to the original text. This is the check the full 1–40 range needs.
+ */
+function verifySymbol(qr, text) {
+  const level = qr.level;
+  const [ec, g1n, g1d, g2n, g2d] = ecBlocks(qr.version, level);
+  const widths = [...new Array(g1n).fill(g1d), ...new Array(g2n).fill(g2d)];
+  const dataTotal = widths.reduce((sum, w) => sum + w, 0);
+  const total = dataTotal + ec * widths.length;
+
+  const { grid, fn } = unmask({ ...qr, modules: qr.modules });
+  const codewords = readCodewords(grid, qr.size, fn, total);
+
+  // De-interleave: data column-major across blocks, then EC column-major.
+  const data = widths.map(w => new Uint8Array(w));
+  const ecs = widths.map(() => new Uint8Array(ec));
+  let idx = 0;
+  const maxData = Math.max(g1d, g2d);
+  for (let i = 0; i < maxData; i++) {
+    for (let b = 0; b < widths.length; b++) if (i < widths[b]) data[b][i] = codewords[idx++];
+  }
+  for (let i = 0; i < ec; i++) {
+    for (let b = 0; b < widths.length; b++) ecs[b][i] = codewords[idx++];
+  }
+
+  // 1. Every block's data+EC polynomial is exactly divisible by the generator.
+  const gen = rsGenerator(ec);
+  for (let b = 0; b < widths.length; b++) {
+    const full = new Uint8Array([...data[b], ...ecs[b]]);
+    const rem = rsRemainder(full, gen);
+    assert.deepEqual([...rem], new Array(ec).fill(0), `v${qr.version}${level} block ${b} RS remainder`);
+  }
+
+  // 2. The payload decodes back to the original bytes.
+  const bits = [];
+  for (const block of data) {
+    for (const byte of block) for (let i = 7; i >= 0; i--) bits.push((byte >> i) & 1);
+  }
+  const take = n => {
+    let value = 0;
+    for (let i = 0; i < n; i++) value = (value << 1) | bits.shift();
+    return value;
+  };
+  assert.equal(take(4), 0b0100, `v${qr.version}${level} byte mode indicator`);
+  const countWidth = qr.version < 10 ? 8 : 16;
+  const length = take(countWidth);
+  assert.equal(length, utf8Bytes(text).length, `v${qr.version}${level} payload length`);
+  const payload = new Uint8Array(length);
+  for (let i = 0; i < length; i++) payload[i] = take(8);
+  assert.equal(new TextDecoder().decode(payload), text, `v${qr.version}${level} payload reads back`);
+
+  // 3. Format information names this level + mask, and both copies agree.
+  const copies = readFormatBits(qr.modules, qr.size);
+  assert.equal(copies.second, copies.first, 'the two format copies agree');
+  assert.equal(copies.first, formatBits(qr.mask, level), 'format bits written = chosen');
+}
+
+test('long payloads work at any length, verified across versions and levels', () => {
+  const varied = n => Array.from({ length: n }, (_, i) => String.fromCharCode(48 + (i % 74))).join('');
+  const targets = [
+    ['L', 5], ['L', 7], ['L', 9], ['M', 10], ['Q', 14], ['H', 20], ['L', 27], ['M', 33], ['L', 40]
+  ];
+  for (const [level, version] of targets) {
+    const text = varied(byteCapacity(version, level));
+    const qr = encodeQr(text, { eccLevel: level });
+    assert.equal(qr.ok, true, `v${version}${level}: ${qr.error}`);
+    assert.equal(qr.version, version, `a full ${level}-level payload maps to v${version}`);
+    verifySymbol(qr, text);
+  }
+});
+
+test('the format information encodes every level, not just L', () => {
+  // ISO/IEC 18004 §6.3.3 level indicators: L=01, M=00, Q=11, H=10.
+  const indicator = { L: 0b01, M: 0b00, Q: 0b11, H: 0b10 };
+  for (const level of ['L', 'M', 'Q', 'H']) {
+    for (let mask = 0; mask < 8; mask++) {
+      const data = (formatBits(mask, level) ^ 0b101010000010010) >> 13;
+      assert.equal(data, indicator[level], `${level} indicator in the format string`);
+    }
+  }
+});
+
 test('mask choice is the standard penalty, not whichever was built first', () => {
   const text = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
   const qr = encodeQr(text);
@@ -350,11 +465,11 @@ test('mask choice is the standard penalty, not whichever was built first', () =>
   assert.ok(new Set(scores).size > 1, 'the masks really differ, or this proves nothing');
 });
 
-test('oversized payloads are refused with a usable message', () => {
-  const big = 'x'.repeat(byteCapacity(5) + 40);
+test('a payload past the QR ceiling is refused with a usable message', () => {
+  const big = 'x'.repeat(maxByteCapacity() + 10);
   const result = encodeQr(big);
   assert.equal(result.ok, false);
-  assert.match(result.error, /106 bytes/);
+  assert.match(result.error, new RegExp(`${maxByteCapacity()}-byte ceiling`));
   assert.match(result.error, /\.kcard/);
 });
 

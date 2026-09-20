@@ -256,7 +256,7 @@ export const COLORWORK_PRESETS = [
   }),
 
   preset({
-    id: '`latvian`_star',
+    id: 'latvian_star',
     name: 'Latvian Star (Jokumele)',
     family: 'colorwork',
     group: 'nordic',

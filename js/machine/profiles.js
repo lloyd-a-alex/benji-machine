@@ -209,6 +209,44 @@ export const MACHINE_PROFILES = {
     description: 'Toyota KS-901, KS-950 standard 4.5mm punchcard machines. Single needle bed.'
   },
 
+  brother_maxi_60: {
+    id: 'brother_maxi_60',
+    name: 'Brother Maxi (5mm / 60-Stitch)',
+    gauge: 'Mid (5.0mm)',
+    columns: 60,
+    defaultRows: 60,
+    minRows: 12,
+    maxRows: 240,
+    pitchX: 5.0,            // 5mm needle spacing — the wider "maxi" pitch
+    pitchY: 5.0,            // Metric row pitch
+    holeDiameter: 3.2,
+    sprocketDiameter: 3.6,
+    sprocketPitchY: 5.0,
+    marginSide: 6.0,
+    sprocketToFirstHole: 7.5,
+    marginTopBottom: 15.0,
+    cardWidth: 320.0,       // A 60-column strip is far wider than the 24-stitch cards
+    cardColor: '#f4f1e6',
+    inkColor: '#243044',
+    carriageRules: {
+      // Same separated lace + knit carriage philosophy as the rest of the
+      // Brother family, just across a 60-needle, 5mm bed.
+      type: 'brother_separated',
+      laceCarriageDirectionalTransfers: true,
+      transfersInCarriageDirection: true,
+      knitsYarnDuringLace: false,
+      minPlainRowsAfterLace: 2,
+      requiresEmptyNeedleSelection: true,
+      cardReadingOffsetRows: 7,
+    },
+    // Single bed, 60 needles: capacity derives from 300mm / 5mm = 60.
+    beds: 1,
+    bedLengthMm: 300,
+    maxFloatNeedles: 7,     // 5mm pitch — the same needle count is a looser strand than 4.5mm
+    maxTuckLoops: 6,
+    description: 'Brother KH-940/KH-950/KH-960/KH-970 "Maxi" — a 60-needle, 5mm punchcard bed. Single needle bed; wider than the 24-stitch machines, so motifs get more room before they tile.'
+  },
+
   custom_parametric: {
     id: 'custom_parametric',
     name: 'Parametric / Custom CNC Punchcard',

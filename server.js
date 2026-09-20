@@ -17,11 +17,19 @@ const MIME = {
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.map': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.jpg': 'image/jpeg',
-  '.woff2': 'font/woff2'
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.woff2': 'font/woff2',
+  '.xml': 'application/xml; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8'
 };
 
 function send(res, statusCode, headers, body) {
@@ -38,7 +46,11 @@ const server = http.createServer((req, res) => {
   if (urlPath === '/') urlPath = '/index.html';
 
   const filePath = path.normalize(path.join(ROOT, urlPath));
-  if (!filePath.startsWith(ROOT)) {
+  // Containment, not a string prefix: a sibling dir whose name starts with ROOT
+  // ("benji machine-backup") would satisfy filePath.startsWith(ROOT) yet live
+  // outside the served tree. path.relative resolves to a '..' escape for those.
+  const rel = path.relative(ROOT, filePath);
+  if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
     return send(res, 403, { 'Content-Type': 'text/plain' }, 'Forbidden');
   }
 
@@ -50,7 +62,10 @@ const server = http.createServer((req, res) => {
     const headers = {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Content-Length': data.length,
-      'Cache-Control': 'no-cache'
+      'Cache-Control': 'no-cache',
+      // Cheap, correct hardening that matches what a static host should send.
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer-when-downgrade'
     };
     // HEAD requests get headers only, no body.
     if (req.method === 'HEAD') {

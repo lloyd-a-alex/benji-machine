@@ -11,6 +11,10 @@
  */
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
+// One source of truth for what a cell means in each mode. The lace<->numeric
+// conversion used to be duplicated here, which risked the editor and the
+// clipboard/exports telling different stories about the same chart (see modes.js).
+import { convertMatrixBetweenModes, isDirectMode } from '../edit/modes.js';
 
 export class CanvasEditor {
   constructor(canvasElement, options = {}) {
@@ -116,33 +120,19 @@ export class CanvasEditor {
   }
 
   static isDirectMode(mode) {
-    return mode === 'fair_isle' || mode === 'tuck' || mode === 'slip';
+    // Delegate: `isDirectMode` here is the module import, not this method, so no recursion.
+    return isDirectMode(mode);
   }
 
   convertMatrixForMode(oldMode, newMode) {
     this.matrix = CanvasEditor.convertMatrixBetweenModes(oldMode, newMode, this.matrix);
   }
 
-  // Pure, DOM-free converter so the lace<->numeric logic is unit-testable in Node.
+  // Thin delegate to the DOM-free canonical converter in js/edit/modes.js, kept as a
+  // static so the lace<->numeric logic stays unit-testable in Node without touching the
+  // canvas. `convertMatrixBetweenModes` resolves to the module import, not this method.
   static convertMatrixBetweenModes(oldMode, newMode, matrix) {
-    const fromDirect = CanvasEditor.isDirectMode(oldMode);
-    const toDirect = CanvasEditor.isDirectMode(newMode);
-    if (fromDirect === toDirect) return matrix; // direct<->direct only needs cleanup below
-    const LACE_BLANK = [STITCH_TYPE.KNIT, STITCH_TYPE.EMPTY, STITCH_TYPE.PURL];
-    const out = [];
-    for (let r = 0; r < matrix.length; r++) {
-      const row = [];
-      for (let c = 0; c < matrix[r].length; c++) {
-        const v = matrix[r][c];
-        if (!fromDirect && toDirect) {
-          row.push((typeof v === 'number') ? (v ? 1 : 0) : (LACE_BLANK.includes(v) ? 0 : 1));
-        } else {
-          row.push((v === 1 || v === true) ? STITCH_TYPE.EYELET : STITCH_TYPE.KNIT);
-        }
-      }
-      out.push(row);
-    }
-    return out;
+    return convertMatrixBetweenModes(oldMode, newMode, matrix);
   }
 
   _normalizeStrayStrings() {
@@ -182,6 +172,11 @@ export class CanvasEditor {
     if (this.historyIndex > 0) {
       this.historyIndex--;
       this.matrix = this.history[this.historyIndex].map(row => [...row]);
+      // A history entry can carry different dimensions (e.g. a preset with fewer
+      // rows was loaded then undone). Resync the bounds or render() walks
+      // this.matrix[r] with a stale this.rows and throws.
+      this.rows = this.matrix.length;
+      this.cols = this.matrix[0]?.length || this.cols;
       this.render();
       this.onChange();
     }
@@ -191,6 +186,8 @@ export class CanvasEditor {
     if (this.historyIndex < this.history.length - 1) {
       this.historyIndex++;
       this.matrix = this.history[this.historyIndex].map(row => [...row]);
+      this.rows = this.matrix.length;
+      this.cols = this.matrix[0]?.length || this.cols;
       this.render();
       this.onChange();
     }
@@ -436,17 +433,6 @@ export class CanvasEditor {
     return { x: screenX, y: screenY };
   }
 
-  throttle(func, limit) {
-    let inThrottle;
-    return function(...args) {
-      if (!inThrottle) {
-        func.apply(this, args);
-        inThrottle = true;
-        setTimeout(() => inThrottle = false, limit);
-      }
-    };
-  }
-
   // Mouse, touch & pen handlers — Pointer Events so every input device works.
   setupEvents() {
     const canvas = this.canvas;
@@ -641,8 +627,15 @@ export class CanvasEditor {
     // Skip while hidden (0×0) — otherwise the CSS 100% scaling stretches a
     // stale fallback buffer across the panel (e.g. on first tab switch).
     if (parent && parent.clientWidth > 0 && parent.clientHeight > 0) {
-      this.canvas.width = parent.clientWidth;
-      this.canvas.height = parent.clientHeight;
+      // Back the canvas with `devicePixelRatio` device pixels per CSS pixel so lines
+      // and Japanese glyphs stay crisp on hi-DPI screens. The CSS size stays logical
+      // (`canvas { width:100%; height:100% }`), so pointer→cell maths and the ruler
+      // keep working in CSS pixels untouched; render() re-applies the pixel-ratio
+      // transform every frame (resizing the buffer resets the context transform).
+      const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+      this.dpr = dpr;
+      this.canvas.width = Math.round(parent.clientWidth * dpr);
+      this.canvas.height = Math.round(parent.clientHeight * dpr);
     }
   }
 
@@ -790,9 +783,13 @@ export class CanvasEditor {
     const queue = [[startR, startC]];
     const visited = new Set();
     visited.add(`${startR},${startC}`);
+    // Consume with a moving cursor, not shift(): Array#shift is O(n), so popping the
+    // head on a full-card fill (~48k cells) is O(n^2) and hangs the tab. This stays
+    // breadth-first while dequeuing in O(1).
+    let head = 0;
 
-    while (queue.length > 0) {
-      const [r, c] = queue.shift();
+    while (head < queue.length) {
+      const [r, c] = queue[head++];
       this.applyStitchAt(r, c, targetValue);
 
       const neighbors = [
@@ -814,8 +811,13 @@ export class CanvasEditor {
   // Rendering
   render() {
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    // Work in CSS pixels; the device-pixel-ratio scale is applied once here so every
+    // coordinate below stays logical. `dpr` is set in resizeCanvas (defaults to 1 for
+    // a hidden canvas, which matches the old 1:1 behaviour exactly).
+    const dpr = this.dpr || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w = this.canvas.width / dpr;
+    const h = this.canvas.height / dpr;
 
     // Background: Dark industrial CAD canvas
     ctx.fillStyle = '#0b0f19';
@@ -999,6 +1001,48 @@ export class CanvasEditor {
         ctx.lineTo(cx + size * 0.28, cy + size * 0.32);
         // Arrow head pointing to (col + 1)
         ctx.lineTo(cx + size * 0.1, cy + size * 0.32);
+        ctx.stroke();
+        break;
+
+      case STITCH_TYPE.TRANSFER_DOUBLE_L:
+        // Two-needle left jump: two parallel backslash diagonals (STITCH_INFO double line).
+        ctx.strokeStyle = '#0ea5e9';
+        ctx.beginPath();
+        ctx.moveTo(cx + size * 0.12, cy - size * 0.34);
+        ctx.lineTo(cx - size * 0.3, cy + size * 0.18);
+        ctx.moveTo(cx + size * 0.36, cy - size * 0.12);
+        ctx.lineTo(cx - size * 0.06, cy + size * 0.38);
+        ctx.stroke();
+        break;
+
+      case STITCH_TYPE.TRANSFER_DOUBLE_R:
+        // Two-needle right jump: two parallel slash diagonals (mirror of the left one).
+        ctx.strokeStyle = '#10b981';
+        ctx.beginPath();
+        ctx.moveTo(cx - size * 0.12, cy - size * 0.34);
+        ctx.lineTo(cx + size * 0.3, cy + size * 0.18);
+        ctx.moveTo(cx - size * 0.36, cy - size * 0.12);
+        ctx.lineTo(cx + size * 0.06, cy + size * 0.38);
+        ctx.stroke();
+        break;
+
+      case STITCH_TYPE.DOUBLE_DEC_LEFT:
+        // Left-leaning double decrease: a chevron pointing left over three needles.
+        ctx.strokeStyle = '#c084fc';
+        ctx.beginPath();
+        ctx.moveTo(cx + size * 0.28, cy - size * 0.3);
+        ctx.lineTo(cx - size * 0.24, cy);
+        ctx.lineTo(cx + size * 0.28, cy + size * 0.3);
+        ctx.stroke();
+        break;
+
+      case STITCH_TYPE.DOUBLE_DEC_RIGHT:
+        // Right-leaning double decrease: a chevron pointing right (mirror of the left).
+        ctx.strokeStyle = '#f472b6';
+        ctx.beginPath();
+        ctx.moveTo(cx - size * 0.28, cy - size * 0.3);
+        ctx.lineTo(cx + size * 0.24, cy);
+        ctx.lineTo(cx - size * 0.28, cy + size * 0.3);
         ctx.stroke();
         break;
 
