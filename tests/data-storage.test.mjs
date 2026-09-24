@@ -18,6 +18,10 @@ import {
 } from '../js/project/backups.js';
 import { readProject } from '../js/project/kcard.js';
 import { relativeTime } from '../js/features/data-panel.js';
+import { readAnyProject } from '../js/importers/reader-registry.js';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -420,4 +424,36 @@ test('relative time reads like a person, not a timestamp', () => {
   assert.equal(relativeTime('2026-03-04T12:00:00Z', now), 'yesterday');
   assert.match(relativeTime('2025-11-02T12:00:00Z', now), /2025/);
   assert.equal(relativeTime('gibberish', now), 'unknown');
+});
+
+// ─── restoring a save must read as a card, never as an unreadable file ────────
+//
+// Every restore path (recovery notice, version list, recents, crash resume) hands
+// the stored document OBJECT to app.js's loadProjectText, but the reader registry
+// parses text. Without serialising at that seam, String(doc) is "[object Object]",
+// no reader recognises it, and a perfectly good recovered card is announced as
+// "That is not a file this build can open" — the boot-time error being pinned out.
+
+test('an autosaved document reads back through the registry as the same card', async () => {
+  const { service } = makeService();
+  const saved = await service.saveNow('test');
+  const res = readAnyProject(JSON.stringify(saved));
+  assert.equal(res.ok, true, res.error);
+  assert.equal(res.readerId, 'kcard');
+  assert.deepEqual(res.project.stitchMatrix, CARD);
+});
+
+test('an unserialised object is exactly what read as an unreadable file', () => {
+  // Pin the failure mode the seam now prevents: stringifying an object directly
+  // matches no reader at all.
+  assert.equal(readAnyProject(String({ kind: 'KNITCAT_PROJECT' })).ok, false);
+});
+
+test('the restore seam serialises objects, and the Brother sim pads cards to 24 tracks', async () => {
+  const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const app = await readFile(path.join(ROOT, 'js', 'app.js'), 'utf8');
+  const sim = await readFile(path.join(ROOT, 'js', 'ui', 'brother-sim-canvas.js'), 'utf8');
+  assert.match(app, /if \(text && typeof text === 'object'\) text = JSON\.stringify\(text\);/, 'loadProjectText turns documents back into text');
+  assert.match(sim, /row\.concat\(new Array\(tracks - row\.length\)\.fill\(false\)\)/, 'setCard pads compiled rows to the drum width');
+  assert.match(sim, /raw\.concat\(new Array\(tracks - raw\.length\)\.fill\(false\)\)/, 'the live row is padded the same way, so setPunchcardRow never warns on short or empty rows');
 });

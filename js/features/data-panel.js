@@ -88,24 +88,23 @@ const CSS = `
   border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;flex:0 0 auto}
 .kx-mini:hover{color:var(--text-primary,#f8fafc);border-color:var(--border-active,#38bdf8)}
 .kx-mini--danger:hover{color:#fecdd3;border-color:var(--accent-rose,#f43f5e)}
-.kx-banner{position:absolute;right:16px;bottom:16px;z-index:60;display:flex;align-items:flex-start;gap:12px;
-  width:min(360px,calc(100% - 32px));padding:14px 16px;
-  border-radius:var(--radius-lg,12px);border:1px solid color-mix(in srgb,var(--accent-amber,#fbbf24) 55%,transparent);
-  background:linear-gradient(180deg,rgba(251,191,36,.16),rgba(251,191,36,.07));
-  color:var(--text-primary,#f8fafc);box-shadow:0 20px 46px -20px rgba(0,0,0,.85);backdrop-filter:blur(8px)}
+/* Recovery notice — deliberately quiet. It lives inside the inspector's Health tab,
+   directly under the Machine universe button, and reads like the other sidebar
+   advisory cards: a slim amber accent edge, small type, compact actions. No
+   floating, glowing showpiece over the canvas. */
+.kx-banner{display:flex;flex-direction:column;gap:6px;margin-top:12px;padding:10px 11px;border-radius:10px;
+  border:1px solid color-mix(in srgb,var(--accent-amber,#fbbf24) 30%,transparent);
+  border-left:3px solid var(--accent-amber,#fbbf24);
+  background:color-mix(in srgb,var(--accent-amber,#fbbf24) 6%,transparent)}
 .kx-banner[hidden]{display:none}
+.kx-banner-head{display:flex;align-items:center;gap:7px}
 .kx-banner-icon{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
-  width:30px;height:30px;border-radius:50%;font-size:16px;line-height:1;
-  background:color-mix(in srgb,var(--accent-amber,#fbbf24) 20%,transparent);color:var(--accent-amber,#fbbf24)}
-.kx-banner-body{flex:1 1 auto;min-width:0}
-.kx-banner-title{font-size:12.5px;font-weight:700;letter-spacing:.01em}
-.kx-banner-text{font-size:11px;color:var(--text-secondary,#94a3b8);margin-top:4px;line-height:1.5}
-.kx-banner-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-.kx-banner-actions .btn-action{padding:5px 10px;font-size:11px}
-@media (max-width:720px){
-  .kx-banner{left:16px;right:16px;bottom:16px;width:auto;flex-direction:column}
-  .kx-banner-actions .btn-action{flex:1 1 46%}
-}
+  width:18px;height:18px;border-radius:50%;font-size:11px;line-height:1;
+  background:color-mix(in srgb,var(--accent-amber,#fbbf24) 18%,transparent);color:var(--accent-amber,#fbbf24)}
+.kx-banner-title{font-size:11.5px;font-weight:700;letter-spacing:.01em;color:var(--text-primary,#f8fafc)}
+.kx-banner-text{font-size:10.5px;color:var(--text-secondary,#94a3b8);line-height:1.5}
+.kx-banner-actions{display:flex;gap:6px;flex-wrap:wrap}
+.kx-banner-actions .btn-action{flex:1 1 auto;padding:5px 8px;font-size:10.5px;justify-content:center}
 @media (forced-colors:active){
   .kx-banner,.kx-version,.kx-data-chip,.kx-mini{border-color:CanvasText}
   .kx-banner{background:Canvas}
@@ -253,13 +252,20 @@ export async function initDataPanel(context = {}) {
   const banner = document.createElement('div');
   banner.className = 'kx-banner';
   banner.id = 'kx-recovery-banner';
-  banner.setAttribute('role', 'region');
-  banner.setAttribute('aria-label', 'Recovered work');
+  banner.setAttribute('role', 'status');
+  banner.setAttribute('aria-live', 'polite');
   banner.hidden = true;
-  const workspace = document.getElementById('viewport-workspace');
-  // A compact floating card pinned to the workspace corner — it overlays the canvas
-  // instead of sitting in the flex column and shoving the whole editor downward.
-  if (workspace) workspace.appendChild(banner);
+  // The recovery notice parks in the Health tab directly under the Machine universe
+  // button — an advisory card among advisories, not a floating showpiece over the
+  // canvas. If the health panel is somehow absent it falls back to the workspace.
+  const healthPanel = document.getElementById('kx-health-panel');
+  const healthActs = healthPanel && healthPanel.querySelector('.kx-health-acts');
+  if (healthActs) healthActs.after(banner);
+  else if (healthPanel) healthPanel.appendChild(banner);
+  else {
+    const workspace = document.getElementById('viewport-workspace');
+    if (workspace) workspace.appendChild(banner);
+  }
 
   banner.addEventListener('click', e => {
     const action = e.target.closest?.('[data-kx-act]')?.dataset.kxAct;
@@ -286,18 +292,18 @@ export async function initDataPanel(context = {}) {
     banner._document = doc;
     const when = relativeTime(doc.timestamp);
     banner.innerHTML = `
-      <div class="kx-banner-icon" aria-hidden="true">\u21ba</div>
-      <div class="kx-banner-body">
-        <div class="kx-banner-title">This card was not saved when the tab closed</div>
-        <div class="kx-banner-text">
-          Last autosave ${when}: ${doc.rows}&#215;${doc.cols} ${doc.mode ? `· ${doc.mode}` : ''}
-          ${diff ? `· ${esc(describeDiff(diff))} from what is on screen now` : ''}
-        </div>
-        <div class="kx-banner-actions">
-          <button type="button" class="btn-action btn-primary" data-kx-act="restore">Restore it</button>
-          <button type="button" class="btn-action" data-kx-act="keep">Keep what is on screen</button>
-          <button type="button" class="btn-action" data-kx-act="discard">Throw the autosave away</button>
-        </div>
+      <div class="kx-banner-head">
+        <span class="kx-banner-icon" aria-hidden="true">\u21ba</span>
+        <span class="kx-banner-title">Unsaved work recovered</span>
+      </div>
+      <div class="kx-banner-text">
+        Autosave from ${when} (${doc.rows}&#215;${doc.cols}${doc.mode ? ` \u00b7 ${doc.mode}` : ''})
+        ${diff ? `\u00b7 ${esc(describeDiff(diff))}` : ''}
+      </div>
+      <div class="kx-banner-actions">
+        <button type="button" class="btn-action btn-primary" data-kx-act="restore">Restore it</button>
+        <button type="button" class="btn-action" data-kx-act="keep">Keep screen</button>
+        <button type="button" class="btn-action" data-kx-act="discard">Discard</button>
       </div>`;
     banner.hidden = false;
     banner.querySelector('[data-kx-act="restore"]')?.focus({ preventScroll: true });

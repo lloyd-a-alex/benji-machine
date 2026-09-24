@@ -152,8 +152,10 @@
     /* regions stay hidden until the shell mounts */
     #command-bar,#context-bar,#surface-rail,#setup-rail,#subtab-strip{display:none}
     #right-sidebar .insp-tabs,#right-sidebar .insp-host{display:none}
-    /* the single switch: demote the five legacy nav systems, promote the shell */
-    body.kx-shell #main-header,body.kx-shell #left-toolbar,body.kx-shell #kx-menubar,body.kx-shell #viewport-workspace>.tab-bar{display:none!important}
+    /* the single switch: demote the four legacy nav systems, promote the shell.
+       #left-toolbar is NOT hidden — the shell reshapes it into the Chart-only
+       slim vertical tool rail (see the TOOL RAIL block below). */
+    body.kx-shell #main-header,body.kx-shell #kx-menubar,body.kx-shell #viewport-workspace>.tab-bar{display:none!important}
     body.kx-shell #command-bar{display:flex}
     body.kx-shell #context-bar{display:block}
     body.kx-shell #surface-rail{display:flex}
@@ -269,6 +271,20 @@
     .sr-btn--ghost{color:var(--text-muted,#64748b)}
     .sr-btn--ghost:hover{color:var(--text-secondary,#94a3b8)}
     .sr-divider{width:1px;height:20px;background:var(--border-subtle);margin:0 6px;flex:0 0 auto;align-self:center}
+
+    /* ── LEFT TOOL RAIL — drawing tools, vertical, slim, Chart view only ──
+       The tools are no longer cloned into the context bar; the real #left-toolbar
+       returns as a thin icon rail on the workspace's left edge, shown only while
+       the current view is Chart (chrome.js tags every view switch on body[data-
+       view]). Section headers collapse to their icon and each section's tools
+       flow down in one column; every button keeps its title, so hovering still
+       names the tool and its shortcut. ══ */
+    body.kx-shell:not([data-view="editor"]) #left-toolbar{display:none}
+    body.kx-shell #left-toolbar{width:52px;padding:6px 4px;gap:2px;background:linear-gradient(180deg,var(--bg-surface),var(--bg-inset));border-right:1px solid var(--border-subtle)}
+    body.kx-shell .tool-submenu-label,body.kx-shell .tool-submenu-chev{display:none}
+    body.kx-shell .tool-submenu-btn{justify-content:center;gap:0;padding:7px 0}
+    body.kx-shell .tool-submenu-body{grid-template-columns:1fr;justify-items:center;margin:2px 0;padding:3px 2px;gap:4px}
+    body.kx-shell .tool-submenu+.tool-submenu{margin-top:1px;padding-top:4px}
 
     /* ── SETUP RAIL — the machine selector on the left, stacked for the workflow ──
        chrome.js re-parents the real #profile-picker (label + <select>) in here, so
@@ -696,7 +712,7 @@
              canvas-editor wiring keeps working. -->
 
         <div class="tool-submenu" data-submenu="draw">
-          <button type="button" class="tool-submenu-btn" aria-expanded="true" aria-controls="submenu-draw">
+          <button type="button" class="tool-submenu-btn" aria-expanded="true" aria-controls="submenu-draw" title="Draw tools — pencil, eraser, fill, select">
             <svg class="tool-submenu-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
             </svg>
@@ -741,7 +757,7 @@
         </div>
 
         <div class="tool-submenu" data-submenu="region">
-          <button type="button" class="tool-submenu-btn" aria-expanded="false" aria-controls="submenu-region">
+          <button type="button" class="tool-submenu-btn" aria-expanded="false" aria-controls="submenu-region" title="Select &amp; curve tools — lasso, bezier, spline, smudge, measure, annotate">
             <svg class="tool-submenu-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 12c0-5 4-9 9-9s9 4 9 9-4 9-9 9" stroke-dasharray="3 3" /><path d="M3 12v4a5 5 0 0 0 5 5" />
             </svg>
@@ -790,7 +806,7 @@
         </div>
 
         <div class="tool-submenu" data-submenu="shapes">
-          <button type="button" class="tool-submenu-btn" aria-expanded="false" aria-controls="submenu-shapes">
+          <button type="button" class="tool-submenu-btn" aria-expanded="false" aria-controls="submenu-shapes" title="Shape tools — line, rectangle, ellipse, heart stamp">
             <svg class="tool-submenu-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect width="12" height="12" x="3" y="3" rx="1" /><circle cx="16" cy="16" r="5" />
             </svg>
@@ -832,7 +848,7 @@
         </div>
 
         <div class="tool-submenu" data-submenu="transform">
-          <button type="button" class="tool-submenu-btn" aria-expanded="false" aria-controls="submenu-transform">
+          <button type="button" class="tool-submenu-btn" aria-expanded="false" aria-controls="submenu-transform" title="Transform — flips, invert, clear">
             <svg class="tool-submenu-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
             </svg>
@@ -871,7 +887,7 @@
         </div>
 
         <div class="tool-submenu" data-submenu="history">
-          <button type="button" class="tool-submenu-btn" aria-expanded="false" aria-controls="submenu-history">
+          <button type="button" class="tool-submenu-btn" aria-expanded="false" aria-controls="submenu-history" title="History — undo, redo">
             <svg class="tool-submenu-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
             </svg>
@@ -895,7 +911,7 @@
         </div>
 
         <div class="tool-submenu" data-submenu="view">
-          <button type="button" class="tool-submenu-btn" aria-expanded="false" aria-controls="submenu-view">
+          <button type="button" class="tool-submenu-btn" aria-expanded="false" aria-controls="submenu-view" title="View — pan, fit card">
             <svg class="tool-submenu-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />
             </svg>

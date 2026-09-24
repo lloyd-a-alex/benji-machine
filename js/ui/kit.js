@@ -169,7 +169,10 @@ const KIT_CSS = `
 :is(.kx-panel,.kx-hud) .kx-input:focus-visible{outline:none;border-color:var(--accent)}
 :is(.kx-panel,.kx-hud) .kx-numlist{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 :is(.kx-panel,.kx-hud) .kx-numlist label{display:flex;flex-direction:column;font-size:10px;color:var(--panel-muted);gap:2px}
-.kx-hud{position:fixed;left:12px;bottom:12px;z-index:9000;max-width:320px;pointer-events:none;
+/* The hover read-out parks in the bottom-right corner — off the drawing area and
+   clear of the slim left tool rail — and only exists while the pointer is on the
+   card. pointer-events:none means it can never eat a click. */
+.kx-hud{position:fixed;right:12px;bottom:34px;left:auto;z-index:9000;max-width:300px;pointer-events:none;
   background:var(--panel-bg);backdrop-filter:blur(var(--panel-blur));-webkit-backdrop-filter:blur(var(--panel-blur));
   color:var(--panel-text);border:1px solid var(--panel-border);border-radius:var(--radius-lg);padding:10px 12px;
   font:12.5px/1.45 var(--font-ui);box-shadow:var(--shadow-float)}

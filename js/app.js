@@ -2602,6 +2602,12 @@ class KnitApp {
    * than half-loading a file and painting a blank canvas.
    */
   loadProjectText(text, label = 'pasted project') {
+    // Autosave, versions and recents hand over the stored document OBJECT rather
+    // than file text (data-panel's applyDocument). Serialise it here so every
+    // restore path re-enters the same reader registry as a file from disk —
+    // otherwise String(object) reads as "[object Object]", no reader matches it,
+    // and a perfectly good recovered card is called an unreadable file.
+    if (text && typeof text === 'object') text = JSON.stringify(text);
     // readAnyProject recognises the format and returns exactly the shape readProject
     // always did, so everything below is unchanged for a .kcard and now also works for
     // a DAK/AYAB/CSV/DXF/G-code export. `void readProject` keeps the named trust-boundary

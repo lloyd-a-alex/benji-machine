@@ -159,3 +159,33 @@ test('the empty Projects dock hides itself instead of eating 52px of workspace',
   assert.ok(!taskbar.includes('No saved projects yet'), 'the redundant empty-state message is gone');
   assert.ok(!taskbar.includes('kx-tb-empty'), 'and its orphaned style rule was removed too');
 });
+
+// ─── the slim left tool rail (Chart view only) ─────────────────────────────────
+
+test('drawing tools live on the real vertical rail, gated to the Chart view', () => {
+  assert.match(shellCss, /body\.kx-shell:not\(\[data-view="editor"\]\) #left-toolbar\{display:none\}/, 'the rail hides itself on every other view');
+  assert.ok(!/body\.kx-shell[^{]*#left-toolbar[^{]*\{display:none!important\}/.test(shellCss), 'the shell never blanket-hides the toolbar again');
+  assert.match(shellCss, /body\.kx-shell #left-toolbar\{width:52px/, 'the rail is slim');
+  assert.match(shellCss, /body\.kx-shell \.tool-submenu-label,body\.kx-shell \.tool-submenu-chev\{display:none\}/, 'sections collapse to their icons');
+  assert.match(html, /class="tool-submenu-btn"[^>]*title="[^"]+"/, 'icon-only section headers keep a hover name');
+});
+
+test('the context bar no longer clones or syncs duplicate tool buttons', () => {
+  assert.ok(!chrome.includes('buildToolClones'), 'no horizontal clone of the tools into the context bar');
+  assert.ok(!chrome.includes('syncToolActive'), 'and no clone active-state sync layer to keep in step');
+  assert.ok(chrome.includes('document.body.dataset.view = id'), 'every view switch tags body[data-view] for conditional chrome');
+});
+
+// ─── the hover read-out and the recovery notice ───────────────────────────────
+
+test('the hover needle read-out sits bottom-right, clear of the new tool rail', async () => {
+  const kit = await readFile(path.join(ROOT, 'js', 'ui', 'kit.js'), 'utf8');
+  assert.match(kit, /\.kx-hud\{position:fixed;right:12px;bottom:34px;left:auto/, 'the HUD no longer camps bottom-left under the pointer');
+});
+
+test('the recovery notice is a quiet inline card in the Health tab, not a floating banner', async () => {
+  const panel = await readFile(path.join(ROOT, 'js', 'features', 'data-panel.js'), 'utf8');
+  assert.ok(panel.includes('healthActs.after(banner)'), 'mounted directly under the Design Health action row (below Machine universe)');
+  assert.ok(!/\.kx-banner\{[^}]*position:absolute/.test(panel), 'the card flows inline instead of hovering over the workspace');
+  assert.ok(!/\.kx-banner\{[^}]*backdrop-filter/.test(panel), 'no glassy floating-panel treatment');
+});

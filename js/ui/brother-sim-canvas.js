@@ -52,7 +52,16 @@ export class BrotherSimCanvas {
    * @param {{cardRowIndex:number, carriageType?:string}[]} [strokes] per-row carriage metadata
    */
   setCard(cardMatrix, strokes = []) {
-    this.cardRows = Array.isArray(cardMatrix) ? cardMatrix : [];
+    // A compiled row can be narrower than the 24-track drum (a 12-stitch repeat is
+    // perfectly legal). Physically the remaining pins simply read as unpunched —
+    // pad the row out here so the selector mechanism gets the full 24 bits it
+    // documents and never has to warn about "missing tracks" on every restore.
+    const rows = Array.isArray(cardMatrix) ? cardMatrix : [];
+    const tracks = (this.mechanism && this.mechanism.repeatLength) || 24;
+    this.cardRows = rows.map(r => {
+      const row = Array.isArray(r) ? r : [];
+      return row.length >= tracks ? row : row.concat(new Array(tracks - row.length).fill(false));
+    });
     this.rowCarriage = new Array(this.cardRows.length).fill(null);
     for (const s of strokes || []) {
       if (s && s.cardRowIndex >= 0 && s.cardRowIndex < this.rowCarriage.length) {
@@ -89,7 +98,11 @@ export class BrotherSimCanvas {
 
   /** Push the currently-indexed card row into the sensing pins. */
   _applyCardRow() {
-    const row = this.cardRows[this.cardRow] || [];
+    // Same 24-track padding as setCard: an unindexed/empty drum reads all-blank,
+    // not "fewer bits than the repeat length".
+    const tracks = (this.mechanism && this.mechanism.repeatLength) || 24;
+    const raw = this.cardRows[this.cardRow] || [];
+    const row = raw.length >= tracks ? raw : raw.concat(new Array(tracks - raw.length).fill(false));
     this.mechanism.setPunchcardRow(row);
     this.currentPattern = row;
     const scheduled = this.rowCarriage[this.cardRow];

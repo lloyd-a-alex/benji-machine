@@ -219,7 +219,10 @@ export function createChrome(deps = {}) {
     if (state.view === 'editor') els.ctxInner.appendChild(buildPatternLaunchers());
     const node = def && def.ctx ? slotEls.get(state.view) : null;
     if (node) { els.ctxInner.appendChild(node); shownReal = node; }
-    if (state.view === 'editor') els.ctxInner.appendChild(buildToolClones());
+    // The drawing tools are NOT cloned into this bar any more: on the Chart view
+    // they run vertically down the slim left rail (#left-toolbar), which the shell
+    // shows for Chart only. The context bar keeps generators, the stitch palette
+    // and zoom, so the two tool surfaces never duplicate each other.
     if (state.view === 'editor') els.ctxInner.appendChild(buildViewControls());
     if (!node && def && def.hint) {
       const hint = document.createElement('span');
@@ -227,24 +230,6 @@ export function createChrome(deps = {}) {
       hint.textContent = def.hint;
       els.ctxInner.appendChild(hint);
     }
-  }
-
-  // The tool palette lives in the (now hidden) left rail. Mirror its real buttons
-  // as id-stripped clones that forward clicks, so app.js stays the single source of
-  // truth for tool state while the rail itself is off-screen.
-  function buildToolClones() {
-    const group = document.createElement('div');
-    group.className = 'ctx-group ctx-tools';
-    document.querySelectorAll('#left-toolbar .tool-btn').forEach(btn => {
-      const clone = btn.cloneNode(true);
-      clone.removeAttribute('id');
-      clone.classList.add('ctx-tool');
-      clone.classList.toggle('active', btn.classList.contains('active'));
-      clone.setAttribute('aria-hidden', 'false');
-      clone.addEventListener('click', e => { e.preventDefault(); btn.click(); syncToolActive(); });
-      group.appendChild(clone);
-    });
-    return group;
   }
 
   // View cluster — a real editor always has zoom & fit at the thumb. `zoom` is a
@@ -331,15 +316,6 @@ export function createChrome(deps = {}) {
     return group;
   }
 
-  function syncToolActive() {
-    const clones = els.ctxInner.querySelectorAll('.ctx-tools .ctx-tool');
-    const reals = document.querySelectorAll('#left-toolbar .tool-btn');
-    clones.forEach((c, i) => {
-      const real = reals[i];
-      if (real) c.classList.toggle('active', real.classList.contains('active'));
-    });
-  }
-
   // ── primary CTA ──────────────────────────────────────────────────────────────
   function updatePrimaryCTA() {
     const cta = (VIEW_BY_ID[state.view] || VIEWS[0]).cta || VIEWS[0].cta;
@@ -359,6 +335,9 @@ export function createChrome(deps = {}) {
     const def = VIEW_BY_ID[id];
     if (!def) return;
     state.view = id;
+    // `body[data-view]` lets the shell CSS scope view-conditional chrome — the slim
+    // left tool rail, for instance, is Chart-only.
+    document.body.dataset.view = id;
     els.rail.querySelectorAll('.sr-btn[data-view]').forEach(b => {
       const on = b.dataset.view === id;
       b.classList.toggle('is-active', on);
@@ -847,7 +826,6 @@ export function createChrome(deps = {}) {
     });
     window.addEventListener('resize', closeOverflow);
     document.addEventListener('knitcat:tool', () => {
-      syncToolActive();
       if (state.inspTab === 'layers') renderLayers();
     });
 
@@ -883,7 +861,7 @@ export function createChrome(deps = {}) {
   return {
     setView, openInspector, closeInspector() {}, setInspTab,
     getState: () => ({ ...state }),
-    reflectMode: () => { buildContextBar(); syncToolActive(); updatePrimaryCTA(); },
+    reflectMode: () => { buildContextBar(); updatePrimaryCTA(); },
     reflectHealth: verdict => {
       if (!els.healthScore) return;
       const score = verdict && Number.isFinite(verdict.score) ? verdict.score : 100;
