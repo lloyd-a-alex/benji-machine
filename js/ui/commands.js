@@ -134,11 +134,117 @@ export function runCommand(app, id, ctx = {}) {
       case 'v2.fit': app.v2 && app.v2.open('fit'); break;
       case 'v2.yarn': app.v2 && app.v2.open('yarn'); break;
       case 'v2.compiler': case 'v2.compile': app.v2 && app.v2.open('compiler'); break;
+      case 'v2.derivation': {
+        // The explainable-derivation trail lives inside the Compiler dock: open it and say where
+        // the numbers are explained, so "why this cast-on?" is one command away.
+        app.v2 && app.v2.open('compiler');
+        app.notifications && app.notifications.info && app.notifications.info('Every headline number is explained under “Why these numbers” in the Compiler panel.');
+        break;
+      }
+      case 'v2.colorblind': {
+        // The colour-blindness preview lives inside the Compiler dock: open it and point at it, so
+        // “can colour-blind knitters read this?” is one command away.
+        app.v2 && app.v2.open('compiler');
+        app.notifications && app.notifications.info && app.notifications.info('The colour-blindness read is under “Colour blindness” in the Compiler panel.');
+        break;
+      }
+      case 'v2.substitute': {
+        // The yarn-substitution read lives inside the Yarn Lab dock: open it and point at the
+        // ranked swaps, so “my yarn is discontinued — what changes?” is one command away.
+        app.v2 && app.v2.open('yarn');
+        app.notifications && app.notifications.info && app.notifications.info('The closest library swaps are under “Swap this yarn” in the Yarn Lab panel.');
+        break;
+      }
+      case 'v2.blend': {
+        // The hold-to-gauge doctor lives inside the Yarn Lab dock: open it and point at it, so
+        // “I need a gauge I don't own — what do I hold together?” is one command away.
+        app.v2 && app.v2.open('yarn');
+        app.notifications && app.notifications.info && app.notifications.info('The strand-holding plans are under “Hold to hit gauge” in the Yarn Lab panel.');
+        break;
+      }
+      case 'v2.fairisle': {
+        // The Fair Isle float/contrast safety read lives inside the Compiler dock: open it and
+        // point at it, so “will this colourwork snag or fail to read?” is one command away.
+        app.v2 && app.v2.open('compiler');
+        app.notifications && app.notifications.info && app.notifications.info('The float and contrast read is under “Fair Isle check” in the Compiler panel.');
+        break;
+      }
+      case 'v2.finishing': {
+        // The finishing & pick-up checklist lives inside the Fit dock: open it and point at it, so
+        // “how do I actually finish this so it looks made?” is one command away.
+        app.v2 && app.v2.open('fit');
+        app.notifications && app.notifications.info && app.notifications.info('The bands, pick-up counts and seaming order are under “Finishing & pick-up” in the Fit panel.');
+        break;
+      }
+      case 'v2.drape': {
+        // The drape simulation lives inside the Fit dock: open it and point at it, so “how will
+        // this fabric hang, and where will it pinch?” is one command away.
+        app.v2 && app.v2.open('fit');
+        app.notifications && app.notifications.info && app.notifications.info('The cloth-solver read (verdict · average ease · tight spots) is under “Drape simulation” in the Fit panel.');
+        break;
+      }
+      case 'v2.care': {
+        // The garment-care regimen lives inside the Yarn Lab dock: open it so “can I put this in
+        // the washer?” is one command away.
+        app.v2 && app.v2.open('yarn');
+        app.notifications && app.notifications.info && app.notifications.info('The full wash/dry/iron/symbol regimen is under “Garment care” in the Yarn Lab panel.');
+        break;
+      }
+      case 'v2.quote': {
+        // The design quote (chart → yarn → time → money) lives inside the Production dock: open it
+        // so “what should I charge, and what does it actually cost me?” is one command away.
+        app.v2 && app.v2.open('production');
+        app.notifications && app.notifications.info && app.notifications.info('The fused quote (per-colour yarn demand, carriage time, priced lines) is under “Design quote” in the Production panel.');
+        break;
+      }
+      case 'v2.shortrows': {
+        // The short-row atlas lives inside the Fit dock: open it so “where are my wedges and how
+        // many wrap-and-turns do I owe?” is one command away.
+        app.v2 && app.v2.open('fit');
+        app.notifications && app.notifications.info && app.notifications.info('The wedge-by-wedge plan (shoulder · back neck · bust dart · heel) is under “Short-row atlas” in the Fit panel.');
+        break;
+      }
+      case 'v2.verify': {
+        // The verification action list lives inside the Compiler dock: open it so “what will stop
+        // me at the machine, and what does the compiler tell me to do about it?” is one command away.
+        app.v2 && app.v2.open('compiler');
+        app.notifications && app.notifications.info && app.notifications.info('The blocking fixes and warnings (with the compiler’s own actionable hints) are under “What to fix” in the Compiler panel.');
+        break;
+      }
+      case 'v2.qc': {
+        // The QC inspection card lives inside the Production dock: open it so “has this piece
+        // actually passed the eleven-line checklist before I ship it?” is one command away.
+        app.v2 && app.v2.open('production');
+        app.notifications && app.notifications.info && app.notifications.info('The QC checklist (measurements · seams · ends · blocking) is under “Quality control” in the Production panel.');
+        break;
+      }
+      case 'v2.chartdna': {
+        // Chart DNA lives inside the Compiler dock: open it so "what IS this pattern structurally?"
+        // is one command away — repeat, symmetry, density, all persistent.
+        app.v2 && app.v2.open('compiler');
+        app.notifications && app.notifications.info && app.notifications.info('The structural fingerprint (true repeat · symmetry · density · bounds) is under "Chart DNA" in the Compiler panel.');
+        break;
+      }
+      case 'v2.health': {
+        // Pattern Health is the top card in the Project dock — one glance tells you
+        // "is this ready to cast on?" across all six subsystems.
+        app.v2 && app.v2.open('project');
+        app.notifications && app.notifications.info && app.notifications.info('Pattern Health (traffic-light readiness) is at the top of the Project panel.');
+        break;
+      }
+      case 'v2.print': {
+        // Print the currently-shown output (written pattern, chart, tech-pack) via @media print.
+        app.v2 && app.v2.open('compiler');
+        setTimeout(() => window.print(), 80);
+        break;
+      }
       case 'v2.reverse': app.v2 && app.v2.open('reverse'); break;
       case 'v2.production': app.v2 && app.v2.open('production'); break;
       case 'v2.launcher': {
-        const strip = typeof document !== 'undefined' && document.getElementById('kv2-launcher');
-        if (strip) { const on = strip.style.display === 'none'; strip.style.display = on ? '' : 'none'; }
+        // Studio V2 is integrated into the main layout now (no floating launcher
+        // strip): "open Studio" drops you into the Project · KnitScript system, from
+        // which every other system is one switch away inside the dock.
+        app.v2 && app.v2.open('project');
         break;
       }
       case 'v2.closeAll': app.v2 && app.v2.closeAll && app.v2.closeAll(); break;
@@ -149,9 +255,20 @@ export function runCommand(app, id, ctx = {}) {
       case 'machine.fitAll': { const r = app.universe && app.universe.tuneForAll && app.universe.tuneForAll(); app.recompile(); app.notifications?.[r && r.changed ? 'success' : 'info']?.(r && r.changed ? 'Tuned to fit every machine.' : 'Already fits every machine.'); }
         break;
       case 'machine.pick': app.elements.profileSelect && app.elements.profileSelect.focus(); app.elements.profileSelect && app.elements.profileSelect.click(); break;
+      case 'machine.settings': app._addCustomProfile && app._addCustomProfile(); break;
+      case 'machine.passes': {
+        // The at-the-machine carriage pass sheet lives in the Card Structure panel.
+        const sp = app.structurePanel;
+        if (sp && sp.isOpen && sp.isOpen()) { /* already showing */ }
+        else if (sp && sp.open) sp.open();
+        else if (sp && sp.toggle) sp.toggle();
+        app.notifications?.info?.('Carriage pass sheet is in the Card Structure panel.');
+        break;
+      }
 
       // ── Help ─────────────────────────────────────────────────────────────
       case 'help.about': click('.brand-section .kx-hbtn'); break;
+      case 'help.docs': app.guidePanel && app.guidePanel.toggle && app.guidePanel.toggle(); break;
       case 'help.guide': app.openModal('lace-guide'); break;
       case 'help.eyelets': document.querySelector('.tab-btn[data-tab="editor"]')?.click(); app.openModal('lace-guide'); break;
       case 'help.shortcuts': app._showShortcutsCard(); break;

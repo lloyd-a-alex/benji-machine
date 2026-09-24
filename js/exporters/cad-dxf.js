@@ -12,6 +12,12 @@
  */
 
 import { calculateCardDimensions } from '../machine/profiles.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('exporters/cad-dxf');
+
+/** Geometry fields the CUT_HOLES coordinates depend on — a missing one becomes a NaN vertex. */
+const REQUIRED_GEOMETRY = ['pitchX', 'pitchY', 'holeDiameter', 'sprocketDiameter', 'sprocketPitchY', 'marginSide', 'sprocketToFirstHole', 'marginTopBottom', 'cardWidth'];
 
 export class CadDxfExporter {
   /**
@@ -25,6 +31,9 @@ export class CadDxfExporter {
     if (!profile || typeof profile !== 'object') {
       throw new TypeError('CadDxfExporter.generateDxf requires a machine profile.');
     }
+    const badFields = REQUIRED_GEOMETRY.filter((k) => !Number.isFinite(profile[k]));
+    if (badFields.length) log.error('machine profile is missing non-numeric geometry fields, DXF entities will carry NaN coordinates', { profile: profile.name || profile.id, badFields });
+    if (!Array.isArray(cardMatrix) || !cardMatrix.length) log.warn('generateDxf given an empty card matrix');
     const {
       includeSprockets = true,
       includeText = true,
@@ -174,7 +183,9 @@ export class CadDxfExporter {
 
     // 5. Engraving Text (Row Numbers and Profile Title)
     if (includeText) {
-      addText('ENGRAVE_TEXT', `${profile.name.toUpperCase()} - ${cols} STITCH`, dims.colOffsetXMm, 5.0, 2.5);
+      const title = profile.name ? String(profile.name).toUpperCase() : 'KNITCAT CARD';
+      if (!profile.name) log.warn('generateDxf profile has no name — engraving a placeholder title');
+      addText('ENGRAVE_TEXT', `${title} - ${cols} STITCH`, dims.colOffsetXMm, 5.0, 2.5);
       
       // Row numbers on left and right borders
       for (let r = 0; r < rows; r += 2) {

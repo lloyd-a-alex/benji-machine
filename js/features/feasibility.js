@@ -26,6 +26,7 @@
 import { STITCH_TYPE } from '../math/knit-topology.js';
 import { profileLimits } from '../machine/profiles.js';
 import { getDiagnostics } from '../core/diagnostics.js';
+import { horizontalRuns, verticalRuns, colorCellCounts } from '../core/chart-analysis.js';
 import {
   knowledgeFor, phil, scoreIssues, riskLabel, techniqueSupported
 } from '../machine/machine-knowledge.js';
@@ -38,56 +39,17 @@ function maxFloatFor(profile) {
   return profileLimits(profile).maxFloatNeedles;
 }
 
-function runsAbove(line, want, limit) {
-  // longest run of cells === want
-  let best = 0, cur = 0;
-  for (const v of line) {
-    if (v === want) { cur++; if (cur > best) best = cur; } else cur = 0;
-  }
-  return best > limit ? best : 0;
-}
-
-// ── location helpers ─────────────────────────────────────────────────────────
-// The advisor used to only *count* problems ("3 long floats"), which forced the
-// user to hunt for them. These return the offending cells too, so the UI can say
-// "these exact stitches" and spotlight them on the canvas.
-
-/** Horizontal runs of `want` longer than `limit`: their cells, the rows, worst. */
+// The horizontal/vertical run scanning is shared with the pattern browser's machine-fit
+// badges (js/core/chart-analysis.js) so the advisor and the browser can never disagree
+// about what a "long float" is. These thin wrappers keep the advisor's call sites
+// unchanged while delegating the measurement to one implementation.
 function hRuns(M, want, limit) {
-  const cells = []; const rows = new Set(); let worst = 0;
-  for (let i = 0; i < M.length; i++) {
-    const line = M[i]; if (!line) continue;
-    let start = -1;
-    for (let c = 0; c <= line.length; c++) {
-      const is = c < line.length && line[c] === want;
-      if (is && start < 0) start = c;
-      if (!is && start >= 0) {
-        const len = c - start;
-        if (len > limit) { rows.add(i); if (len > worst) worst = len; for (let k = start; k < c; k++) cells.push([i, k]); }
-        start = -1;
-      }
-    }
-  }
-  return { cells, rows, worst };
+  return horizontalRuns(M, want, limit);
 }
 
-/** Vertical runs of blanks (0) longer than `limit` — the real tuck failure mode. */
+// Vertical runs of blanks (0) longer than `limit` — the real tuck failure mode.
 function vTuckRuns(M, limit) {
-  const cells = []; const columns = new Set(); let worst = 0;
-  const cols = M[0] ? M[0].length : 0;
-  for (let c = 0; c < cols; c++) {
-    let start = -1;
-    for (let r = 0; r <= M.length; r++) {
-      const is = r < M.length && M[r][c] === 0;
-      if (is && start < 0) start = r;
-      if (!is && start >= 0) {
-        const len = r - start;
-        if (len > limit) { columns.add(c); if (len > worst) worst = len; for (let k = start; k < r; k++) cells.push([k, c]); }
-        start = -1;
-      }
-    }
-  }
-  return { cells, columns, worst };
+  return verticalRuns(M, 0, limit);
 }
 
 /** Every cell in the column band [c0, c1) (or a row band) — for over-size cards. */
@@ -180,6 +142,19 @@ export function createFeasibilityAdvisor(app) {
         PHIL.postel,
         { label: `Trim to ${limits.maxNeedles} columns`, safe: true, run: () => ed.setDimensions(rows, limits.maxNeedles) },
         { where: `columns ${limits.maxNeedles + 1}\u2013${cols} (off the right of the bed)`, cells: capCells(bandCells(M, { c0: limits.maxNeedles })) }));
+    }
+
+    // ── colours vs the machine's yarn feeders ──────────────────────────────
+    // A punchcard reader selects between two yarn positions per needle; an electronic
+    // colour changer drives more (profile.maxColors). A chart using more distinct yarns
+    // than there are feeders cannot be auto-patterned however it looks on screen — the
+    // jacquard-import trap. Counted by the SAME primitive the browser's fit badges use
+    // (core/chart-analysis.js) so the advisor and the preset browser can never disagree.
+    const colors = colorCellCounts(M, mode).colors;
+    if (colors > limits.maxColors) {
+      issues.push(mk('error', `Needs ${colors} colours, ${profile.name} has ${limits.maxColors} feeders`,
+        `The card uses ${colors} distinct yarns but this machine auto-selects between only ${limits.maxColors}; the extra colours can never be chosen by the pattern system, so they will not appear in the fabric.`,
+        PHIL.postel, null, { where: 'the whole card' }));
     }
 
     if (mode === 'fair_isle') {

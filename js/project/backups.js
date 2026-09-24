@@ -17,6 +17,9 @@
 
 import { buildProjectDocument, KCARD_MAX_CELLS } from './kcard.js';
 import { STORES } from './storage.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('project/backups');
 // The File System Access handles live in the KV store but are NOT JSON: a
 // FileSystemFileHandle is structured-clone-only, so `JSON.stringify` turns it into
 // `{}`. Backed up, the handle is already broken; restored, the next save crashes on
@@ -177,10 +180,12 @@ export function createDataService(options = {}) {
   };
 
   const readLocal = key => {
-    try { return local ? local.getItem(key) : null; } catch (_) { return null; }
+    try { return local ? local.getItem(key) : null; }
+    catch (err) { log.warn('localStorage read failed — treating the key as absent', { key, error: err?.message }); return null; }
   };
   const writeLocal = (key, value) => {
-    try { if (local) local.setItem(key, value); } catch (_) { /* private mode */ }
+    try { if (local) local.setItem(key, value); }
+    catch (err) { log.warn('localStorage write failed (private mode or quota exceeded)', { key, error: err?.message }); }
   };
 
   const emit = () => { if (onListener) onListener(publicApi.status()); };
@@ -195,7 +200,12 @@ export function createDataService(options = {}) {
   function sessionWasOpen() {
     const raw = readLocal(SESSION_KEY);
     if (!raw) return false;
-    try { return JSON.parse(raw)?.state === 'running'; } catch (_) { return true; }
+    try { return JSON.parse(raw)?.state === 'running'; } catch (err) {
+      // An unreadable session flag is treated as "still running" (a crash), so say
+      // why we are about to show the recovery banner rather than surprising the user.
+      log.warn('session flag is not valid JSON — assuming the last visit crashed', { error: err?.message });
+      return true;
+    }
   }
 
   // ── autosave ───────────────────────────────────────────────────────────────
@@ -221,6 +231,7 @@ export function createDataService(options = {}) {
       // work is safe, and it is not. Say so once rather than silently retrying.
       state.failing = true;
       state.lastError = err?.message || String(err);
+      log.logError('autosave write failed', err, { context: { reason } });
       notifier?.warn?.('Autosave could not write to disk.', {
         details: `${state.lastError} — your work is still on screen; use Save Project to keep a copy.`,
         duration: 9000
@@ -475,10 +486,12 @@ export function createDataService(options = {}) {
     let archive = raw;
     if (typeof archive === 'string') {
       try { archive = JSON.parse(archive); } catch (err) {
+        log.warn('a backup archive was not valid JSON', { error: err?.message, bytes: raw.length });
         return { ok: false, error: `Not a KNITCAT backup: ${err.message}` };
       }
     }
     if (!archive || archive.format !== BACKUP_FORMAT) {
+      log.warn('refusing to restore an archive with no KNITCAT backup marker', { format: archive?.format ?? null });
       return { ok: false, error: 'No KNITCAT_BACKUP_V1 marker — this is not a KNITCAT backup file.' };
     }
     if (replace) {

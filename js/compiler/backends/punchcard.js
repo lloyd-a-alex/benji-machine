@@ -22,6 +22,9 @@
 import { VectorSvgExporter } from '../../exporters/vector-svg.js';
 import { FormatsExporter } from '../../exporters/formats-dak.js';
 import { punchMatrix, resolveProfile } from './_card.js';
+import { logger } from '../../core/logging.js';
+
+const log = logger('compiler/backends/punchcard');
 
 /**
  * Compile an IR into punchcard outputs.
@@ -32,16 +35,21 @@ export function punchcardBackend(ir, options = {}) {
   const profile = resolveProfile((ir && ir.machine) || 'brother_standard_24');
   const card = punchMatrix(ir, { ...options, columns: options.columns || profile.columns });
   const readingOffset = (profile.carriageRules && profile.carriageRules.cardReadingOffsetRows) || 0;
+  // A missing card-reading offset silently defaults to 0; on a machine that wants a
+  // seven-row lead-in that mis-registers the whole card, so note the assumption.
+  if (!profile.carriageRules || profile.carriageRules.cardReadingOffsetRows == null) {
+    log.debug('profile defines no cardReadingOffsetRows — assuming 0-row lead-in', { profile: profile.name || profile.id });
+  }
 
   let svg = '';
   let ascii = '';
   const errors = [];
   try {
     svg = VectorSvgExporter.generateLaserSvg(profile, card.matrix, { includeSprockets: true, includeText: true });
-  } catch (e) { errors.push(`svg: ${e && e.message ? e.message : e}`); }
+  } catch (e) { log.logError('punchcard SVG generation failed', e, { context: { profile: profile.name } }); errors.push(`svg: ${e && e.message ? e.message : e}`); }
   try {
     ascii = FormatsExporter.generateAsciiCard(profile, card.matrix);
-  } catch (e) { errors.push(`ascii: ${e && e.message ? e.message : e}`); }
+  } catch (e) { log.logError('punchcard ASCII generation failed', e, { context: { profile: profile.name } }); errors.push(`ascii: ${e && e.message ? e.message : e}`); }
 
   const holes = card.matrix.reduce((n, row) => n + row.filter(Boolean).length, 0);
   const meta = {

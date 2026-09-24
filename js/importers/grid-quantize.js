@@ -13,6 +13,11 @@
  * @module importers/grid-quantize
  */
 
+import { logger } from '../core/logging.js';
+
+/** Shared geometry seam: log the snap decisions that silently drop or trim holes. */
+const log = logger('importers/grid-quantize');
+
 /** Hard ceilings so a pathological file cannot allocate a continent-sized grid. */
 export const MAX_GRID_ROWS = 4000;
 export const MAX_GRID_COLS = 4000;
@@ -69,7 +74,7 @@ export function holesToMatrix(holes, { pitchX, pitchY, maxCells = MAX_GRID_CELLS
   const clean = (Array.isArray(holes) ? holes : []).filter(
     h => h && Number.isFinite(h.x) && Number.isFinite(h.y)
   );
-  if (!clean.length) return { ok: false, error: 'No punch holes were found to import.' };
+  if (!clean.length) { log.warn('holesToMatrix got no usable hole centres'); return { ok: false, error: 'No punch holes were found to import.' }; }
 
   const xs = clean.map(h => h.x);
   const ys = clean.map(h => h.y);
@@ -85,7 +90,7 @@ export function holesToMatrix(holes, { pitchX, pitchY, maxCells = MAX_GRID_CELLS
   }
   const fx = Number.isFinite(pitchX) && pitchX > 0 ? pitchX : estimatePitch(xs);
   const fy = Number.isFinite(pitchY) && pitchY > 0 ? pitchY : estimatePitch(ys);
-  if (!fx || !fy) return { ok: false, error: 'The hole spacing could not be read from this file.' };
+  if (!fx || !fy) { log.warn('hole spacing could not be resolved', { pitchX, pitchY, holes: clean.length }); return { ok: false, error: 'The hole spacing could not be read from this file.' }; }
 
   const warnings = [];
   // Quantise by rounding to the nearest lattice index; a hole that lands far from
@@ -100,6 +105,7 @@ export function holesToMatrix(holes, { pitchX, pitchY, maxCells = MAX_GRID_CELLS
     rows = Math.max(rows, rowOf(h) + 1);
   }
   if (rows > MAX_GRID_ROWS || cols > MAX_GRID_COLS) {
+    log.warn('implied grid exceeds hard row/col ceilings', { rows, cols });
     return { ok: false, error: `The implied grid is ${rows}\u00d7${cols} — larger than KNITCAT can hold.` };
   }
   if (rows * cols > maxCells) {
@@ -107,6 +113,7 @@ export function holesToMatrix(holes, { pitchX, pitchY, maxCells = MAX_GRID_CELLS
     rows = Math.max(1, Math.floor(rows / scale));
     cols = Math.max(1, Math.floor(cols / scale));
     warnings.push(`A ${rows}\u00d7${cols} grid was the largest that fit the size limit; the far edge was trimmed.`);
+    log.warn('grid trimmed to fit the size limit', { rows, cols, maxCells });
   }
 
   const matrix = [];
@@ -120,8 +127,8 @@ export function holesToMatrix(holes, { pitchX, pitchY, maxCells = MAX_GRID_CELLS
       snapped++;
     }
   }
-  if (!snapped) return { ok: false, error: 'None of the holes lined up to a usable grid.' };
+  if (!snapped) { log.warn('no holes snapped into the trimmed grid', { rows, cols, holes: clean.length }); return { ok: false, error: 'None of the holes lined up to a usable grid.' }; }
   const dropped = clean.length - snapped;
-  if (dropped > 0) warnings.push(`${dropped} hole${dropped === 1 ? '' : 's'} fell outside the trimmed grid and were dropped.`);
+  if (dropped > 0) { warnings.push(`${dropped} hole${dropped === 1 ? '' : 's'} fell outside the trimmed grid and were dropped.`); log.warn(`${dropped} hole(s) fell outside the grid and were dropped`, { rows, cols }); }
   return { ok: true, matrix, rows, cols, warnings };
 }

@@ -16,6 +16,10 @@
  * the wrong thing to send to an inkjet.
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/printing');
+
 const BASE_STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; color: #111; }
@@ -106,6 +110,7 @@ function defaultSink(html) {
 
   const doc = frame.contentDocument;
   if (!doc) {
+    log.warn('the print frame exposed no document — the browser refused the same-origin print iframe');
     frame.remove();
     return false;
   }
@@ -121,7 +126,8 @@ function defaultSink(html) {
     try {
       win.focus();
       win.print();
-    } catch (_) {
+    } catch (err) {
+      log.warn('invoking the print dialog on the frame failed', { error: err?.message });
       frame.remove();
     }
     // If the browser never fires afterprint (Firefox does this on some builds),

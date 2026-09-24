@@ -42,7 +42,13 @@ const server = http.createServer((req, res) => {
     return send(res, 405, { 'Content-Type': 'text/plain', Allow: 'GET, HEAD' }, 'Method Not Allowed');
   }
 
-  let urlPath = decodeURIComponent(req.url.split('?')[0]);
+  let urlPath;
+  try {
+    urlPath = decodeURIComponent(req.url.split('?')[0]);
+  } catch (err) {
+    console.error(`[KNITCAT] malformed URL from ${req.socket.remoteAddress}: ${req.url}`, err);
+    return send(res, 400, { 'Content-Type': 'text/plain' }, '400 Bad Request: malformed URL');
+  }
   if (urlPath === '/') urlPath = '/index.html';
 
   const filePath = path.normalize(path.join(ROOT, urlPath));
@@ -56,6 +62,10 @@ const server = http.createServer((req, res) => {
 
   fs.readFile(filePath, (err, data) => {
     if (err) {
+      // A 404 is the dev server's most useful signal: it usually means a bad
+      // reference slipped into index.html or the sw cache. Name it instead of
+      // swallowing which code fired.
+      console.warn(`[KNITCAT] ${err.code || 'read-failed'} for ${urlPath} (from ${req.headers.referer || 'no referrer'}) — serving 404`);
       return send(res, 404, { 'Content-Type': 'text/plain' }, '404 Not Found: ' + urlPath);
     }
     const ext = path.extname(filePath).toLowerCase();
@@ -73,6 +83,12 @@ const server = http.createServer((req, res) => {
     }
     send(res, 200, headers, data);
   });
+});
+
+server.on('error', (err) => {
+  console.error(`[KNITCAT] dev server error: ${err.message}`, err);
+  if (err.code === 'EADDRINUSE') console.error(`[KNITCAT] port ${PORT} is already in use — pass another: node server.js <port>`);
+  process.exit(1);
 });
 
 server.listen(PORT, () => {

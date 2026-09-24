@@ -175,8 +175,11 @@ header#main-header {
 .brand-version {
   font-size: 10px;
   font-family: var(--font-mono);
-  background-color: #1e3a8a;
-  color: var(--accent-cyan);
+  /* A quiet inset pill instead of a stray saturated-blue chip, so it sits calmly
+     in the refined rose theme rather than clashing with it. */
+  background-color: var(--bg-inset);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
   padding: 2px 6px;
   border-radius: var(--radius-sm);
   font-weight: 600;
@@ -596,10 +599,10 @@ header#main-header {
 }
 
 .tool-btn.active {
-  background-color: rgba(56, 189, 248, 0.15);
+  background-color: color-mix(in srgb, var(--accent-cyan) 16%, transparent);
   border-color: var(--accent-cyan);
   color: var(--accent-cyan);
-  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35), 0 2px 10px rgba(14, 165, 233, 0.28);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-cyan) 30%, transparent);
 }
 
 .tool-btn svg {
@@ -1318,7 +1321,7 @@ button, [role="button"], label, a, input[type="range"], input[type="checkbox"], 
 
 /* --- Right Sidebar Diagnostics & Properties --- */
 #right-sidebar {
-  width: 320px;
+  width: 300px;
   background-color: var(--bg-surface);
   border-left: 1px solid var(--border-subtle);
   display: flex;
@@ -1581,17 +1584,17 @@ button, [role="button"], label, a, input[type="range"], input[type="checkbox"], 
   letter-spacing: 0.3px;
 }
 
-/* Ensure romance theme consistency */
+/* Ensure romance theme consistency — one refined primary, no red glow. */
 body.theme-romance .toolbar-btn:hover,
 body.theme-romance .btn-action:hover {
-  border-color: var(--accent-rose);
-  box-shadow: 0 4px 12px rgba(244, 63, 94, 0.3);
+  border-color: var(--accent-cyan);
 }
 
 body.theme-romance .toolbar-btn.active,
 body.theme-romance .btn-action.btn-primary {
-  background: linear-gradient(135deg, #be185d, #9d174d);
-  border-color: var(--accent-rose);
+  background: var(--accent-cyan);
+  border-color: transparent;
+  color: #1a1016;
 }
 
 /* --- Bottom Status Bar --- */
@@ -2397,73 +2400,114 @@ footer#status-bar {
   line-height: 1.4;
 }
 
-/* Custom Scrollbars */
+/* Machine-fit badge: a compact status pill at the top-left of each preset card,
+   mirroring the feasibility advisor's vocabulary (✓ clean / ⚠ attention / ✕ blocker). */
+.preset-fit {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+  background-color: rgba(11, 15, 25, 0.72);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: help;
+}
+.preset-fit.fit-feasible { color: #34d399; border-color: rgba(52, 211, 153, 0.6); }
+.preset-fit.fit-needs-attention { color: #fbbf24; border-color: rgba(251, 191, 36, 0.6); }
+.preset-fit.fit-not-feasible { color: #fb7185; border-color: rgba(251, 113, 133, 0.6); }
+
+/* Custom Scrollbars — a slim, gutter-less thumb that floats on a transparent
+   track (the 3px transparent border + padding-box clip inset it), tinting to
+   the single rose accent on hover. Sleek, and shared by every scroll surface. */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #080c14;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-muted) 30%, transparent);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: color-mix(in srgb, var(--accent-cyan) 60%, transparent);
+  background-clip: padding-box;
 }
 
 /* =========================================================
    Benji Romance Theme ("Made with Love for Benji")
    ========================================================= */
 body.theme-romance {
-  --bg-main: #14041a;
-  --bg-surface: #22082e;
-  --bg-surface-elevated: #37114a;
-  --bg-panel: #2a0a38;
-  --border-subtle: #4c1d66;
-  --border-active: #f472b6;
-  --border-focus: #ec4899;
+  /* "Refined romance": a calm, near-neutral engineering black carrying the
+     faintest plum undertone — sleek, not a purple slab. */
+  --bg-main: #0b0a10;
+  --bg-surface: #141320;
+  --bg-surface-elevated: #1e1c2b;
+  --bg-panel: #171523;
+  --bg-inset: #100e18;
+  --border-subtle: #292637;
+  --border-active: #d98aa4;
+  --border-focus: #c67896;
 
   /* WCAG 3.0 / APCA-tuned (see js/core/apca.js). These win the cascade for all
      page content because body.theme-romance redeclares the tokens on the closest
      ancestor, shadowing both :root and the runtime accent picker — so this block
-     is the source of truth for what is actually rendered. Each text/foreground
-     accent now clears Lc 60 on the *lightest* purple surface (#37114a), which
-     means it clears it on every darker one too. Hues are preserved: the pinks
-     stay pink, the purples stay purple, just lifted a step for legibility. */
-  --accent-cyan: #f799ca;    /* Romantic Pink (was #f472b6, Lc 48) */
-  --accent-amber: #fde047;   /* Champagne Gold (Lc 85) */
-  --accent-rose: #fc9caa;    /* Strawberry Rose (was #fb7185, Lc 47) */
-  --accent-emerald: #4ade80; /* Spring green — SUCCESS colour, kept readable-positive (Lc 68) */
-  --accent-indigo: #ed96fa;  /* (was #e879f9, Lc 51) */
+     is the source of truth for what is actually rendered. Every text/foreground
+     accent clears Lc 60 on the *lightest* surface (#1e1c2b), so it clears every
+     darker one too. There is now ONE functional accent (a muted rose, carried on
+     --accent-cyan); the semantic hues are calmed so nothing competes as a candy
+     primary. Guarded by tests/apca-contrast.test.mjs. */
+  --accent-cyan: #f0a9bf;    /* the single refined rose — primary / focus / active */
+  --accent-amber: #e7bd77;   /* dusty champagne — warning */
+  --accent-rose: #f0a2ac;    /* soft rose — danger / secondary accent */
+  --accent-emerald: #6fd3a3; /* dusty green — success */
+  --accent-indigo: #c7aee8;  /* muted lilac — used sparingly */
 
-  --text-primary: #fff1f2;
-  --text-secondary: #fbcfe8;
-  --text-muted: #d0a4fd;     /* (was #c084fc, Lc 48) */
+  /* Neutral text ramp: secondary and muted are warm greys, NOT dyed pink, so the
+     hierarchy reads calm and legible instead of a field of magenta. */
+  --text-primary: #f5f2f7;
+  --text-secondary: #cfcadf;
+  --text-muted: #bdb7c9;
+  --brand-accent: #eba6bc;
 }
 
 body.theme-romance header#main-header {
-  border-bottom: 1px solid #701a75;
-  background: linear-gradient(90deg, #22082e, #3b0764);
+  /* A quiet top-lit surface consistent with the shell; a single rose hairline
+     carries the "romance" instead of a purple-to-violet gradient slab. */
+  border-bottom: 1px solid var(--border-subtle);
+  background-image: linear-gradient(180deg, var(--bg-surface-elevated), var(--bg-surface));
+  background-color: var(--bg-surface);
 }
 
 body.theme-romance .brand-title::after {
-  content: ' ♥ BENJI';
-  color: #f472b6;
-  font-size: 11px;
-  margin-left: 4px;
+  /* The Benji dedication is a whisper: one low-opacity heart, no shouting caps. */
+  content: ' ♥';
+  color: var(--brand-accent);
+  opacity: 0.55;
+  font-size: 10px;
+  font-weight: 400;
+  margin-left: 3px;
 }
 
-/* Heart Tool Button */
+/* Heart Tool Button — the refined brand rose, no glow. */
 .tool-btn.tool-heart {
-  color: #f43f5e;
+  color: var(--brand-accent);
 }
 .tool-btn.tool-heart.active {
-  background-color: rgba(244, 63, 94, 0.2);
-  border-color: #f43f5e;
-  color: #f43f5e;
-  box-shadow: 0 0 10px rgba(244, 63, 94, 0.4);
+  background-color: color-mix(in srgb, var(--brand-accent) 22%, transparent);
+  border-color: var(--brand-accent);
+  color: var(--brand-accent);
 }
 
 /* --- CNC Toolpath Controls ---  */
@@ -2506,8 +2550,8 @@ body.theme-romance .brand-title::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(ellipse at center, rgba(48, 6, 72, 0.97) 0%, rgba(10, 2, 18, 0.99) 100%);
-  backdrop-filter: blur(20px);
+  background: radial-gradient(ellipse at center, rgba(30, 24, 40, 0.92) 0%, rgba(8, 7, 12, 0.98) 100%);
+  backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(20px);
   animation: lovePopupFadeIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
   /* This overlay is the whole screen on a phone: it MUST be scrollable and
@@ -2559,6 +2603,7 @@ body.theme-romance .brand-title::after {
   position: absolute;
   top: -60px;
   font-size: 22px;
+  color: var(--brand-accent, #eba6bc);
   animation: heartFall linear infinite;
   opacity: 0.7;
   user-select: none;
@@ -2605,9 +2650,9 @@ body.theme-romance .brand-title::after {
 .love-popup-inner {
   position: relative;
   z-index: 2;
-  background: linear-gradient(145deg, rgba(58, 10, 90, 0.95), rgba(30, 4, 54, 0.98));
-  border: 2px solid rgba(244, 114, 182, 0.5);
-  border-radius: 24px;
+  background: linear-gradient(160deg, var(--bg-surface-elevated, #1e1c2b), var(--bg-surface, #141320));
+  border: 1px solid var(--border-subtle, #292637);
+  border-radius: 20px;
   /* Fluid gutter: generous on a desktop, tight on a 320 px phone. */
   padding: clamp(20px, 5vh, 48px) clamp(18px, 5vw, 56px);
   text-align: center;
@@ -2615,22 +2660,22 @@ body.theme-romance .brand-title::after {
   max-width: 560px;
   margin: auto; /* stays centred while scrolling instead of jumping to the top */
   box-shadow:
-    0 0 80px rgba(244, 114, 182, 0.25),
-    0 0 160px rgba(236, 72, 153, 0.12),
-    0 30px 60px rgba(0, 0, 0, 0.7);
-  animation: loveCardBounce 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
+    0 0 60px color-mix(in srgb, var(--brand-accent, #eba6bc) 16%, transparent),
+    0 24px 60px rgba(0, 0, 0, 0.55);
+  animation: loveCardBounce 0.5s ease-out 0.1s both;
 }
 
 @keyframes loveCardBounce {
-  from { opacity: 0; transform: scale(0.7) translateY(40px); }
-  to   { opacity: 1; transform: scale(1) translateY(0);      }
+  from { opacity: 0; transform: scale(0.97) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0);        }
 }
 
 .love-popup-big-heart {
-  font-size: clamp(40px, 9vh, 64px);
+  font-size: clamp(30px, 6vh, 44px);
   display: block;
   margin-bottom: clamp(8px, 1.6vh, 16px);
-  animation: heartPulse 1.4s ease-in-out infinite;
+  color: var(--brand-accent, #eba6bc);
+  opacity: 0.9;
   line-height: 1;
 }
 
@@ -2645,36 +2690,32 @@ body.theme-romance .brand-title::after {
   /* Fluid: the row of exclamation marks must never widen the card. */
   font-size: clamp(19px, 5.4vw, 32px);
   font-weight: 800;
-  color: #fff1f2;
-  letter-spacing: -0.5px;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
   margin-bottom: clamp(6px, 1.4vh, 10px);
   overflow-wrap: anywhere;
   word-break: normal;
-  background: linear-gradient(135deg, #fce7f3, #f9a8d4, #f472b6);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .love-popup-subtitle {
   font-size: clamp(12px, 3.4vw, 16px);
-  font-weight: 600;
-  color: #fbcfe8;
+  font-weight: 500;
+  color: var(--text-secondary);
   margin-bottom: clamp(8px, 1.8vh, 14px);
 }
 
 .love-popup-msg {
   font-size: clamp(12px, 3.2vw, 14px);
-  color: #e879f9;
+  color: var(--brand-accent, #eba6bc);
   line-height: 1.7;
   margin-bottom: clamp(14px, 4vh, 30px);
-  opacity: 0.9;
+  opacity: 0.92;
 }
 
 .love-popup-close {
-  background: linear-gradient(135deg, #be185d, #9d174d);
-  border: 1px solid #f472b6;
-  color: #fff;
+  background: var(--accent-cyan, #f0a9bf);
+  border: 1px solid transparent;
+  color: #1a1016;
   /* Generous, finger-sized, and never wider than the card itself. */
   min-height: var(--tap);
   min-width: 44px;
@@ -2684,8 +2725,8 @@ body.theme-romance .brand-title::after {
   font-weight: 700;
   line-height: 1.35;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 4px 20px rgba(190, 24, 93, 0.4);
+  transition: transform 0.15s ease, filter 0.15s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   letter-spacing: 0.3px;
   overflow-wrap: anywhere;
   -webkit-appearance: none;
@@ -2695,21 +2736,19 @@ body.theme-romance .brand-title::after {
    button looking permanently pressed. */
 @media (hover: hover) {
   .love-popup-close:hover {
-    transform: scale(1.06) translateY(-2px);
-    box-shadow: 0 8px 30px rgba(244, 114, 182, 0.6);
-    background: linear-gradient(135deg, #db2777, #be185d);
+    transform: translateY(-1px);
+    filter: brightness(1.05);
   }
 }
 
 /* Finger feedback: the tap must visibly land. */
 .love-popup-close:active {
-  transform: scale(0.97);
-  box-shadow: 0 2px 10px rgba(244, 114, 182, 0.45);
-  filter: brightness(1.18);
+  transform: scale(0.98);
+  filter: brightness(0.96);
 }
 
 .love-popup-close:focus-visible {
-  outline: 2px solid #fbcfe8;
+  outline: 2px solid var(--text-primary);
   outline-offset: 3px;
 }
 
@@ -3206,7 +3245,7 @@ html[data-theme="light"] .btn-action.btn-primary { color: #fff; }
 
 @media (min-width: 1760px) {
   html, body { font-size: 14px; }
-  #right-sidebar { width: 372px; }
+  #right-sidebar { width: 336px; }
   .schedule-content-wrapper { padding: 26px min(9vw, 120px); }
   #panel-tanktop.active,
   #panel-beanie.active,
@@ -3221,7 +3260,7 @@ html[data-theme="light"] .btn-action.btn-primary { color: #fff; }
   .header-center { gap: 10px; }
   .mode-btn { padding: 5px 9px; }
   .btn-action { padding: 6px 9px; }
-  #right-sidebar { width: 288px; }
+  #right-sidebar { width: 272px; }
   #panel-tanktop.active,
   #panel-beanie.active,
   #panel-clothes.active { grid-template-columns: minmax(252px, 300px) minmax(0, 1fr); }
@@ -3236,7 +3275,7 @@ html[data-theme="light"] .btn-action.btn-primary { color: #fff; }
   .profile-picker label { display: none; }
   .kx-greet, .kx-days { display: none; }
   .canvas-subbar { gap: 8px; padding: 6px 8px; }
-  #right-sidebar { width: 264px; }
+  #right-sidebar { width: 252px; }
 }
 
 
@@ -3850,4 +3889,17 @@ h1, h2, h3, h4, .brand-title, .modal-title, .tanktop-section-title {
   .tool-btn.active, .tab-btn.active, .mode-btn.active, .btn-action.btn-primary:hover {
     box-shadow: none;
   }
+}
+
+/* ─── Print: clean pattern sheet ────────────────────────────────────────────────────
+   When the knitter clicks "Print", the browser print dialog shows only the
+   active output pane (written pattern, chart, tech-pack) formatted for A4/Letter. */
+@media print {
+  body > *:not(#app) { display: none !important; }
+  #app, #app * { visibility: hidden !important; }
+  .kv2-out[data-out-pane] { visibility: visible !important; position: absolute; top: 0; left: 0; width: 100%; max-height: none !important; overflow: visible !important; padding: 20px 30px !important; font-size: 12pt !important; background: #fff !important; color: #111 !important; border: none !important; box-shadow: none !important; }
+  .kv2-out[data-out-pane] * { visibility: visible !important; color: #111 !important; background: transparent !important; font-size: inherit; }
+  .kv2-out[data-out-pane] svg { max-width: 100% !important; height: auto !important; }
+  .kv2-out[data-out-pane] table { border-collapse: collapse; width: 100%; }
+  .kv2-out[data-out-pane] td, .kv2-out[data-out-pane] th { border: 1px solid #ccc; padding: 4px 8px; }
 }

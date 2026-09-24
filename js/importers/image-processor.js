@@ -10,6 +10,11 @@
  *    between adjacent holes.
  */
 
+import { logger } from '../core/logging.js';
+
+/** Bitmap→punchcard pipeline seam: flag degenerate inputs and unexpected throws. */
+const log = logger('importers/image-processor');
+
 export class ImageProcessor {
   /**
    * Processes raw ImageData from Canvas to punchcard binary matrix
@@ -24,9 +29,16 @@ export class ImageProcessor {
       enforcePaperBridges = true // Prevent card tear-out
     } = options;
 
-    const srcW = imageData.width;
-    const srcH = imageData.height;
-    const data = imageData.data;
+    const srcW = imageData?.width;
+    const srcH = imageData?.height;
+    const data = imageData?.data;
+
+    if (!imageData || !data || !(srcW > 0) || !(srcH > 0) || !(targetRows > 0) || !(targetCols > 0)) {
+      log.warn('processImage given an empty image or zero target grid', {
+        hasData: !!data, srcW, srcH, targetRows, targetCols,
+      });
+      return [];
+    }
 
     // 1. Bilinear downsampling to targetCols x targetRows
     const luminanceGrid = new Float32Array(targetRows * targetCols);

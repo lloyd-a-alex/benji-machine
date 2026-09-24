@@ -36,6 +36,10 @@ import {
   byEra,
   heritageSummary
 } from '../weave/textile-heritage.js';
+import { MASTERS, masterPatterns } from '../weave/weaver-masters.js';
+import { PATTERN_PRESETS } from '../presets/preset-library.js';
+
+const PRESET_BY_ID = new Map(PATTERN_PRESETS.map(p => [p.id, p]));
 
 const STYLE_ID = 'kx-heritage-style';
 const PANEL_ID = 'kx-heritage';
@@ -105,19 +109,28 @@ export function createHeritagePanel(deps = {}) {
   q('[data-close]').addEventListener('click', hide);
   els.search.addEventListener('input', () => { state.query = els.search.value.trim().toLowerCase(); render(); });
 
-  // Wire "draft this structure" buttons via event delegation so re-rendering the body
-  // never orphans a handler.
+  // Wire "draft this structure" and "import this signature" buttons via event
+  // delegation so re-rendering the body never orphans a handler. A <summary> click is
+  // watched to draw that master's thumbnails lazily, on first open.
   els.content.addEventListener('click', (ev) => {
-    const btn = ev.target.closest('[data-draft]');
+    const summary = ev.target.closest('summary[data-master]');
+    if (summary) {
+      const box = summary.parentElement;
+      if (box && box.open) requestAnimationFrame(() => drawMasterThumbs(box));
+      // A summary click is not an import; let the browser toggle normally.
+      return;
+    }
+    const btn = ev.target.closest('[data-draft],[data-preset]');
     if (!btn) return;
-    const id = btn.getAttribute('data-draft');
+    const id = btn.getAttribute('data-draft') || btn.getAttribute('data-preset');
+    const label = btn.getAttribute('data-name') || WEAVE_STRUCTURES[id]?.name || PRESET_BY_ID.get(id)?.name || id;
     if (!applyStructure) {
-      notifier && notifier.warn && notifier.warn('Weave drafting is not wired up in this build.');
+      notifier && notifier.warn && notifier.warn('Drafting is not wired up in this build.');
       return;
     }
     try {
       applyStructure(id);
-      notifier && notifier.info && notifier.info(`Drafted ${WEAVE_STRUCTURES[id]?.name || id} onto the card.`);
+      notifier && notifier.info && notifier.info(`Put ${label} on the card.`);
       hide();
     } catch (err) {
       diag.warn('applyStructure failed: ' + err.message);
@@ -143,6 +156,8 @@ export function createHeritagePanel(deps = {}) {
       .map(bucket => ({ ...bucket, people: bucket.people.filter(p => matches(p.name, p.note || '')) }))
       .filter(bucket => bucket.people.length);
     const weaverPeople = WEAVERS.filter(p => matches(p.name, p.note || ''));
+    const masters = MASTERS.filter(m => matches(m.name, m.movement, m.years, m.backstory,
+      ...m.patterns.map(id => `${PRESET_BY_ID.get(id)?.name || ''} ${PRESET_BY_ID.get(id)?.category || ''}`)));
     const tools = TOOLS.filter(t => matches(t.name, t.kind));
     const traditions = REGIONAL_TRADITIONS.filter(t => matches(t.name, t.region));
 
@@ -151,6 +166,7 @@ export function createHeritagePanel(deps = {}) {
       <p class="kx-herit__lead">Woven cloth and a punchcard are the same rectangle — every structure below drops straight onto the card.</p>`);
     if (structures.length) blocks.push(sectionHeading('Weave structures', 'draft → card') + `<div class="kx-list">${structures.join('')}</div>`);
     if (looms.length) blocks.push(sectionHeading('Loom taxonomy', 'what can weave what') + `<div class="kx-list">${looms.join('')}</div>`);
+    if (masters.length) blocks.push(sectionHeading('Masters of cloth', `${masters.length} biographies · import a signature`) + `<div class="kx-masters">${masters.map(masterCard).join('')}</div>`);
     if (designerEras.length) blocks.push(sectionHeading('Designers', 'by era') + designerEras.map(eraBlock).join(''));
     if (weaverPeople.length) blocks.push(sectionHeading('Weavers & houses') + `<div class="kx-list">${weaverPeople.map(personRow).join('')}</div>`);
     if (tools.length) blocks.push(sectionHeading('Tools & techniques') + chipBlock(tools.map(t => t.name)));
@@ -204,6 +220,59 @@ export function createHeritagePanel(deps = {}) {
       </div></div>`;
   }
 
+  /** One master: a keyboard-accessible drawer with a biography and a signature shelf. */
+  function masterCard(m) {
+    const pats = masterPatterns(m.name);
+    const tiles = pats.map(p => `<figure class="kx-mtile">
+        <canvas width="96" height="64" data-thumb="${esc(p.presetId)}" role="img" aria-label="${esc(p.name)} preview"></canvas>
+        <figcaption><span class="kx-mtile__name">${esc(p.name)}</span>
+          <button type="button" class="kx-btn kx-btn--primary kx-mtile__imp" data-preset="${esc(p.presetId)}" data-name="${esc(p.name)}" title="Load ${esc(p.name)} onto the card">Import</button>
+        </figcaption></figure>`).join('');
+    const shelf = applyStructure
+      ? `<div class="kx-mshelf" data-shelf>${tiles || '<p class="kx-empty">No signatures catalogued yet.</p>'}</div>`
+      : '';
+    return `<details class="kx-master">
+      <summary data-master="${esc(m.name)}">
+        <span class="kx-master__who">${esc(m.name)}</span>
+        <span class="kx-master__meta">${esc(m.role)} · ${esc(m.years)} · ${esc(m.movement)}</span>
+      </summary>
+      <p class="kx-master__bio">${esc(m.backstory)}</p>${shelf}</details>`;
+  }
+
+  /**
+   * Paint a master card's blank thumbnails once, on first open. Drawing only the
+   * expanded card (not all ~120 canvases up front) is what keeps the dock performant.
+   */
+  function drawMasterThumbs(box) {
+    if (!box || box.dataset.drawn) return;
+    box.dataset.drawn = '1';
+    if (typeof box.querySelectorAll !== 'function') return;
+    for (const cv of box.querySelectorAll('canvas[data-thumb]')) {
+      drawThumb(cv, PRESET_BY_ID.get(cv.getAttribute('data-thumb')));
+    }
+  }
+
+  /** Render one generative preset into a tiny card-face canvas (decorative, guarded). */
+  function drawThumb(canvas, preset) {
+    if (!canvas || !preset || typeof preset.generate !== 'function') return;
+    try {
+      const ctx = canvas.getContext('2d');
+      const cols = 24, rows = 16;
+      const matrix = preset.generate(rows, cols, preset.seed) || [];
+      ctx.fillStyle = '#0b0f19';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const cw = canvas.width / cols, ch = canvas.height / rows;
+      const blanks = new Set(['K', 'P', 'EMPTY', 0, undefined, null, '']);
+      ctx.fillStyle = preset.mode === 'lace' ? '#7dd3fc' : '#f0a9bf';
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const v = matrix[r] ? matrix[r][c] : undefined;
+          if (!blanks.has(v)) ctx.fillRect(c * cw, (rows - 1 - r) * ch, Math.ceil(cw), Math.ceil(ch));
+        }
+      }
+    } catch (_) { /* decorative only; a bad thumbnail must never break the dock */ }
+  }
+
   function chipBlock(items) {
     if (!items.length) return '';
     return `<div class="kx-herit__chips">${items.map(i => `<span class="kx-chip">${esc(i)}</span>`).join('')}</div>`;
@@ -231,6 +300,20 @@ function injectStyles() {
   #kx-heritage .kx-herit__era{margin:9px 2px 4px;font-size:11px;color:var(--accent);font-weight:700;letter-spacing:.3px}
   #kx-heritage .kx-herit__chips{display:flex;flex-wrap:wrap;gap:5px;margin:2px 0 6px}
   #kx-heritage .kx-list{display:flex;flex-direction:column;gap:5px;margin-bottom:4px}
+  #kx-heritage .kx-masters{display:flex;flex-direction:column;gap:6px;margin-bottom:6px}
+  #kx-heritage .kx-master{border:1px solid var(--panel-hairline);border-radius:12px;background:rgba(2,6,23,.35);overflow:hidden}
+  #kx-heritage .kx-master>summary{cursor:pointer;list-style:none;padding:8px 10px;display:flex;flex-direction:column;gap:1px}
+  #kx-heritage .kx-master>summary::-webkit-details-marker{display:none}
+  #kx-heritage .kx-master>summary:hover{background:var(--btn-bg)}
+  #kx-heritage .kx-master__who{font-weight:700;font-size:13px}
+  #kx-heritage .kx-master__meta{font-size:10.5px;color:var(--panel-muted);text-transform:uppercase;letter-spacing:.4px}
+  #kx-heritage .kx-master__bio{margin:0;padding:2px 11px 9px;font-size:12px;line-height:1.5;color:var(--panel-text)}
+  #kx-heritage .kx-mshelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;padding:4px 11px 11px}
+  #kx-heritage .kx-mtile{margin:0;display:flex;flex-direction:column;gap:3px}
+  #kx-heritage .kx-mtile canvas{width:100%;height:auto;border:1px solid var(--panel-hairline);border-radius:7px;background:#0b0f19;image-rendering:pixelated}
+  #kx-heritage .kx-mtile figcaption{display:flex;flex-direction:column;gap:3px}
+  #kx-heritage .kx-mtile__name{font-size:10px;color:var(--panel-muted);line-height:1.25;max-height:2.5em;overflow:hidden}
+  #kx-heritage .kx-mtile__imp{font-size:10.5px;padding:2px 8px;align-self:flex-start}
   @media (max-width:640px){ #kx-heritage{width:min(92vw,340px)} }
   `;
   try {

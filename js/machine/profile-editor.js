@@ -26,6 +26,9 @@ import {
   MACHINE_PROFILES
 } from './profiles.js';
 import { openFormDialog } from '../ui/dialogs.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('machine/profile-editor');
 
 const CARRIAGE_RULE_TYPES = [
   { value: 'brother_separated', label: 'Brother — separate L & K carriages' },
@@ -56,6 +59,7 @@ function blankProfile() {
     bedLengthMm: 900,
     maxFloatNeedles: 9,
     maxTuckLoops: 6,
+    maxColors: 2,
     carriageRuleType: 'brother_separated',
     cardReadingOffsetRows: 7
   };
@@ -84,6 +88,7 @@ function toFormValues(p) {
     bedLengthMm: p.bedLengthMm,
     maxFloatNeedles: p.maxFloatNeedles,
     maxTuckLoops: p.maxTuckLoops,
+    maxColors: p.maxColors ?? 2,
     carriageRuleType: p.carriageRules?.type || 'brother_separated',
     cardReadingOffsetRows: p.carriageRules?.cardReadingOffsetRows ?? 0
   };
@@ -125,6 +130,7 @@ function formFields({ idLocked } = {}) {
     num('cardWidth', 'Card width (mm)', { min: 10, max: 1000, step: 0.1 }),
     num('maxFloatNeedles', 'Max float (needles)', { min: 1, max: 200, hint: 'Advisor flags longer stranded runs.' }),
     num('maxTuckLoops', 'Max held loops (tuck)', { min: 1, max: 200 }),
+    num('maxColors', 'Yarn feeders (max colours)', { min: 1, max: 16, hint: 'Automatic colour positions: 2 for a punchcard reader, up to 6 for an electronic colour changer. A chart with more colours cannot be auto-patterned.' }),
     { name: 'carriageRuleType', label: 'Carriage model', type: 'select', options: CARRIAGE_RULE_TYPES },
     num('cardReadingOffsetRows', 'Card reading offset (rows)', { min: 0, max: 40, hint: 'Brother reads 7 rows below the needles.' })
   ];
@@ -156,6 +162,7 @@ function fromFormValues(v) {
     bedLengthMm: clean(v.bedLengthMm),
     maxFloatNeedles: clean(v.maxFloatNeedles),
     maxTuckLoops: clean(v.maxTuckLoops),
+    maxColors: clean(v.maxColors),
     cardColor: '#f8fafc',
     inkColor: '#0f172a',
     carriageRules: {
@@ -185,6 +192,7 @@ function fromFormValues(v) {
 export function openProfileEditor({ profile = null, onApplied, notifier } = {}) {
   const editing = profile && profile.id && MACHINE_PROFILES[profile.id];
   if (profile && profile.id && isBuiltInProfile(profile.id)) {
+    log.warn('refused to open the editor on a built-in machine', { id: profile.id });
     notifier?.error?.('Built-in machines cannot be edited.', {
       details: ['Duplicate it under a new id if you want to tweak one.']
     });
@@ -206,9 +214,11 @@ export function openProfileEditor({ profile = null, onApplied, notifier } = {}) 
       const candidate = editing ? { ...fromFormValues({ ...v, id: profile.id }), id: profile.id } : fromFormValues(v);
       const result = registerProfile(candidate);
       if (!result.ok) {
+        log.warn('custom profile failed validation', { id: candidate?.id, error: result.error });
         return { ok: false, message: result.error || 'That profile could not be validated.' };
       }
-      saveCustomProfiles();
+      const persisted = saveCustomProfiles();
+      if (!persisted) log.error('profile registered but could not be persisted to storage', { id: result.profile.id });
       onApplied?.(result.profile.id);
       return { ok: true, message: editing ? 'Machine updated.' : 'Custom machine added.' };
     }
@@ -223,8 +233,8 @@ export function openProfileEditor({ profile = null, onApplied, notifier } = {}) 
  */
 export function deleteCustomProfile(id, { notifier } = {}) {
   const result = unregisterProfile(id);
-  if (result.ok) saveCustomProfiles();
-  else notifier?.warn?.(result.error || 'That machine could not be removed.');
+  if (result.ok) { saveCustomProfiles(); log.info(`deleted custom machine "${id}"`); }
+  else { log.warn('refused to delete a machine', { id, error: result.error }); notifier?.warn?.(result.error || 'That machine could not be removed.'); }
   return result;
 }
 

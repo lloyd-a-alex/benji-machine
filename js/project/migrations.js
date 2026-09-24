@@ -17,6 +17,10 @@
  * @module project/migrations
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('project/migrations');
+
 /** The newest schema this file knows how to produce. */
 export const LATEST_VERSION = 3;
 
@@ -40,10 +44,11 @@ export function migrate(plain) {
   let guard = 0;
   while (version < LATEST_VERSION && guard++ < 10) {
     const step = STEPS[version];
-    if (!step) break; // unknown step: stop rather than guess
+    if (!step) { log.warn(`no migration step for stored version ${version} — stopping short of v${LATEST_VERSION}`, { version }); break; }
     obj = step(obj) || obj;
     version = Number.isFinite(obj.version) ? obj.version : version + 1;
   }
+  if (version < LATEST_VERSION) log.warn('a project could not be migrated to the latest schema', { fromVersion: obj.version, version, latest: LATEST_VERSION });
   obj.version = LATEST_VERSION;
   return obj;
 }
@@ -95,5 +100,5 @@ function migrateV2toV3(p) {
 /** A cheap structural clone that survives missing crypto/structuredClone in tests. */
 function clone(obj) {
   try { return JSON.parse(JSON.stringify(obj)); }
-  catch (_) { return Object.assign({}, obj); }
+  catch (err) { log.warn('structural clone failed during migration — falling back to a shallow copy (nested data may be shared)', { error: err?.message }); return Object.assign({}, obj); }
 }

@@ -11,9 +11,9 @@ import assert from 'node:assert/strict';
 
 import {
   MACHINE_KNOWLEDGE, knowledgeFor, capabilitiesFor, techniqueSupported,
-  TECHNIQUES, PHILOSOPHIES, phil
+  TECHNIQUES, PHILOSOPHIES, phil, universalEnvelope
 } from '../js/machine/machine-knowledge.js';
-import { MACHINE_PROFILES } from '../js/machine/profiles.js';
+import { MACHINE_PROFILES, profileLimits } from '../js/machine/profiles.js';
 
 // The four techniques KNITCAT actually compiles guidance for — every machine must
 // speak to each of them so the advisor never has to fall back to silence.
@@ -99,6 +99,16 @@ test('an unknown profile still yields a shape-complete object the UI can read bl
 
 test('knowledgeFor(null) degrades safely rather than throwing', () => {
   assert.equal(knowledgeFor(null).brand, 'Unknown');
+});
+
+test('universalEnvelope takes the strictest colour gate across the whole fleet', () => {
+  // A card that must knit on EVERY machine may only assume the fewest feeders any one
+  // has (the punchcard two), or the "portable" badge would lie about a colour changer.
+  const env = universalEnvelope(Object.values(MACHINE_PROFILES));
+  assert.equal(env.maxColors, 2, 'the strictest bed is a two-feeder punchcard');
+  assert.ok(env.maxColors <= Math.min(...Object.values(MACHINE_PROFILES).map(p => profileLimits(p).maxColors)));
+  // A single-profile envelope just mirrors that profile.
+  assert.equal(universalEnvelope([MACHINE_PROFILES.brother_maxi_60]).maxColors, 6);
 });
 
 test('every advisory philosophy is a [name, gloss] pair and phil() formats it', () => {

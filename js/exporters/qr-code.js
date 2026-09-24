@@ -22,6 +22,10 @@
  * divided by each block's Reed–Solomon generator — a valid code has zero remainder.
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('exporters/qr-code');
+
 export const ECC_LEVELS = ['L', 'M', 'Q', 'H'];
 
 // 2-bit format indicators for the four levels (ISO 18004 §6.3.3).
@@ -464,20 +468,22 @@ export function penaltyScore(modules, size) {
  */
 export function encodeQr(text, options = {}) {
   const level = ECC_LEVELS.includes(options.eccLevel) ? options.eccLevel : 'L';
+  if (options.eccLevel != null && !ECC_LEVELS.includes(options.eccLevel)) {
+    log.warn(`unknown ECC level "${options.eccLevel}" — falling back to L`, { requested: options.eccLevel });
+  }
   const bytes = utf8Bytes(text);
   const version = pickVersion(bytes.length, level);
   if (!version) {
-    return {
-      ok: false,
-      bytes: bytes.length,
-      level,
-      error:
-        `That is ${bytes.length} bytes, past the ${maxByteCapacity(level)}-byte ceiling of a QR code at level ${level}. ` +
-        'Copy the link text instead, or save a .kcard file.'
-    };
+    const error =
+      `That is ${bytes.length} bytes, past the ${maxByteCapacity(level)}-byte ceiling of a QR code at level ${level}. ` +
+      'Copy the link text instead, or save a .kcard file.';
+    log.error(error, { bytes: bytes.length, level });
+    return { ok: false, bytes: bytes.length, level, error };
   }
   if (options.minVersion && options.minVersion > version) {
-    return { ok: false, error: `Needs at least version ${options.minVersion}, larger than the ${version} this payload fits.` };
+    const error = `Needs at least version ${options.minVersion}, larger than the ${version} this payload fits.`;
+    log.warn(error, { minVersion: options.minVersion, version });
+    return { ok: false, error };
   }
 
   const codewords = buildCodewords(bytes, version, level);
@@ -545,14 +551,15 @@ export function qrToSvg(qr, options = {}) {
 
 /** Paint into a 2D canvas — used for the on-screen code and the camera self-test. */
 export function drawQrToCanvas(canvas, qr, options = {}) {
-  if (!canvas || !canvas.getContext) return false;
+  if (!canvas || !canvas.getContext) { log.warn('drawQrToCanvas given a canvas with no 2D context', { hasCanvas: !!canvas }); return false; }
+  if (!qr || !qr.modules) { log.warn('drawQrToCanvas given a QR without modules'); return false; }
   const scale = options.scale ?? 6;
   const margin = options.margin ?? 4;
   const edge = (qr.size + margin * 2) * scale;
   canvas.width = edge;
   canvas.height = edge;
   const ctx = canvas.getContext('2d');
-  if (!ctx) return false;
+  if (!ctx) { log.warn('getContext("2d") returned null — canvas may be tainted or exhausted'); return false; }
   ctx.fillStyle = options.light || '#ffffff';
   ctx.fillRect(0, 0, edge, edge);
   ctx.fillStyle = options.dark || '#0b1020';

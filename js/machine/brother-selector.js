@@ -20,10 +20,31 @@
  * 4. Needle Butt Gates & Channels:
  *    Hooks on the 8 bars pull selected needle butts down, disengaging them
  *    from the carriage cam channel or elevating them into working position.
+ * 5. The Single-Carriage Bay:
+ *    A punchcard bed is ONE channel: only a single carriage can be seated at a
+ *    time, and that carriage is what pulls the timing belt which advances the
+ *    card-reading drum. Mounting a second carriage is physically impossible, so
+ *    the bay ejects the old one as the new one drops on. When the machine is
+ *    rigged for lace the bay is locked to the Lace carriage — the knit and
+ *    garter carriages cannot be connected while the lace setup is in place.
  */
+
+import { logger } from '../core/logging.js';
+
+const log = logger('machine/brother-selector');
 
 export class BrotherSelectorMechanism {
   constructor(totalNeedles = 200, repeatLength = 24, numSelectorBars = 8) {
+    // A non-positive bed/repeat/bar count silently poisons every downstream modulo and
+    // division with NaN/Infinity, so flag it loudly and fall back to the reference geometry.
+    if (!(totalNeedles > 0) || !(repeatLength > 0) || !(numSelectorBars > 0)) {
+      log.error('BrotherSelectorMechanism built with non-positive geometry, falling back to defaults', {
+        totalNeedles, repeatLength, numSelectorBars,
+      });
+      if (!(totalNeedles > 0)) totalNeedles = 200;
+      if (!(repeatLength > 0)) repeatLength = 24;
+      if (!(numSelectorBars > 0)) numSelectorBars = 8;
+    }
     this.totalNeedles = totalNeedles;
     this.repeatLength = repeatLength;
     this.numSelectorBars = numSelectorBars;
@@ -44,6 +65,19 @@ export class BrotherSelectorMechanism {
     // 'E_POS' = Fully extended (holding/lace)
     this.needleStates = new Array(totalNeedles).fill('B_POS');
 
+    // ── The carriage bay: the physical single-carriage constraint ──────────
+    // One bed, one channel, one carriage. Whichever carriage is `mounted` is the
+    // one riding the bed and hauling the belt that turns the card drum, so it is
+    // also the only one that can index the punchcard. `laceMode` models a machine
+    // rigged for lace, where that one carriage is fixed to the Lace carriage and
+    // no other may be seated. This is not a UI nicety — a real bed cannot carry
+    // two carriages, and pretending it can lets the simulator draw an impossible
+    // rig and mis-index the card.
+    this.carriageTypes = ['lace', 'knit', 'garter'];
+    this.mountedCarriage = 'lace';
+    this.beltDriven = true; // the mounted carriage is coupled to the card reader
+    this.laceMode = false; // true = bed locked to the Lace carriage
+
     // Bed needle labels: Center 0, Left 1..100 (L1..L100), Right 1..100 (R1..R100)
     this.needleLabels = [];
     for (let i = 0; i < totalNeedles; i++) {
@@ -62,6 +96,11 @@ export class BrotherSelectorMechanism {
    * Sets current punchcard row pattern bits (24 bits)
    */
   setPunchcardRow(bits24) {
+    if (bits24 && (!Array.isArray(bits24) || bits24.length < this.repeatLength)) {
+      log.warn('setPunchcardRow given fewer bits than the repeat length — missing tracks read as unpunched', {
+        given: bits24?.length, repeatLength: this.repeatLength,
+      });
+    }
     for (let i = 0; i < this.repeatLength; i++) {
       this.punchcardPins[i] = Boolean(bits24 && bits24[i]);
     }
@@ -90,6 +129,77 @@ export class BrotherSelectorMechanism {
       this.carriageDirection = this.carriagePosition > prevPos ? 1 : -1;
     }
     this.recalculateKinematics();
+  }
+
+  /**
+   * Whether a carriage may be seated right now, and the physical reason it may not.
+   * @param {string} type 'lace' | 'knit' | 'garter'
+   */
+  canMountCarriage(type) {
+    if (!this.carriageTypes.includes(type)) {
+      return { ok: false, reason: `There is no ${type} carriage for this bed.` };
+    }
+    if (this.laceMode && type !== 'lace') {
+      return { ok: false, reason: 'The machine is rigged for lace — only the Lace carriage can be connected.' };
+    }
+    return { ok: true, reason: '' };
+  }
+
+  /**
+   * Seat exactly one carriage, ejecting whatever was on the bed before it.
+   *
+   * The bay cannot hold two carriages, so mounting a new one always displaces the
+   * old one, and the timing belt re-couples to the carriage now riding the bed —
+   * the card drum is driven off the mounted carriage, never off a parked one.
+   *
+   * @param {string} type 'lace' | 'knit' | 'garter'
+   * @param {{force?: boolean}} [options] force bypasses the lace-mode lock
+   * @returns {{ok:boolean, blocked:boolean, mounted:string, ejected:string|null, reason:string}}
+   */
+  mountCarriage(type, { force = false } = {}) {
+    const verdict = force ? { ok: true, reason: '' } : this.canMountCarriage(type);
+    if (!verdict.ok) {
+      log.warn('carriage mounting blocked by the single-carriage / lace-mode rule', {
+        requested: type, mounted: this.mountedCarriage, laceMode: this.laceMode, reason: verdict.reason,
+      });
+      return { ok: false, blocked: true, mounted: this.mountedCarriage, ejected: null, reason: verdict.reason };
+    }
+    if (!this.carriageTypes.includes(type)) return { ok: false, blocked: true, mounted: this.mountedCarriage, ejected: null, reason: verdict.reason };
+    const ejected = this.mountedCarriage === type ? null : this.mountedCarriage;
+    this.mountedCarriage = type;
+    this.beltDriven = true;
+    this.recalculateKinematics();
+    return { ok: true, blocked: false, mounted: type, ejected, reason: '' };
+  }
+
+  /**
+   * Rig the machine for lace (or take it off lace).
+   *
+   * Engaging lace mode locks the bed to the Lace carriage: the knit and garter
+   * carriages can no longer be connected, and if another carriage was riding the
+   * bed it is ejected so the Lace carriage takes over. Disengaging leaves whichever
+   * carriage is currently mounted in place; the operator then swaps by hand.
+   *
+   * @param {boolean} on
+   */
+  setLaceMode(on) {
+    this.laceMode = Boolean(on);
+    if (this.laceMode && this.mountedCarriage !== 'lace') {
+      return this.mountCarriage('lace', { force: true });
+    }
+    this.recalculateKinematics();
+    return { ok: true, blocked: false, mounted: this.mountedCarriage, ejected: null, reason: '' };
+  }
+
+  /** A read-only snapshot of the bay for the UI and the simulator overlay. */
+  getCarriageState() {
+    return {
+      mounted: this.mountedCarriage,
+      laceMode: this.laceMode,
+      beltDriven: Boolean(this.mountedCarriage) && this.beltDriven,
+      available: [...this.carriageTypes],
+      parked: this.carriageTypes.filter(t => t !== this.mountedCarriage)
+    };
   }
 
   /**
@@ -147,6 +257,12 @@ export class BrotherSelectorMechanism {
     }
 
     // 2. Evaluate hook engagement for each of the 200 needles
+    // The state a *selected* needle is raised into depends on which carriage is on
+    // the bed. A Lace carriage pushes punched needles all the way out to holding
+    // position ('E_POS') ready to receive a transferred loop; a Knit (or Garter)
+    // carriage only raises them into the working cam channel ('D_POS') to catch
+    // yarn. Unselected needles rest at 'B_POS' either way.
+    const selectedState = this.mountedCarriage === 'lace' ? 'E_POS' : 'D_POS';
     for (let n = 0; n < this.totalNeedles; n++) {
       const assignedBar = n % this.numSelectorBars;
       const assignedTrack = n % this.repeatLength;
@@ -157,15 +273,16 @@ export class BrotherSelectorMechanism {
       if (distFromCarriage <= 12) {
         // Active carriage cam interaction
         if (isSelectedByCard) {
-          // Needle selected: butt raised into carriage cam channel (D position)
-          this.needleStates[n] = 'D_POS';
+          // Needle selected: raised by the mounted carriage (holding for lace,
+          // working cam channel for a knit carriage).
+          this.needleStates[n] = selectedState;
         } else {
           // Unselected: pulled down by hook bar (B position)
           this.needleStates[n] = 'B_POS';
         }
       } else {
         // Outside carriage: resting position
-        this.needleStates[n] = isSelectedByCard ? 'D_POS' : 'B_POS';
+        this.needleStates[n] = isSelectedByCard ? selectedState : 'B_POS';
       }
     }
   }
@@ -179,7 +296,7 @@ export class BrotherSelectorMechanism {
 
     let selectedCount = 0;
     for (let n = 0; n < this.totalNeedles; n++) {
-      if (this.needleStates[n] === 'D_POS') selectedCount++;
+      if (this.needleStates[n] === 'D_POS' || this.needleStates[n] === 'E_POS') selectedCount++;
     }
 
     return {
@@ -191,7 +308,11 @@ export class BrotherSelectorMechanism {
       totalWorkingNeedles: selectedCount,
       totalPulledDown: this.totalNeedles - selectedCount,
       pinStates: [...this.punchcardPins],
-      barDisplacements: Array.from(this.barDisplacements)
+      barDisplacements: Array.from(this.barDisplacements),
+      // The bay is a physical constraint, so it belongs in the readout: which one
+      // carriage is on the bed, whether it is driving the belt, and whether the
+      // machine is locked into the lace setup.
+      carriage: this.getCarriageState()
     };
   }
 }

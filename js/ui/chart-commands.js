@@ -36,7 +36,7 @@
  * @module ui/chart-commands
  */
 
-import { blankValue } from '../edit/modes.js';
+import { blankValue, isPunched } from '../edit/modes.js';
 import { MACHINE_PROFILES, profileLimits } from '../machine/profiles.js';
 import {
   insertRows,
@@ -61,12 +61,40 @@ import {
   resampleMatrix,
   regaugeMatrix,
   interleaveRows,
+  replaceValue,
   parseCellAddress,
   formatCellAddress,
   matrixInfo
 } from '../edit/chart-ops.js';
 import { rectFromKeys } from '../edit/select-ops.js';
+import { symbolLegend, stitchInfo, matrixBalance } from '../edit/stitch-info.js';
+import { findUnpairedEyelets, pairEyelets } from '../edit/lace-intel.js';
+import {
+  cropToContent,
+  tileMatrix,
+  padToSize,
+  addBorder,
+  detectRepeat,
+  symmetryReport,
+  makeSymmetric,
+  despeckle,
+  fillSpecks,
+  halfDrop,
+  densityStats
+} from '../edit/pattern-intel.js';
+import {
+  motifSummary,
+  dilateContent,
+  erodeContent,
+  outlineContent,
+  fillEnclosedHoles,
+  classifySymmetry,
+  kaleidoscope
+} from '../edit/motif-intel.js';
 import { openFormDialog, safePrompt, safeConfirm, promptInteger } from './dialogs.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/chart-commands');
 
 /** Cell-count guard for destructive row/column deletes above this size. */
 const DESTRUCTIVE_CONFIRM_CELLS = 64;
@@ -94,7 +122,7 @@ export const CHART_COMMAND_IDS = [
   'chart.region.flipH', 'chart.region.flipV', 'chart.region.invert',
   'chart.region.convert.lace', 'chart.region.convert.fair_isle', 'chart.region.convert.tuck', 'chart.region.convert.slip',
   'chart.matrix.resample', 'chart.matrix.regauge', 'chart.matrix.interleave', 'chart.soften',
-  'chart.smudge', 'chart.jumpTo', 'chart.info'
+  'chart.smudge', 'chart.replace', 'chart.jumpTo', 'chart.info'
 ];
 
 /** Selection modification, alignment and distribution. */
@@ -108,8 +136,39 @@ export const SELECT_COMMAND_IDS = [
   'select.grow', 'select.shrink', 'select.wand', 'select.lasso', 'select.bezier', 'select.spline',
   'select.snap'
 ];
+/**
+ * Pattern Intelligence — analyse and normalise a design as a whole: crop the empty
+ * bed, find the true repeat, complete a mirror, clean scan speckle, frame, brick and
+ * measure density. Backs `js/edit/pattern-intel.js`; the read-only verbs report, the
+ * rest commit through the same undoable `setMatrix` path as every chart command.
+ */
+export const PATTERN_COMMAND_IDS = [
+  'pattern.crop', 'pattern.tile', 'pattern.pad', 'pattern.border',
+  'pattern.detectRepeat', 'pattern.symmetry', 'pattern.density',
+  'pattern.symmetric.h', 'pattern.symmetric.v',
+  'pattern.despeckle', 'pattern.fillSpecks', 'pattern.halfDrop'
+];
+/**
+ * Motif & Shape Intelligence — see the figures inside the card and edit them by shape:
+ * count/locate motifs, thicken or crisp the worked area, keep only an outline, punch
+ * enclosed holes closed, classify the symmetry and build a kaleidoscope from a corner.
+ * Backs `js/edit/motif-intel.js`; fused onto the same undoable `setMatrix` path.
+ */
+export const MOTIF_COMMAND_IDS = [
+  'motif.summary', 'motif.dilate', 'motif.erode', 'motif.outline',
+  'motif.fillHoles', 'motif.symmetry', 'motif.kaleidoscope'
+];
+/**
+ * Lace Intelligence — the structural fix-ups a straight-bed lace card needs and had
+ * no way to get without clicking needle by needle: find the lone yarn-overs the
+ * compiler would silently transfer, write their companion decreases in so the chart
+ * matches the fabric (and the row keeps its stitch count), and report the net stitch
+ * balance. Backs `js/edit/lace-intel.js`; the write verb commits on the same undoable
+ * `setMatrix` path as every other command here.
+ */
+export const LACE_COMMAND_IDS = ['lace.unpaired', 'lace.pair', 'lace.balance'];
 /** Every id this module answers, for tests and for the "did that menu item do anything?" question. */
-export const COMMAND_IDS = [...CHART_COMMAND_IDS, ...SELECT_COMMAND_IDS];
+export const COMMAND_IDS = [...CHART_COMMAND_IDS, ...SELECT_COMMAND_IDS, ...PATTERN_COMMAND_IDS, ...MOTIF_COMMAND_IDS, ...LACE_COMMAND_IDS];
 
 /**
  * Turn a chart-ops result into a toast-worthy sentence. The ops already carry
@@ -172,15 +231,26 @@ export function runChartCommand(app, id, ctx = {}) {
     ed.setMatrix(next);
   };
 
+  /** How many worked cells a matrix holds — the yardstick for an accidental wipe. */
+  const countWorked = matrix => {
+    let n = 0;
+    for (const row of matrix || []) for (const v of row || []) if (isPunched(mode, v)) n++;
+    return n;
+  };
+
   /**
-   * Run a chart-ops function that returns `{ok, matrix, warnings, oversize}` and
-   * turn its result into exactly one honest toast.
+   * Run a matrix op that returns `{ok, matrix, warnings, oversize, …}` and turn its
+   * result into exactly one honest toast. `describe(result)` lets a caller phrase the
+   * precise outcome ("thickened by 12 stitches") instead of a bare label; the generic
+   * empty-card guard catches any write — old chart verb or new intelligence verb —
+   * that would blank a card that previously held work, which is never a green tick.
    */
-  const runOp = (op, label, { expectSize = null } = {}) => {
+  const runOp = (op, label, { expectSize = null, describe = null } = {}) => {
     let result;
     try {
       result = op();
     } catch (err) {
+      log.logError(`chart op "${label}" threw`, err);
       warn(`That could not be done: ${err?.message || err}.`, { details: 'Your card is unchanged.' });
       return false;
     }
@@ -192,17 +262,21 @@ export function runChartCommand(app, id, ctx = {}) {
       });
       return false;
     }
+    const before = countWorked(ed.matrix);
     if (result.matrix) apply(result.matrix, label);
+    if (result.matrix && before > 0 && countWorked(result.matrix) === 0) {
+      warn(`${label} emptied the card.`, { details: 'Undo (Ctrl+Z) brings the design back.' });
+      return true;
+    }
     const warning = (result.warnings && result.warnings[0]) || null;
-    const detail = expectSize ? `${label} \u00b7 card is now ${expectSize.rows}\u00d7${expectSize.cols}.` : `${label}.`;
-    if (warning) say(`${detail} ${warning}`, { kind: 'info', duration: 9000 });
-    else ok(detail);
+    const base = describe
+      ? describe(result)
+      : expectSize
+        ? `${label} \u00b7 card is now ${expectSize.rows}\u00d7${expectSize.cols}.`
+        : `${label}.`;
+    if (warning) say(`${base} ${warning}`, { kind: 'info', duration: 9000 });
+    else ok(base);
     return true;
-  };
-
-  const cellCount = matrix => {
-    const info = matrixInfo(matrix || []);
-    return info.rows * info.cols;
   };
 
   const askCount = (title, current, max) => {
@@ -537,6 +611,73 @@ export function runChartCommand(app, id, ctx = {}) {
     ok(`Jumped to ${formatCellAddress(parsed.r, parsed.c).label}.`);
   };
 
+  /**
+   * Find and replace a symbol across the whole card or just the selection.
+   * The option list is the live symbol vocabulary for the current mode — the
+   * Japanese lace glyphs in a lace card, punched/blank in a colourwork one — so a
+   * knitter picks two names from a dropdown instead of remembering whether a
+   * right-leaning transfer is `TR` or `t`. Every result is one undoable write.
+   */
+  const replaceDialog = () => {
+    const isLace = mode === 'lace';
+    const symbolOptions = isLace
+      ? symbolLegend().map(item => ({ value: item.value, label: `${item.value} \u2014 ${item.name}` }))
+      : [
+          { value: '1', label: 'Punched \u00b7 yarn B' },
+          { value: '0', label: 'Blank \u00b7 yarn A' }
+        ];
+    const hasSelection = Boolean(ed.selectionKeys && ed.selectionKeys.size);
+    const labelFor = v => {
+      if (!isLace) return Number(v) === 1 ? 'punched' : 'blank';
+      const info = stitchInfo(v);
+      return info ? info.name : String(v);
+    };
+    openFormDialog({
+      id: 'replace',
+      title: 'Find and replace a symbol',
+      description: 'Turn every needle working one symbol into another \u2014 across the whole card, or only inside your selection. The undoable fix-up for a repeat drawn with the wrong-leaning transfer.',
+      notifier: app.notifications,
+      fields: [
+        {
+          name: 'scope',
+          label: 'Where',
+          type: 'radio',
+          options: [
+            { value: 'card', label: 'The whole card' },
+            { value: 'selection', label: hasSelection ? 'Only the selection' : 'Only the selection (nothing selected)' }
+          ],
+          value: 'card'
+        },
+        { name: 'from', label: 'Find this symbol', type: 'select', options: symbolOptions, value: symbolOptions[0].value },
+        { name: 'to', label: 'Replace with', type: 'select', options: symbolOptions, value: symbolOptions[Math.min(2, symbolOptions.length - 1)].value }
+      ],
+      submitLabel: 'Replace all',
+      onSubmit: values => {
+        const coerce = v => (isLace ? v : Number(v));
+        const find = coerce(values.from);
+        const replace = coerce(values.to);
+        if (find === replace) return { ok: false, message: 'Pick two different symbols \u2014 there would be nothing to change.' };
+        let within = null;
+        if (values.scope === 'selection') {
+          if (!hasSelection) return { ok: false, message: 'Nothing is selected. Draw a marquee first, or choose \u201cthe whole card.\u201d' };
+          within = ed.selectionKeys;
+        }
+        const result = replaceValue(ed.matrix, find, replace, { mode, within });
+        if (!result.ok) return { ok: false, message: result.error };
+        if (!result.matched) {
+          return { ok: false, message: `No cell ${within ? 'in the selection ' : 'on the card '}is marked \u201c${labelFor(find)}.\u201d` };
+        }
+        apply(result.matrix, `Replace ${labelFor(find)} \u2192 ${labelFor(replace)}`);
+        return {
+          ok: true,
+          kind: 'success',
+          message: `Replaced ${result.changed} cell${result.changed === 1 ? '' : 's'} ${within ? 'in the selection' : 'on the card'} \u2014 ${labelFor(find)} \u2192 ${labelFor(replace)}.`,
+          details: 'Undo (Ctrl+Z) brings the originals back.'
+        };
+      }
+    });
+  };
+
   const chartInfo = () => {
     const matrix = ed.matrix;
     const info = matrixInfo(matrix);
@@ -625,6 +766,81 @@ export function runChartCommand(app, id, ctx = {}) {
     ok(`Selected ${result ?? 0} cell(s) marked ${label}.`, { details: 'Ctrl+C captures them to the clip shelf.' });
   };
 
+  /**
+   * Pair every unpaired eyelet, choosing the lean and the scope. Only commits a
+   * write when there is actually something to add, so an already-correct card never
+   * pollutes the undo history with a no-op. The safety lives in `pairEyelets` —
+   * a decrease is never written onto a worked needle — so this is just the prompt
+   * and the honest report of what moved.
+   */
+  const lacePairDialog = () => {
+    if (mode !== 'lace') {
+      warn('Eyelets and transfers only exist in a lace chart \u2014 switch to Lace mode first.', {
+        details: `This card is in ${MODE_LABELS[mode] || mode} mode.`
+      });
+      return;
+    }
+    const hasSelection = Boolean(ed.selectionKeys && ed.selectionKeys.size);
+    openFormDialog({
+      id: 'lacepair',
+      title: 'Pair the lone eyelets',
+      description: 'Writes the companion decrease beside every yarn-over that has none \u2014 the transfer the compiler was going to invent anyway, now drawn in the open so each row keeps its stitch count. Never overwrites a worked needle.',
+      notifier: app.notifications,
+      fields: [
+        {
+          name: 'scope',
+          label: 'Where',
+          type: 'radio',
+          options: [
+            { value: 'card', label: 'The whole card' },
+            { value: 'selection', label: hasSelection ? 'Only the selection' : 'Only the selection (nothing selected)' }
+          ],
+          value: 'card'
+        },
+        {
+          name: 'lean',
+          label: 'Which side holds the decrease',
+          type: 'radio',
+          options: [
+            { value: 'auto', label: 'Auto (first free needle, leaning right)' },
+            { value: 'right', label: 'Always to the right' },
+            { value: 'left', label: 'Always to the left' }
+          ],
+          value: 'auto'
+        }
+      ],
+      submitLabel: 'Pair eyelets',
+      onSubmit: values => {
+        let within = null;
+        if (values.scope === 'selection') {
+          if (!hasSelection) return { ok: false, message: 'Nothing is selected. Draw a marquee first, or choose \u201cthe whole card.\u201d' };
+          within = ed.selectionKeys;
+        }
+        const result = pairEyelets(ed.matrix, { mode, within, direction: values.lean });
+        if (!result.ok) return { ok: false, message: result.error };
+        if (!result.paired) {
+          if (!result.skipped && result.alreadyPaired) {
+            return { ok: true, kind: 'info', message: 'Every eyelet already has a transfer beside it \u2014 nothing to add.' };
+          }
+          if (!result.skipped) return { ok: true, kind: 'info', message: 'There are no eyelets on the card to pair.' };
+          return { ok: false, message: `None of the ${result.skipped} lone eyelet${result.skipped === 1 ? '' : 's'} has a free needle beside it for the decrease. Clear one and try again.` };
+        }
+        apply(result.matrix, `Pair eyelets (${result.paired})`);
+        const tail = result.skipped
+          ? ` \u00b7 ${result.skipped} left unpaired (no free neighbour)`
+          : result.alreadyPaired
+            ? ` \u00b7 ${result.alreadyPaired} were already paired`
+            : '';
+        return {
+          ok: true,
+          kind: 'success',
+          message: `Added ${result.paired} decrease${result.paired === 1 ? '' : 's'} beside the eyelets${tail}.`,
+          details: 'Undo (Ctrl+Z) takes them back out.'
+        };
+      }
+    });
+  };
+
   try {
     switch (id) {
       // ── rows ───────────────────────────────────────────────────────────────
@@ -681,6 +897,7 @@ export function runChartCommand(app, id, ctx = {}) {
       case 'chart.smudge':
         if (app._selectTool && app._selectTool('smudge')) say('Smudge tool — drag across the card and the stitches follow.');
         break;
+      case 'chart.replace': replaceDialog(); break;
       case 'chart.jumpTo': jumpTo(); break;
       case 'chart.info': chartInfo(); break;
 
@@ -726,15 +943,218 @@ export function runChartCommand(app, id, ctx = {}) {
         say(`Snapping to guides and repeats is ${ed.snapGuides ? 'on' : 'off'}.`);
         break;
       }
+
+      // ── pattern intelligence ───────────────────────────────────────────────
+      case 'pattern.crop': {
+        const raw = promptInteger('Keep how many blank cells of margin around the design?', { min: 0, max: 60, value: 0 });
+        if (raw === null) break;
+        runOp(() => cropToContent(ed.matrix, { mode, padding: raw || 0 }), 'Crop to design', {
+          describe: r => {
+            const t = r.trimmed;
+            return `Cropped to ${r.matrix.length}\u00d7${r.matrix[0].length} \u2014 trimmed ${t.top} top, ${t.left} left, ${t.bottom} bottom, ${t.right} needle column${t.right === 1 ? '' : 's'}.`;
+          }
+        });
+        break;
+      }
+      case 'pattern.tile': {
+        const across = promptInteger('Repeats across (needle columns)?', { min: 1, max: 64, value: 2 });
+        if (across === null) break;
+        const down = promptInteger('Repeats down (rows)?', { min: 1, max: 64, value: 2 });
+        if (down === null) break;
+        runOp(
+          () => tileMatrix(ed.matrix, { mode, across, down, maxRows: limits.maxRows, maxCols: limits.maxCols }),
+          `Tile ${across}\u00d7${down}`,
+          { describe: r => `Tiled ${r.across}\u00d7${r.down} \u2014 card is now ${r.matrix.length}\u00d7${r.matrix[0].length}.` }
+        );
+        break;
+      }
+      case 'pattern.pad': {
+        const rows = promptInteger('Pad card to at least how many rows?', { min: ed.rows, max: limits.maxRows || 4000, value: ed.rows });
+        if (rows === null) break;
+        const cols = promptInteger('Pad card to at least how many needles?', { min: ed.cols, max: limits.maxCols || ed.cols, value: ed.cols });
+        if (cols === null) break;
+        runOp(
+          () => padToSize(ed.matrix, { mode, rows, cols, anchor: 'center', maxRows: limits.maxRows, maxCols: limits.maxCols }),
+          `Pad to ${rows}\u00d7${cols}`,
+          { describe: r => `Padded to ${r.matrix.length}\u00d7${r.matrix[0].length} (+${r.added.rows} row${r.added.rows === 1 ? '' : 's'}, +${r.added.cols} needle${r.added.cols === 1 ? '' : 's'}).` }
+        );
+        break;
+      }
+      case 'pattern.border': {
+        const thickness = promptInteger('Border thickness (rows/needles)?', { min: 1, max: 20, value: 1 });
+        if (thickness === null) break;
+        runOp(
+          () => addBorder(ed.matrix, { mode, thickness, maxRows: limits.maxRows, maxCols: limits.maxCols }),
+          `Frame ${thickness}-deep`,
+          { describe: r => `Framed ${r.thickness} deep \u2014 card is now ${r.matrix.length}\u00d7${r.matrix[0].length}.` }
+        );
+        break;
+      }
+      case 'pattern.detectRepeat': {
+        const rep = detectRepeat(ed.matrix, { mode });
+        say(
+          `Smallest repeat: ${rep.rowPeriod} row${rep.rowPeriod === 1 ? '' : 's'} \u00d7 ${rep.colPeriod} needle${rep.colPeriod === 1 ? '' : 's'} ` +
+            `(${rep.repeatRows}\u00d7${rep.repeatCols} card = ${Math.max(1, rep.repeatRows / rep.rowPeriod)}\u00d7${Math.max(1, rep.repeatCols / rep.colPeriod)} tiles).`,
+          { kind: 'info', details: (rep.isFullRow && rep.isFullCol) ? 'No smaller tile than the whole card was found.' : undefined }
+        );
+        break;
+      }
+      case 'pattern.symmetry': {
+        const s = symmetryReport(ed.matrix, { mode });
+        const pct = x => `${Math.round(x.pct * 100)}%`;
+        say(`Symmetry \u2014 left\u2194right ${pct(s.vertical)}, top\u2195bottom ${pct(s.horizontal)}, 180\u00b0 ${pct(s.rotational)}.`, {
+          kind: 'info',
+          details: '100% means the card already reads the same in that mirror.'
+        });
+        break;
+      }
+      case 'pattern.density': {
+        const d = densityStats(ed.matrix, { mode });
+        const busiest = d.perRow.reduce((m, v, i) => (v > d.perRow[m] ? i : m), 0);
+        say(
+          `Density ${Math.round(d.density * 100)}% \u2014 ${d.punched}/${d.total} worked. Busiest row ${busiest + 1} (${d.perRow[busiest] || 0} needles).`,
+          { kind: 'info', details: `Rows range ${Math.min(...(d.perRow.length ? d.perRow : [0]))}\u2013${Math.max(...(d.perRow.length ? d.perRow : [0]))} \u00b7 needles ${Math.min(...(d.perCol.length ? d.perCol : [0]))}\u2013${Math.max(...(d.perCol.length ? d.perCol : [0]))}.` }
+        );
+        break;
+      }
+      case 'pattern.symmetric.h':
+        runOp(() => makeSymmetric(ed.matrix, { mode, axis: 'h', keep: 'first' }), 'Mirror left \u2192 right', {
+          describe: r => (r.changed ? `Mirrored ${r.changed} cell${r.changed === 1 ? '' : 's'} to complete the left\u2013right symmetry.` : 'The card was already left\u2013right symmetric.')
+        });
+        break;
+      case 'pattern.symmetric.v':
+        runOp(() => makeSymmetric(ed.matrix, { mode, axis: 'v', keep: 'first' }), 'Mirror top \u2192 bottom', {
+          describe: r => (r.changed ? `Mirrored ${r.changed} cell${r.changed === 1 ? '' : 's'} to complete the top\u2013bottom symmetry.` : 'The card was already top\u2013bottom symmetric.')
+        });
+        break;
+      case 'pattern.despeckle': {
+        const raw = promptInteger('Drop a worked cell with fewer than how many touching stitches?', { min: 1, max: 8, value: 1 });
+        if (raw === null) break;
+        runOp(() => despeckle(ed.matrix, { mode, minNeighbors: raw }), `De-speckle (<${raw} neighbours)`, {
+          describe: r => (r.removed ? `Removed ${r.removed} stray cell${r.removed === 1 ? '' : 's'} with fewer than ${raw} touching stitch${raw === 1 ? '' : 'es'}.` : 'No worked cell was that isolated \u2014 nothing removed.')
+        });
+        break;
+      }
+      case 'pattern.fillSpecks':
+        runOp(() => fillSpecks(ed.matrix, { mode }), 'Fill enclosed blanks', {
+          describe: r => (r.filled ? `Filled ${r.filled} lone blank${r.filled === 1 ? '' : 's'} ringed by work.` : 'No single-cell gaps to fill.')
+        });
+        break;
+      case 'pattern.halfDrop': {
+        const raw = safePrompt(`Half-drop offset in rows (blank = half the ${ed.rows}-row card)?`, '');
+        if (raw === null) break;
+        const offset = raw.trim() === '' ? undefined : parseInt(raw, 10);
+        runOp(() => halfDrop(ed.matrix, { mode, offset }), 'Half-drop (brick) shift', {
+          describe: r => `Shifted alternating needle columns down ${r.offset} row${r.offset === 1 ? '' : 's'} for a brick repeat.`
+        });
+        break;
+      }
+
+      // ── motif & shape intelligence ─────────────────────────────────────
+      case 'motif.summary': {
+        const m = motifSummary(ed.matrix, { mode });
+        if (!m.count) {
+          say('There are no worked figures on the card yet.', { kind: 'info' });
+          break;
+        }
+        const big = m.largest;
+        if (m.isolated) ed.setHighlight?.(m.isolatedCells, { label: `${m.isolated} isolated stitch${m.isolated === 1 ? '' : 'es'}`, color: '#f0a9bf' });
+        say(
+          `${m.count} motif${m.count === 1 ? '' : 's'} \u00b7 ${m.total} worked cell${m.total === 1 ? '' : 's'}` +
+            (m.isolated ? ` \u00b7 ${m.isolated} isolated stitch${m.isolated === 1 ? '' : 'es'}` : '') +
+            `. Largest ${big.rows}\u00d7${big.cols} at row ${big.r1 + 1}, needle ${big.c1 + 1}.`,
+          { kind: 'info', details: m.isolated ? `Highlighted the ${m.isolated} snag-prone stitch${m.isolated === 1 ? '' : 'es'} \u2014 Shape \u2192 Thicken welds them into the fabric.` : undefined }
+        );
+        break;
+      }
+      case 'motif.dilate': {
+        const raw = promptInteger('Thicken the worked area by how many rings?', { min: 1, max: 12, value: 1 });
+        if (raw === null) break;
+        runOp(() => dilateContent(ed.matrix, { mode, iterations: raw }), `Thicken \u00d7${raw}`, {
+          describe: r => (r.added ? `Thickened the worked area by ${r.added} stitch${r.added === 1 ? '' : 'es'}.` : 'Nothing to thicken \u2014 the card has no worked cells.')
+        });
+        break;
+      }
+      case 'motif.erode': {
+        const raw = promptInteger('Thin the worked area by how many rings?', { min: 1, max: 12, value: 1 });
+        if (raw === null) break;
+        runOp(() => erodeContent(ed.matrix, { mode, iterations: raw }), `Thin \u00d7${raw}`, {
+          describe: r => (r.removed ? `Thinned away ${r.removed} edge stitch${r.removed === 1 ? '' : 'es'}.` : 'Nothing to thin \u2014 every worked cell is already bare.')
+        });
+        break;
+      }
+      case 'motif.outline': {
+        const raw = promptInteger('Keep the outline how many stitches deep?', { min: 1, max: 12, value: 1 });
+        if (raw === null) break;
+        runOp(() => outlineContent(ed.matrix, { mode, thickness: raw }), `Outline ${raw} deep`, {
+          describe: r => `Kept ${r.kept} outline stitch${r.kept === 1 ? '' : 'es'} and cleared the interior.`
+        });
+        break;
+      }
+      case 'motif.fillHoles':
+        runOp(() => fillEnclosedHoles(ed.matrix, { mode }), 'Close enclosed holes', {
+          describe: r => (r.filled ? `Punched closed ${r.filled} enclosed cell${r.filled === 1 ? '' : 's'}.` : 'No enclosed holes to close.')
+        });
+        break;
+      case 'motif.symmetry': {
+        const cls = classifySymmetry(ed.matrix, { mode });
+        const pct = x => `${Math.round(x * 100)}%`;
+        say(`This card is ${cls.name}.`, {
+          kind: 'info',
+          details: `left\u2194right ${pct(cls.scores.vertical)} \u00b7 top\u2195bottom ${pct(cls.scores.horizontal)} \u00b7 180\u00b0 ${pct(cls.scores.rotational)}`
+        });
+        break;
+      }
+      case 'motif.kaleidoscope': {
+        const across = promptInteger('Kaleidoscope block repeats across?', { min: 1, max: 24, value: 1 });
+        if (across === null) break;
+        const down = promptInteger('Kaleidoscope block repeats down?', { min: 1, max: 24, value: 1 });
+        if (down === null) break;
+        runOp(
+          () => kaleidoscope(ed.matrix, { mode, across, down, maxRows: limits.maxRows, maxCols: limits.maxCols }),
+          `Kaleidoscope ${across}\u00d7${down}`,
+          { describe: r => `Built a ${r.across}\u00d7${r.down} kaleidoscope \u2014 card is now ${r.matrix.length}\u00d7${r.matrix[0].length}.` }
+        );
+        break;
+      }
+
+      // ── lace intelligence ──────────────────────────────────────────────
+      case 'lace.unpaired': {
+        if (mode !== 'lace') { warn('Eyelets are a lace-chart thing \u2014 this card is in another mode.'); break; }
+        const u = findUnpairedEyelets(ed.matrix, { mode });
+        if (!u.eyelets) { ok('This card has no eyelets to check.'); break; }
+        if (!u.count) { ok(`All ${u.eyelets} eyelet${u.eyelets === 1 ? '' : 's'} already has a transfer beside it.`); break; }
+        ed.setHighlight?.(u.cells, { label: `${u.count} unpaired eyelet${u.count === 1 ? '' : 's'}`, color: '#f0a9bf' });
+        say(`${u.count} of ${u.eyelets} eyelets have no transfer beside them \u2014 highlighted in rose.`, {
+          kind: 'info',
+          details: 'Lace \u2192 Pair the lone eyelets writes the missing decrease in.'
+        });
+        break;
+      }
+      case 'lace.pair': lacePairDialog(); break;
+      case 'lace.balance': {
+        if (mode !== 'lace') { warn('Stitch-count balance is a lace-chart measure \u2014 this card is in another mode.'); break; }
+        const b = matrixBalance(ed.matrix);
+        if (b.balanced) { ok('The chart is stitch-balanced as drawn \u2014 every increase has a decrease drawn beside it.'); break; }
+        const off = b.rows.map((row, i) => ({ i, delta: row.delta })).filter(x => x.delta !== 0);
+        const sign = n => (n > 0 ? `+${n}` : `\u2212${Math.abs(n)}`);
+        const which = off.slice(0, 6).map(x => `row ${x.i + 1} ${sign(x.delta)}`).join(', ');
+        say(`As drawn the card changes by ${sign(b.total)} loops over ${b.unbalancedRows} row${b.unbalancedRows === 1 ? '' : 's'}.`, {
+          kind: 'info',
+          details: `${which}${off.length > 6 ? ', \u2026' : ''}. A surplus is eyelets relying on an implicit transfer \u2014 pair them to make the chart say what the fabric does.`
+        });
+        break;
+      }
       default: return false;
     }
   } catch (err) {
+    log.logError('a chart command failed while applying', err);
     warn(`That chart operation failed: ${err?.message || err}.`, { details: 'Your card is unchanged.' });
   }
   // Any of these can have changed the selection or the card; the menu bar and the
   // structure panel read live state, so both are told to look again.
-  try { app.menubar?.refresh?.(); } catch (_) { /* contained */ }
-  try { app.structurePanel?.refresh?.(); } catch (_) { /* contained */ }
+  try { app.menubar?.refresh?.(); } catch (err) { log.debug('the menu bar failed to refresh after a chart op', { error: err?.message }); }
+  try { app.structurePanel?.refresh?.(); } catch (err) { log.debug('the structure panel failed to refresh after a chart op', { error: err?.message }); }
   return true;
 }
 
@@ -748,7 +1168,7 @@ export function chartPaletteActions(app) {
     const tail = parts[parts.length - 1];
     return tail.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
   };
-  const groupFor = id => (id.startsWith('select.') ? 'Select' : 'Chart');
+  const groupFor = id => (id.startsWith('select.') ? 'Select' : id.startsWith('pattern.') ? 'Pattern' : id.startsWith('motif.') ? 'Shape' : id.startsWith('lace.') ? 'Lace' : 'Chart');
   return COMMAND_IDS.map(id => ({
     label: `${groupFor(id)}: ${label(id)}`,
     group: groupFor(id),

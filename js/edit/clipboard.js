@@ -22,6 +22,9 @@
 
 import { blankValue, convertMatrixBetweenModes, isKnownMode, isLaceMode, isPunched, normalizeCell } from './modes.js';
 import { matrixInfo, regaugeMatrix, stampMotif, transformMotif } from './chart-ops.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('edit/clipboard');
 
 export const CLIPBOARD_LIMIT = 24;
 export const SLOT_STORAGE_KEY = 'knitcad.clipboard.slots.v1';
@@ -380,7 +383,8 @@ function readSlots(storage) {
   if (!store) return {};
   try {
     return JSON.parse(store.getItem(SLOT_STORAGE_KEY) || '{}');
-  } catch (_) {
+  } catch (err) {
+    log.warn('the saved clipboard slots were corrupt — the clipboard starts empty this session', { error: err?.message });
     return {};
   }
 }
@@ -391,9 +395,10 @@ function writeSlots(storage, slots) {
   try {
     store.setItem(SLOT_STORAGE_KEY, JSON.stringify(slots));
     return true;
-  } catch (_) {
+  } catch (err) {
     // Private-browsing Safari and a full quota both land here. The clipboard still
     // works for the session, which is the whole promise it makes.
+    log.debug('clipboard slots could not be persisted (private mode or quota)', { error: err?.message });
     return false;
   }
 }
@@ -435,7 +440,8 @@ export function createClipboardBridge({ name = 'knitcat-clipboard', onEntry = nu
       try {
         channel.postMessage({ entry, at: Date.now() });
         return true;
-      } catch (_) {
+      } catch (err) {
+        log.debug('the cross-tab clipboard broadcast failed to publish', { error: err?.message });
         return false;
       }
     },

@@ -14,6 +14,10 @@
  * @module ui/thumbnail
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/thumbnail');
+
 /** A cell counts as "punched" (drawn filled) unless it is blank/empty. */
 function isPunchedValue(v) {
   return v !== 0 && v !== false && v != null && v !== '' && v !== 'EMPTY';
@@ -88,14 +92,14 @@ function _dpr() { return (typeof window !== 'undefined' && window.devicePixelRat
  * @param {{bg?:string,fg?:string,pad?:number}} [opts]
  */
 export function renderThumbnail(canvas, matrix, box, opts = {}) {
-  if (!canvas || typeof canvas.getContext !== 'function') return;
+  if (!canvas || typeof canvas.getContext !== 'function') { log.debug('renderThumbnail got no usable canvas — skipping the punchcard thumb'); return; }
   const d = _dpr();
   canvas.width = Math.round(box * d);
   canvas.height = Math.round(box * d);
   canvas.style.width = box + 'px';
   canvas.style.height = box + 'px';
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+  if (!ctx) { log.warn('a thumbnail canvas returned no 2D context — it cannot be drawn'); return; }
   ctx.setTransform(d, 0, 0, d, 0, 0);
   ctx.clearRect(0, 0, box, box);
   drawPunchcard(ctx, punchMask(matrix), Object.assign({ box }, opts));
@@ -229,14 +233,14 @@ export function drawDiff(ctx, diff, opts = {}) {
  * @param {object} [opts]
  */
 export function renderDiffCard(canvas, before, after, box, opts = {}) {
-  if (!canvas || typeof canvas.getContext !== 'function') return;
+  if (!canvas || typeof canvas.getContext !== 'function') { log.debug('a thumbnail render got no usable canvas — skipping'); return; }
   const d = _dpr();
   canvas.width = Math.round(box * d);
   canvas.height = Math.round(box * d);
   canvas.style.width = box + 'px';
   canvas.style.height = box + 'px';
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+  if (!ctx) { log.warn('a thumbnail canvas returned no 2D context — it cannot be drawn'); return; }
   ctx.setTransform(d, 0, 0, d, 0, 0);
   ctx.clearRect(0, 0, box, box);
   drawDiff(ctx, diffCells(before, after), Object.assign({ box }, opts));

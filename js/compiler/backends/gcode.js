@@ -13,6 +13,9 @@
 
 import { CncGcodeExporter } from '../../exporters/cnc-gcode.js';
 import { punchMatrix, resolveProfile } from './_card.js';
+import { logger } from '../../core/logging.js';
+
+const log = logger('compiler/backends/gcode');
 
 /**
  * Compile an IR into CNC/laser G-code.
@@ -33,7 +36,7 @@ export function gcodeBackend(ir, options = {}) {
   const errors = [];
   try {
     gcode = exporter.generateGCode(profile, card.matrix);
-  } catch (e) { errors.push(`gcode: ${e && e.message ? e.message : e}`); }
+  } catch (e) { log.logError('G-code generation failed', e, { context: { profile: profile.name } }); errors.push(`gcode: ${e && e.message ? e.message : e}`); }
 
   // Rough cycle-time model: one plunge per hole at the feed, plus a rapid move between holes.
   const holes = card.matrix.reduce((n, r) => n + r.filter(Boolean).length, 0);

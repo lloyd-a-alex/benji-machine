@@ -16,6 +16,9 @@
 
 import { getDefaultDatabase } from './database.js';
 import { extractPalette, matchToYarns, hexToLab } from './color.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('yarn/stash-import');
 
 /**
  * Parse a delimited text blob (Ravelry CSV is comma, some exports are tab) into a matrix of
@@ -120,7 +123,7 @@ export function importStashJSON(json, db = getDefaultDatabase()) {
   try {
     const parsed = typeof json === 'string' ? JSON.parse(json) : json;
     list = Array.isArray(parsed) ? parsed : (parsed.stash || parsed.entries || parsed.items || parsed.yarns || []);
-  } catch (e) { out.warnings.push(`Invalid JSON: ${e.message}`); return out; }
+  } catch (e) { log.warn('a JSON stash import failed to parse — the stash was left unchanged', { error: e?.message }); out.warnings.push(`Invalid JSON: ${e.message}`); return out; }
   for (const item of list) {
     const brand = pick(item, ['brand', 'yarnBrand', 'designer']);
     const name = pick(item, ['name', 'yarnName', 'yarn', 'title']);

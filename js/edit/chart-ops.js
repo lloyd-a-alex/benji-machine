@@ -468,6 +468,43 @@ export function invertCells(matrix, keys, { mode = 'lace' } = {}) {
   return { ok: true, matrix: out, changed };
 }
 
+/**
+ * Find and replace one symbol for another across the card (or a selection).
+ *
+ * This is the global fix-up a knitter always needs and never had a way to do
+ * without clicking cell by cell: "I meant a right-leaning transfer everywhere I
+ * typed TL", or "turn every plain knit inside this yoke into a purl bump." It is
+ * strict-equality on the stored value — the same matching `selectByValue` and the
+ * symbol legend use — so `TL` never collides with `T2L`, and it leaves every other
+ * cell byte-for-byte alone.
+ *
+ * Returns `matched` (cells that held the find symbol) and `changed` (cells that
+ * actually moved to the replace symbol). They are equal whenever the two symbols
+ * differ, but `matched` lets the caller say "there were no TL stitches at all"
+ * honestly instead of reporting a silent zero-cell success.
+ */
+export function replaceValue(matrix, find, replace, { mode = 'lace', within = null } = {}) {
+  if (find === replace) {
+    return { ok: false, error: 'Find and replace are the same symbol.', matrix: cloneMatrix(matrix), matched: 0, changed: 0 };
+  }
+  const out = cloneMatrix(matrix);
+  let matched = 0;
+  let changed = 0;
+  for (let r = 0; r < out.length; r++) {
+    const row = out[r];
+    for (let c = 0; c < row.length; c++) {
+      if (within && !within.has(cellKey(r, c))) continue;
+      if (row[c] !== find) continue;
+      matched++;
+      if (row[c] !== replace) {
+        row[c] = replace;
+        changed++;
+      }
+    }
+  }
+  return { ok: true, matrix: out, matched, changed };
+}
+
 function clampToMatrix(rect, matrix) {
   const { rows, cols } = matrixInfo(matrix);
   // One implementation of "is this marquee on the card" shared with select-ops:

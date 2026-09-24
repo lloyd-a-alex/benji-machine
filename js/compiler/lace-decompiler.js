@@ -41,6 +41,9 @@
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
 import { PASS_PURPOSE, carriageMechanics, planLaceOperation, summariseStrokes } from '../machine/carriage-passes.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('compiler/lace-decompiler');
 
 export const CARRIAGE_TYPE = {
   LACE: 'LACE',       // Transfer carriage (Brother LC-2, etc.)
@@ -105,11 +108,13 @@ export class LaceCompilationResult {
 
   addWarning(msg, row = null, col = null) {
     this.diagnostics.push({ type: 'warning', message: msg, row, col });
+    log.warn(msg, { row, col });
   }
 
   addError(msg, row = null, col = null) {
     this.success = false;
     this.diagnostics.push({ type: 'error', message: msg, row, col });
+    log.error(msg, { row, col });
   }
 }
 

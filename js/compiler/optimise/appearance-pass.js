@@ -14,7 +14,8 @@
  * @module compiler/optimise/appearance-pass
  */
 
-import { checkContrast } from '../../yarn/color.js';
+import { analyzeColorLegibility } from '../../core/color-legibility.js';
+import { adjacentColorPairs } from '../../core/chart-analysis.js';
 
 /**
  * Run the appearance pass.
@@ -39,20 +40,15 @@ export function appearancePass(ir) {
     if (issues) changes.push(`appearance: ${issues} piece(s) do not align to the ${repeat}-st colourwork repeat`);
   }
 
-  // 2. Contrast of the colourwork palette.
-  const contrastIssues = [];
-  const colors = ir.colors || [];
-  for (let i = 0; i < colors.length; i++) {
-    for (let j = i + 1; j < colors.length; j++) {
-      if (!colors[i].hex || !colors[j].hex) continue;
-      const c = checkContrast(colors[i].hex, colors[j].hex);
-      if (!c.pass) {
-        contrastIssues.push({ pair: [colors[i].yarn, colors[j].yarn], ratio: c.ratio });
-        issues++;
-      }
-    }
-  }
-  if (contrastIssues.length) changes.push(`appearance: ${contrastIssues.length} colour pair(s) below 3:1 contrast — the motif may not read`);
+  // 2. Contrast of the colourwork palette — the SAME adjacency-aware analysis the verifier uses
+  //    (core/color-legibility.js), so the optimiser and the verify pass can never disagree about
+  //    one palette. Only colours that actually touch on the card are judged, so a non-adjacent
+  //    near-match is no longer a false alarm.
+  const matrix = Array.isArray(ir.cardMatrix) && Array.isArray(ir.cardMatrix[0]) ? ir.cardMatrix : null;
+  const legibility = analyzeColorLegibility(ir.colors || [], { adjacency: matrix ? adjacentColorPairs(matrix, 'fair_isle') : null });
+  const contrastIssues = legibility.low.map((p) => ({ pair: p.labels, ratio: p.ratio }));
+  issues += contrastIssues.length;
+  if (contrastIssues.length) changes.push(`appearance: ${contrastIssues.length} neighbouring colour pair(s) below 3:1 contrast — the motif may not read`);
 
   // 3. Seam placement note (heuristic: put side seams a third in from centre back).
   for (const p of out.pieces) if (/body/i.test(p.id) && p.stitches > 0) p.appearance.seamNote = 'place side seams ~1/3 in from centre-back for a flattering front';

@@ -15,11 +15,15 @@
 import { ClothesEngine } from '../tailor/clothes-catalog.js';
 import { TankTopTailoringEngine } from '../tailor/tank-top-engine.js';
 import { buildGeometry } from '../tailor/garment-geometry.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/garment-canvas');
 
 export class GarmentCanvas {
   constructor(canvasElement, options = {}) {
     this.canvas = canvasElement;
     this.ctx = canvasElement.getContext('2d');
+    if (!this.ctx) log.error('garment canvas 2D context is unavailable — the preview cannot render', { hasElement: !!canvasElement });
     this.dpr = 1;
 
     this.clothes = new ClothesEngine();
@@ -193,6 +197,42 @@ export class GarmentCanvas {
       m.push(row);
     }
     return { matrix: m, cols: g.cols, rows: g.rows, geometry: g.geo };
+  }
+
+  /**
+   * Bulk-paint the drawing layer from a contrast matrix — the motif currently drawn
+   * in the CAD editor — tiled across the piece and clipped to the silhouette so no
+   * stitch lands off the garment. This is the reverse of {@link KnitApp.sendClothesToEditor}:
+   * it closes the loop so a pattern authored in the editor becomes the fabric of a
+   * garment without redrawing it by hand.
+   * @param {Array<Array<number>>} matrix rows×cols where a truthy cell is a contrast stitch
+   * @param {{tile?:boolean, clear?:boolean}} [opts] `tile` repeats the motif to fill the
+   *   piece (default true); `clear` drops existing stitches first (default true).
+   * @returns {number} how many stitches were painted
+   */
+  setPaintedMatrix(matrix, opts = {}) {
+    const { tile = true, clear = true } = opts;
+    if (clear) this.painted.clear();
+    const src = Array.isArray(matrix) && matrix.length ? matrix : null;
+    if (!src) { this.render(); return 0; }
+    const srcRows = src.length;
+    const srcCols = src.reduce((n, row) => Math.max(n, row ? row.length : 0), 0) || 1;
+    const g = this.computeGrid();
+    let count = 0;
+    for (let r = 0; r < g.rows; r++) {
+      for (let c = 0; c < g.cols; c++) {
+        const centre = this.cellCenterMm(g, r, c);
+        if (!this.isInsideGarment(g, centre.x, centre.y)) continue; // stay on the piece
+        const sr = tile ? r % srcRows : r;
+        const sc = tile ? c % srcCols : c;
+        if (sr >= srcRows || sc >= (src[sr] ? src[sr].length : 0)) continue;
+        if (!src[sr][sc]) continue;
+        this.painted.add(`${r},${c}`);
+        count++;
+      }
+    }
+    this.render();
+    return count;
   }
 
   setupEvents() {

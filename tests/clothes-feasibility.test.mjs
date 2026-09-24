@@ -169,6 +169,8 @@ test('every profile states its bed length, float cap and tuck cap', () => {
     assert.ok(p.bedLengthMm > 0, `${p.id} states a bed length`);
     assert.ok(p.maxFloatNeedles >= 2, `${p.id} states a float cap`);
     assert.ok(p.maxTuckLoops >= 2, `${p.id} states a tuck cap`);
+    assert.ok(Number.isFinite(p.maxColors) && p.maxColors >= 2, `${p.id} states a yarn-feeder count (>= 2)`);
+    assert.equal(profileLimits(p).maxColors, p.maxColors, `${p.id} feeder count flows through profileLimits`);
     // Capacity is derived, so it can never contradict the pitch it came from.
     assert.ok(bedNeedleCapacity(p) >= p.columns, `${p.id} bed fits at least one repeat`);
     assert.equal(
@@ -242,6 +244,36 @@ test('a double-bed profile is flagged as a modelling mismatch, not silently comp
   assert.equal(warn.sev, 'warn');
   // Changing the user's machine is a preference: never bundle it into "Fix all".
   assert.equal(warn.fix.safe, false);
+});
+
+// A punchcard reader drives two yarn positions; the electronic KH-9xx colour changer
+// (and the parametric custom bed) drives more. Pinned so a profile edit cannot quietly
+// drop the standard gauges below the two-colour floor or inflate the punchcard machines.
+test('punchcard machines hold two feeders, electronic colour changers more', () => {
+  for (const id of ['brother_standard_24', 'silver_reed_standard_24', 'passap_duo_40', 'brother_bulky_24', 'toyota_standard_24']) {
+    assert.equal(profileLimits(MACHINE_PROFILES[id]).maxColors, 2, `${id} is a two-feeder punchcard bed`);
+  }
+  assert.equal(profileLimits(MACHINE_PROFILES.brother_maxi_60).maxColors, 6, 'KH-9xx electronic colour changer');
+});
+
+test('the advisor blocks a chart with more colours than the bed has feeders', () => {
+  const jacquard = [[0, 1, 2, 3]]; // four distinct yarns
+  const brother = fakeApp('fair_isle', jacquard, MACHINE_PROFILES.brother_standard_24);
+  const issue = createFeasibilityAdvisor(brother).analyze().find(i => /feeders/i.test(i.title));
+  assert.ok(issue, 'over-feeder chart flagged');
+  assert.equal(issue.sev, 'error', 'unreachable colours are not a warning');
+  // Colour reduction is destructive: the advisor must NOT offer a "safe" one-click fix.
+  assert.ok(!issue.fix || issue.fix.safe !== true, 'no silent auto-fix that deletes colours');
+
+  // The very same card clears on a six-feeder electronic machine.
+  const maxi = fakeApp('fair_isle', jacquard, MACHINE_PROFILES.brother_maxi_60);
+  assert.ok(!createFeasibilityAdvisor(maxi).analyze().some(i => /feeders/i.test(i.title)),
+    'a colour changer with enough feeders is fine');
+});
+
+test('a clean short-float checkerboard is feasible', () => {
+  const app = fakeApp('fair_isle', [[1, 0, 1, 0], [0, 1, 0, 1]]);
+  assert.equal(createFeasibilityAdvisor(app).verdict().status, 'feasible');
 });
 
 // ─── Hidden designer key (double digest, never plaintext) ─────────────────────

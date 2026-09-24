@@ -3,6 +3,10 @@
  * Replaces blocking alert() dialogs with non-modal, screen-reader-friendly messages.
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/notifications');
+
 const TYPE_META = {
   success: { label: 'Success', icon: '✓' },
   error: { label: 'Error', icon: '✕' },
@@ -12,6 +16,7 @@ const TYPE_META = {
 
 export class NotificationCenter {
   constructor(containerId = 'toast-container') {
+    this.containerId = containerId;
     this.container = document.getElementById(containerId);
     this.queue = [];
     this.maxVisible = 4;
@@ -23,7 +28,7 @@ export class NotificationCenter {
       title = null,
       details = null,
       duration = 4500,
-      log = true
+      log: echo = true
     } = options;
 
     const headline = title || message;
@@ -32,14 +37,15 @@ export class NotificationCenter {
       ? details.filter(Boolean)
       : (details ? [details] : []);
 
-    if (log) {
+    if (echo) {
       const payload = detailLines.length ? detailLines : (body || headline);
-      const logFn = type === 'error' ? console.error : type === 'warning' ? console.warn : console.log;
-      logFn(`[KNITCAT][${type}] ${headline}`, payload);
+      if (type === 'error') log.error(headline, { detail: payload });
+      else if (type === 'warning') log.warn(headline, { detail: payload });
+      else log.info(headline, { detail: payload });
     }
 
     if (!this.container) {
-      console.warn('[KNITCAT] Toast container missing; falling back to console only.');
+      log.error('the toast container is missing — notifications fall back to the log only', { container: this.containerId });
       return null;
     }
 

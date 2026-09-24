@@ -32,6 +32,10 @@
  */
 
 import { holesToMatrix, estimatePitch } from './grid-quantize.js';
+import { logger } from '../core/logging.js';
+
+/** Photo-reading pipeline seam: surface the geometric rejections a user would otherwise never see. */
+const log = logger('importers/punchcard-reader');
 
 /** Guardrails so a pathological photo cannot allocate a continent. */
 export const MAX_IMAGE_PIXELS = 16 * 1000 * 1000; // 16 MP
@@ -288,6 +292,7 @@ export function analyzePunchcard(image, opts = {}) {
   const width = image?.width | 0;
   const height = image?.height | 0;
   if (!width || !height || !image?.data) {
+    log.warn('analyzePunchcard given a non-image', { width: image?.width, height: image?.height, hasData: !!image?.data });
     return { ok: false, error: 'That does not look like an image KNITCAT can read.', warnings: [] };
   }
 
@@ -295,6 +300,7 @@ export function analyzePunchcard(image, opts = {}) {
   try {
     lum = luminance(image);
   } catch (err) {
+    log.logError('luminance conversion failed', err, { context: { width, height } });
     return { ok: false, error: err?.message || String(err), warnings: [] };
   }
 
@@ -311,6 +317,7 @@ export function analyzePunchcard(image, opts = {}) {
 
   const warnings = [];
   if (!holes.length) {
+    log.warn('no punched holes found in photo', { width, height, threshold, blobs: count });
     return {
       ok: false,
       error: 'No punched holes were found in this photo. Try better lighting, or flip the "holes are lighter" option.',
@@ -325,6 +332,7 @@ export function analyzePunchcard(image, opts = {}) {
   const bigBlob = stats.some(s => s.area > width * height * 0.5);
   if (bigBlob && holes.length < 3) {
     warnings.push('Most of the frame was one region; the light/dark reading may be inverted.');
+    log.warn('photo likely inverted — one region dominated the frame', { holes: holes.length, threshold });
   }
 
   let estimatedPitch = false;
@@ -339,8 +347,10 @@ export function analyzePunchcard(image, opts = {}) {
 
   const quant = holesToMatrix(holes, { pitchX: px, pitchY: py, maxCells });
   if (!quant.ok) {
+    log.warn('hole quantisation rejected the photo', { holes: holes.length, error: quant.error });
     return { ok: false, error: quant.error, warnings: [...(quant.warnings || []), ...warnings], holes, threshold };
   }
+  if (warnings.length) log.info('punchcard read with advisories', { rows: quant.rows, cols: quant.cols, warnings });
   return {
     ok: true,
     matrix: quant.matrix,

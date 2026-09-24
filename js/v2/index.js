@@ -28,9 +28,13 @@ import { MACHINE_PROFILES } from '../machine/profiles.js';
 
 export { FitEngine, YarnLab, Compiler, ReverseEngineer, Production, Project };
 export { installV2, V2_SYSTEMS, openV2Panel, closeAllV2Panels } from './panels.js';
+export { summariseHealth, healthToText } from './health-view.js';
 export { V2_VERSION, DEFAULT_KNITSCRIPT, V2_SYSTEM_CATALOG } from './_catalog.js';
 
 import { DEFAULT_KNITSCRIPT } from './_catalog.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('v2');
 
 /**
  * Build a Project from a KnitScript source string (the editor's text). Never throws — on a parse
@@ -48,6 +52,7 @@ export function projectFromKnitScript(knitScript, opts = {}) {
     return { project, error: null, usedFallback: !knitScript || !knitScript.trim() };
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
+    log.warn('a KnitScript source could not be parsed into a Project — falling back to the working scaffold', { error: message, usedFallback: true });
     if (text === DEFAULT_KNITSCRIPT) return { project: null, error: message, usedFallback: true };
     // Fall back to the known-good scaffold so downstream systems still run.
     try {
@@ -147,6 +152,30 @@ export function runFullPipeline(project, options = {}) {
     errors.push(`production: ${msg(e)}`);
   }
 
+  // 4b. Design-to-quote — fuse the fit pieces, the project gauge and the machine profile through the
+  //     carriage-pass planner and the costing engine, so the creative chart and the commercial quote
+  //     are computed from one source of truth. Optional (only when the fit stage drafted pieces).
+  let quote = null;
+  try {
+    const pieces = fit && Array.isArray(fit.pieces) && fit.pieces.length
+      ? fit.pieces.map((pc, i) => ({ name: pc.name || pc.id || `Piece ${i + 1}`, castOn: pc.castOn, rows: pc.totalRows != null ? pc.totalRows : pc.rows }))
+      : null;
+    if (pieces) {
+      quote = Production.buildDesignQuote({
+        name: project.name,
+        machine: safeGet(project, 'machine.id') || undefined,
+        gauge: { stitchesPer10Cm: safeGet(project, 'gauge.stitchesPer10cm'), rowsPer10Cm: safeGet(project, 'gauge.rowsPer10cm') },
+        parts: pieces,
+        quantity: options.quantity || 1,
+        currency: options.currency,
+        labourRate: options.labourRate,
+        yarns: options.quoteYarns
+      });
+    }
+  } catch (e) {
+    errors.push(`quote: ${msg(e)}`);
+  }
+
   const headline = {
     castOn: safeGet(project, 'pattern.castOn'),
     bodyRows: safeGet(project, 'garment.bodyRows'),
@@ -172,6 +201,11 @@ export function runFullPipeline(project, options = {}) {
   }
   const modelErrors = validation.filter((d) => d && d.severity === 'error');
 
+  // A whole V2 subsystem throwing is silently degraded to a null section of the report;
+  // mirror each into the log so a broken stage can never hide behind a blank panel.
+  for (const e of errors) log.error(`V2 pipeline stage failed — ${e}`, { stage: e.split(':')[0] });
+  if (modelErrors.length) log.warn(`V2 model health: ${modelErrors.length} error(s) in the live graph`, { count: modelErrors.length });
+
   return {
     projectMeta: {
       name: project.name,
@@ -182,6 +216,7 @@ export function runFullPipeline(project, options = {}) {
     yarn,
     compile,
     production,
+    quote,
     validation,
     modelErrorCount: modelErrors.length,
     errors,
@@ -202,3 +237,19 @@ function safeGet(project, id) {
 function msg(e) {
   return e && e.message ? e.message : String(e);
 }
+
+/**
+ * Standalone design-to-quote: the commercial bridge the creative systems were missing. Give it a
+ * design — a `presetId` (or an explicit `chart`), a machine, a gauge, garment parts and a yarn
+ * selection — and it composes the chart's colour histogram, the carriage-pass time model, the
+ * tailor's yarn estimate and the production costing engine into one self-consistent {@link
+ * module:production/quote.DesignQuote} whose yarn, time and money cannot disagree.
+ *
+ * @param {import('../production/quote.js').DesignInput} design
+ * @returns {import('../production/quote.js').DesignQuote}
+ */
+export function quoteDesign(design) {
+  return Production.buildDesignQuote(design);
+}
+
+export { renderQuoteSheet } from '../production/quote.js';

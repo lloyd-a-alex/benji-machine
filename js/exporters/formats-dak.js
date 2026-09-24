@@ -10,6 +10,9 @@
  */
 
 import { buildProjectDocument } from '../project/kcard.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('exporters/formats-dak');
 
 export class FormatsExporter {
   /**
@@ -18,10 +21,14 @@ export class FormatsExporter {
   static generateAsciiCard(profile, cardMatrix) {
     const rows = cardMatrix.length;
     const cols = cardMatrix[0]?.length || 24;
+    if (!profile || typeof profile.name !== 'string') {
+      log.warn('generateAsciiCard given a profile without a name — using a placeholder', { profileId: profile?.id });
+    }
+    const name = (profile && profile.name) ? String(profile.name) : 'KNITCAT CARD';
     const lines = [];
 
     lines.push(`+----+${'-'.repeat(cols * 2 + 1)}+----+`);
-    lines.push(`|ROW | ${profile.name.padEnd(cols * 2 - 1)} | SP |`);
+    lines.push(`|ROW | ${name.padEnd(cols * 2 - 1)} | SP |`);
     lines.push(`+----+${'-'.repeat(cols * 2 + 1)}+----+`);
 
     for (let r = rows - 1; r >= 0; r--) {
@@ -122,7 +129,12 @@ export class FormatsExporter {
    * never drift apart.
    */
   static generateProjectJson(projectData) {
-    return JSON.stringify(buildProjectDocument(projectData), null, 2);
+    try {
+      return JSON.stringify(buildProjectDocument(projectData), null, 2);
+    } catch (err) {
+      log.logError('failed to serialise the .kcard project bundle', err, { context: { name: projectData?.name } });
+      throw err;
+    }
   }
 
   /**
@@ -178,6 +190,12 @@ export class FormatsExporter {
         bitCount++;
         
         if (bitCount % 8 === 0 || c === cols - 1) {
+          if (byteIdx >= buffer.length) {
+            // Uint8Array silently drops out-of-range writes, so a too-large chart used
+            // to produce a truncated disk image with no signal. Surface the overflow.
+            log.error('Brother KH-930 disk image overflowed its 2048-byte sector', { rows, cols, byteIdx });
+            return buffer;
+          }
           buffer[byteIdx++] = currentByte;
           currentByte = 0;
         }

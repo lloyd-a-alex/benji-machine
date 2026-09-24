@@ -22,6 +22,8 @@ import {
   SHAPING_PRESETS
 } from './patterns-generative-edges.js';
 import { WEAVE_PRESETS } from './patterns-weave.js';
+import { EXTENDED_PRESETS } from './patterns-extension.js';
+import { MATH_STUDIO_PRESETS } from './patterns-math-studio.js';
 
 const CLASSIC_PRESETS = [
   {
@@ -990,7 +992,9 @@ export const PATTERN_PRESETS = [
   ...GENERATIVE_PRESETS,
   ...EDGES_PRESETS,
   ...SHAPING_PRESETS,
-  ...WEAVE_PRESETS
+  ...WEAVE_PRESETS,
+  ...EXTENDED_PRESETS,
+  ...MATH_STUDIO_PRESETS
 ].map(p => {
   const raw = p.generate.bind(p);
   return {

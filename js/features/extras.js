@@ -18,6 +18,9 @@
  */
 
 import { ensureContrast, WCAG3_LC } from '../core/apca.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('features/extras');
 
 // Historic `knitcad.` prefix is deliberate: it holds the anniversary, names, photo
 // and theme, so renaming the key would wipe someone's saved love.
@@ -26,8 +29,8 @@ const DEFAULTS = {
   yourName: 'Alex',
   hisName: 'Benji',
   anniversary: '',
-  message: 'ily',
-  quote: 'i built this for my CUTE SEXY PRETTY GORGEOUS BOYFRIEND',
+  message: 'Always yours.',
+  quote: 'Built with love, stitch by stitch.',
   accent: '#fb7185',
   theme: 'dark',
   photo: '',
@@ -37,8 +40,9 @@ const DEFAULTS = {
 };
 
 // Alex = Sagittarius (♐). Benji = Gemini (♊). Fire + Air: a great match.
+// (The Sagittarius mark is the archer \u2650 — it was previously a volleyball.)
 const ZODIAC = {
-  yours:  { sign: 'Sagittarius', glyph: '\uD83C\uDF90', dates: 'Nov 22 \u2013 Dec 21', element: 'Fire' },
+  yours:  { sign: 'Sagittarius', glyph: '\u2650',       dates: 'Nov 22 \u2013 Dec 21', element: 'Fire' },
   his:    { sign: 'Gemini',      glyph: '\u264A',       dates: 'May 21 \u2013 Jun 20',  element: 'Air' }
 };
 
@@ -60,7 +64,8 @@ function load() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) settings = { ...DEFAULTS, ...JSON.parse(raw) };
-  } catch (_) {
+  } catch (err) {
+    log.warn('the saved extras settings were corrupt — resetting to defaults', { error: err?.message });
     settings = { ...DEFAULTS };
   }
 }
@@ -68,8 +73,9 @@ function load() {
 function save() {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  } catch (_) {
+  } catch (err) {
     /* storage may be unavailable (private mode) — degrade quietly */
+    log.debug('extras settings could not be persisted (private mode or quota)', { error: err?.message });
   }
 }
 
@@ -297,9 +303,36 @@ function injectStyles() {
   .kx-health-acts{display:flex;gap:8px}
   .kx-health-acts .btn-action{flex:1 1 auto;justify-content:center}
   /* ── additive light theme (only active under html[data-theme="light"]) ── */
-  html[data-theme="light"]{--bg-main:#eef2f7;--bg-surface:#ffffff;--bg-surface-elevated:#f1f5f9;--bg-panel:#f8fafc;
-    --border-subtle:#dbe3ee;--text-primary:#0f172a;--text-secondary:#475569;--text-muted:#94a3b8}
-  html[data-theme="light"] body{background:#eef2f7;color:#0f172a}
+  /* The full light token set MUST land on <body>, not just <html>. The romance
+     theme redeclares these tokens on body (the closest ancestor of every panel),
+     which shadows anything set higher up — so tokens declared only on html never
+     reach the content, and the whole unified shell stayed dark. Redoing them on
+     html[data-theme="light"] body (specificity 0,1,2) beats body.theme-romance
+     (0,1,1) on the SAME element, so the cascade finally reaches the shell. Text
+     tiers and foreground accents are chosen to clear the APCA Lc 60 floor on the
+     lightest surface (#ffffff); see tests/light-theme-contrast.test.mjs. */
+  html[data-theme="light"]{--bg-main:#eef2f7;--bg-surface:#ffffff;--bg-surface-elevated:#f1f5f9;--bg-panel:#f8fafc;--bg-inset:#f8fafc;
+    --border-subtle:#dbe3ee;--border-active:#0e7490;--border-focus:#0369a1;
+    --accent-cyan:#0e7490;--accent-amber:#92400e;--accent-rose:#9f1239;--accent-emerald:#065f46;--accent-indigo:#4338ca;
+    --text-primary:#0f172a;--text-secondary:#3f4a5a;--text-muted:#5a6675;--brand-accent:#be185d;
+    --panel-bg:rgba(255,255,255,.94);--panel-bar-bg:rgba(255,255,255,.98);--panel-border:rgba(15,23,42,.14);
+    --panel-text:#0f172a;--panel-muted:#3f4a5a;--panel-faint:#5a6675;--btn-bg:#ffffff;--btn-bg-hover:#eef2f7;--btn-border:#dbe3ee;--btn-text:#334155}
+  html[data-theme="light"] body{--bg-main:#eef2f7;--bg-surface:#ffffff;--bg-surface-elevated:#f1f5f9;--bg-panel:#f8fafc;--bg-inset:#f8fafc;
+    --border-subtle:#dbe3ee;--border-active:#0e7490;--border-focus:#0369a1;
+    --accent-cyan:#0e7490;--accent-amber:#92400e;--accent-rose:#9f1239;--accent-emerald:#065f46;--accent-indigo:#4338ca;
+    --text-primary:#0f172a;--text-secondary:#3f4a5a;--text-muted:#5a6675;--brand-accent:#be185d;
+    --panel-bg:rgba(255,255,255,.94);--panel-bar-bg:rgba(255,255,255,.98);--panel-border:rgba(15,23,42,.14);
+    --panel-text:#0f172a;--panel-muted:#3f4a5a;--panel-faint:#5a6675;--btn-bg:#ffffff;--btn-bg-hover:#eef2f7;--btn-border:#dbe3ee;--btn-text:#334155;
+    background:#eef2f7;color:#0f172a}
+  /* The shell paints a few solid accent-filled states with the dark theme's near-
+     black text baked in. In light mode the accent is now a deep readable hue, so
+     those fills flip their label to white to keep the pair high-contrast. */
+  html[data-theme="light"] .cb-act--primary,html[data-theme="light"] .sr-btn.is-active,
+  html[data-theme="light"] .ctx-tools .ctx-tool.active,html[data-theme="light"] .ps-chip.is-on{color:#fff}
+  /* Translucent dark chrome that is not purely token-driven needs a light twin. */
+  html[data-theme="light"] .cb-menu,html[data-theme="light"] .insp-host{color:#0f172a}
+  html[data-theme="light"] .ps-fav{background:rgba(255,255,255,.86)}
+  html[data-theme="light"] .cb-act--primary:hover{filter:brightness(1.12)}
   html[data-theme="light"] header#main-header,html[data-theme="light"] #left-toolbar,
   html[data-theme="light"] #right-sidebar,html[data-theme="light"] .tab-bar,
   html[data-theme="light"] .sidebar-panel,html[data-theme="light"] .tanktop-sidebar{background:#fff;color:#0f172a}
@@ -506,11 +539,11 @@ function mkBtn(icon, title, handler) {
 }
 
 const GREETINGS = [
-  () => 'ily ♥',
-  () => `ily, ${settings.hisName} \u2665`,
-  () => 'i built this for my CUTE SEXY PRETTY GORGEOUS BOYFRIEND',
-  () => '\u2610\u2192\u264A i love you',   // ♐→♊ Sagittarius to Gemini
-  () => { const d = daysTogether(); return d != null ? `${d} days and counting \u2665` : 'you + me \u2665'; }
+  () => `for ${settings.hisName} \u2665`,
+  () => 'made with love',
+  () => 'built stitch by stitch, for you',
+  () => `${ZODIAC.yours.glyph}\u2192${ZODIAC.his.glyph} you + me`,   // Sagittarius → Gemini
+  () => { const d = daysTogether(); return d != null ? `${d} days and counting` : 'you + me \u2665'; }
 ];
 let greetIdx = 0;
 
@@ -523,7 +556,7 @@ function refreshGreeting() {
   const g = document.getElementById('kx-greet');
   if (g) g.textContent = GREETINGS[greetIdx % GREETINGS.length]();
   const d = document.getElementById('kx-days');
-  if (d) { const n = daysTogether(); d.textContent = n != null ? `· ${n} days ♥` : ''; }
+  if (d) { const n = daysTogether(); d.textContent = n != null ? `· ${n} days together` : ''; }
 }
 
 function startGreetingRotation() {
@@ -638,7 +671,7 @@ function openAbout() {
   const modal = openModal(`
     <div class="kx-about">
       <h2>About KNITCAT ${ZODIAC.yours.glyph}\u2192${ZODIAC.his.glyph}</h2>
-      <p>I built this for my CUTE SEXY PRETTY GORGEOUS BOYFRIEND.</p>
+      <p>I built this, stitch by stitch, for my favourite person.</p>
       <p>It's a real knitting-machine CAD/CAM studio \u2014 draw a punchcard pattern and the lace decompiler
       schedules the eyelets and directional yarn transfers into carriage passes a single-bed Brother KH-830 can
       actually run, simulate the yarn in 3D, work out a beanie or a tank top to fit, and export DXF, G-code, SVG or
@@ -710,10 +743,10 @@ function showLoveLetter() {
   const wrap = document.createElement('div');
   wrap.className = 'kx-letter';
   wrap.innerHTML = `<div class="inner">
-    <h1>ily, ${esc(settings.hisName)} ${ZODIAC.his.glyph}</h1>
-    <p>i built this for my CUTE SEXY PRETTY GORGEOUS BOYFRIEND.
+    <h1>For ${esc(settings.hisName)}, with love</h1>
+    <p>I built this whole studio just for you.
 
-${esc(settings.message || 'ily')} \u2014 ${esc(settings.yourName || 'me')} ${ZODIAC.yours.glyph}</p>
+${esc(settings.message || 'Always yours.')} \u2014 ${esc(settings.yourName || 'me')}</p>
     <div class="kx-actions" style="justify-content:center;margin-top:26px">
       <button class="kx-btn kx-primary" type="button" id="kx-letter-ok">close \u2665</button>
     </div></div>`;
@@ -779,12 +812,16 @@ function isDrawerMode() {
 }
 
 /**
- * Phones have no room for a 320px diagnostics column, so the sidebar slides in
- * over the canvas when asked. Only ever adds a button — if the header or the
- * sidebar is missing, this does nothing at all.
+ * Phones (and narrow laptops) have no room for a 320px diagnostics column, so the
+ * sidebar becomes a slide-in drawer under 900px. This adds the one button that
+ * summons it. It MUST be placed in chrome that is actually visible: the unified
+ * shell hides the legacy `#main-header` entirely, so we target the command bar's
+ * own action cluster (`.cb-actions`) when present and only fall back to the
+ * classic `.header-actions` otherwise. Only ever adds a button — if neither
+ * cluster nor the sidebar exists, this does nothing.
  */
 function buildMobileChrome() {
-  const actions = document.querySelector('.header-actions');
+  const actions = document.querySelector('.cb-actions') || document.querySelector('.header-actions');
   const sidebar = document.getElementById('right-sidebar');
   if (!actions || !sidebar || document.getElementById('kx-panels-btn')) return;
 
@@ -840,8 +877,8 @@ export function initExtras(ctx = {}) {
   load();
   applyTheme();
   buildHeaderUI();
-  try { buildMobileChrome(); } catch (_) { /* header keeps no drawer affordance */ }
-  try { buildStudioMenu(); } catch (_) { /* header keeps its original buttons */ }
+  try { buildMobileChrome(); } catch (err) { log.warn('the mobile header chrome failed to build — the drawer affordance is missing', { error: err?.message }); }
+  try { buildStudioMenu(); } catch (err) { log.warn('the Studio header menu failed to build — the original buttons stay', { error: err?.message }); }
   updateAvatar();
   installEscapeClose();
   installEasterEgg();

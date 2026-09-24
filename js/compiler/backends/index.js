@@ -17,7 +17,11 @@ export { punchcardBackend } from './punchcard.js';
 export { dxfBackend } from './dxf.js';
 export { gcodeBackend } from './gcode.js';
 export { manufacturingBackend } from './manufacturing.js';
+export { ayabBackend, csvBackend, dakBackend, binaryBackend, passapBackend, knitmateBackend, CARD_BACKENDS } from './cards.js';
 export { punchMatrix, resolveProfile } from './_card.js';
+import { logger } from '../../core/logging.js';
+
+const log = logger('compiler/backends');
 
 import { chartBackend } from './chart.js';
 import { writtenBackend } from './written.js';
@@ -26,6 +30,7 @@ import { punchcardBackend } from './punchcard.js';
 import { dxfBackend } from './dxf.js';
 import { gcodeBackend } from './gcode.js';
 import { manufacturingBackend } from './manufacturing.js';
+import { CARD_BACKENDS } from './cards.js';
 
 /**
  * The canonical backend registry: id → `{ run(ir, options), kind, label }`.
@@ -38,7 +43,8 @@ export const BACKENDS = Object.freeze({
   punchcard: { run: punchcardBackend, kind: 'object', label: 'Punchcard (SVG + ASCII)' },
   dxf: { run: dxfBackend, kind: 'object', label: 'Punchcard DXF (CAD)' },
   gcode: { run: gcodeBackend, kind: 'object', label: 'Punchcard G-code (CNC)' },
-  manufacturing: { run: manufacturingBackend, kind: 'object', label: 'Manufacturing tech pack' }
+  manufacturing: { run: manufacturingBackend, kind: 'object', label: 'Manufacturing tech pack' },
+  ...CARD_BACKENDS
 });
 
 /** Every backend id, in canonical order. */
@@ -59,10 +65,17 @@ export function runBackends(ir, ids = DEFAULT_OUTPUTS, options = {}) {
   const errors = {};
   for (const id of ids) {
     const backend = BACKENDS[id];
-    if (!backend) { errors[id] = `Unknown backend "${id}". Known: ${BACKEND_IDS.join(', ')}.`; continue; }
+    if (!backend) {
+      log.warn(`requested an unknown backend "${id}"`, { known: BACKEND_IDS });
+      errors[id] = `Unknown backend "${id}". Known: ${BACKEND_IDS.join(', ')}.`;
+      continue;
+    }
     try {
       results[id] = backend.run(ir, options);
     } catch (e) {
+      // A backend throwing is an emit-time bug: keep the pipeline alive but capture the
+      // full error here at the source, where the stack still exists.
+      log.logError(`backend "${id}" threw while emitting`, e, { context: { backend: id } });
       errors[id] = e && e.message ? e.message : String(e);
     }
   }

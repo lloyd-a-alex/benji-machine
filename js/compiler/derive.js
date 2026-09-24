@@ -21,6 +21,9 @@
 import { draftFromProject } from '../fit/index.js';
 import { buildIr, irPiece, irRow, op, stitchDelta } from './ir.js';
 import { MACHINE_PROFILES } from '../machine/profiles.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('compiler/derive');
 
 /**
  * Build the compiler IR from a live Project.
@@ -46,6 +49,9 @@ export function deriveIr(project, opts = {}) {
   };
   const machineId = get('machine.id') || (spec.machine && spec.machine.id) || 'standard';
   const profile = MACHINE_PROFILES[machineId] || null;
+  // A real machine id that resolves to no profile means the geometry silently falls back to
+  // generic defaults — surface it so "wrong needle count" is not a mystery.
+  if (!profile && machineId !== 'standard') log.warn(`named machine "${machineId}" has no physical profile — deriving with generic bed defaults`, { machineId });
   const machine = {
     id: machineId,
     bedStitches: num(get('machine.bedStitches'), profile ? profile.needleCount : 200),
@@ -129,7 +135,12 @@ function translateRow(sr) {
     case 'yarn-change': return op('yarn-change', { from: sr.from || 'main', to: sr.to || 'contrast' });
     case 'pick-up': return op('pick-up', { count: Number(sr.count) || 0, from: sr.from || 'edge' });
     case 'rib': return op('rib', { count: Number(sr.count) || 0, note: sr.notes || 'rib' });
-    case 'knit': default: return op('knit');
+    case 'knit': return op('knit');
+    default:
+      // An action the compiler does not know knits as a plain row — a silent loss of the
+      // shaping intent. Surface it so "my cable row did nothing" is diagnosable.
+      log.warn(`unrecognised shaping action "${action}" was compiled as a plain knit row`, { action });
+      return op('knit');
   }
 }
 

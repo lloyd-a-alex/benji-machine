@@ -12,6 +12,9 @@
  */
 
 import { profileLimits } from './profiles.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('machine/machine-knowledge');
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Design & engineering philosophies.
@@ -54,7 +57,8 @@ export const PHILOSOPHIES = {
 /** Convenience for callers that only want the one-line motto. */
 export function phil(key) {
   const p = PHILOSOPHIES[key];
-  return p ? `${p[0]} — ${p[1]}` : '';
+  if (!p) { log.warn(`unknown philosophy key "${key}" — advisory lost its principle citation`, { key }); return ''; }
+  return `${p[0]} — ${p[1]}`;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -225,7 +229,14 @@ const GENERIC = {
 
 export function knowledgeFor(profile) {
   if (!profile) return GENERIC;
-  return MACHINE_KNOWLEDGE[profile.id] || GENERIC;
+  const known = MACHINE_KNOWLEDGE[profile.id];
+  if (!known) {
+    // Expected for a custom machine, but worth seeing: the advisor runs on generic
+    // physics here, so the craft prose is thin.
+    log.debug(`no knowledge dossier for profile "${profile.id}" — falling back to generic`, { id: profile.id, custom: Boolean(profile.custom) });
+    return GENERIC;
+  }
+  return known;
 }
 
 export function capabilitiesFor(profile) {
@@ -299,6 +310,7 @@ export function universalEnvelope(profiles) {
     maxNeedles: strictest(list, p => profileLimits(p).maxNeedles),
     maxRows: strictest(list, p => profileLimits(p).maxRows),
     minRows: loosest(list, p => profileLimits(p).minRows),
+    maxColors: strictest(list, p => profileLimits(p).maxColors),
     beds: 1 // single-bed is the common denominator; double-bed transfers are not portable
   };
 }

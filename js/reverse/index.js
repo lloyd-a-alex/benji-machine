@@ -36,6 +36,9 @@ import { extractSilhouette } from './silhouette.js';
 import { inferFromSilhouette } from './construct.js';
 import { reconstruct } from './reconstruct.js';
 import { Project } from '../project/project.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('reverse');
 
 /**
  * Run the whole reverse pipeline on one image.
@@ -99,6 +102,10 @@ export function reverseEngineer(image, options = {}) {
       warnings.push(`Could not build a Project from the reconstruction: ${e && e.message ? e.message : e}`);
     }
   }
+
+  // Mirror every reverse-engineering warning into the log so an unsure reading is
+  // never silently swallowed by the report panel.
+  for (const w of warnings) log.warn(`reverse-engineer: ${w}`, { confidence });
 
   return { scale, fabric, colors, gauge, pattern, chart, silhouette, construction, reconstruction, warnings, confidence, project };
 }

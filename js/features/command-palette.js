@@ -15,6 +15,10 @@
  * Fully contained: if anything throws it just won't open; the app is unaffected.
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('features/command-palette');
+
 // Synonyms so ordinary knitting words find the right destination.
 const SYNONYMS_TAB = {
   editor: 'pattern cad editor draw grid design stitch paint canvas',
@@ -49,7 +53,8 @@ function readRecent() {
   try {
     const raw = localStorage.getItem(RECENT_KEY);
     return raw ? JSON.parse(raw) : []; 
-  } catch (_) {
+  } catch (err) {
+    log.debug('the saved command recents were corrupt — starting with none', { error: err?.message });
     return [];
   }
 }
@@ -127,7 +132,7 @@ function gatherCommands(getActions) {
   if (selEl) Array.from(selEl.options).forEach(o => {
     cmds.push({ label: 'Machine: ' + o.textContent, group: 'Machine', keywords: 'machine profile ' + o.textContent, run: () => { selEl.value = o.value; selEl.dispatchEvent(new Event('change', { bubbles: true })); } });
   });
-  try { (getActions ? getActions() : []).forEach(a => cmds.push(a)); } catch (_) { /* ignore */ }
+  try { (getActions ? getActions() : []).forEach(a => cmds.push(a)); } catch (err) { log.warn('the app-supplied command list could not be gathered — the palette is missing those actions', { error: err?.message }); }
   return cmds;
 }
 
@@ -176,7 +181,7 @@ function paint(withHeaders, recentSet) {
       + `<span class="kx-cmd-label">${esc(c.label)}</span>`
       + `<span class="kx-cmd-group">${esc((withHeaders && recentSet && recentSet.has(c.label)) ? '' : (c.group || ''))}</span></div>`;
   });
-  els.list.innerHTML = rows.join('') || '<div class="kx-cmd-empty">Nothing matches — try another word ♥</div>';
+  els.list.innerHTML = rows.join('') || '<div class="kx-cmd-empty">Nothing matches — try another word</div>';
 }
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -195,7 +200,7 @@ function runSel() {
   close();
   if (cmd && typeof cmd.run === 'function') {
     try { pushRecent(cmd.label); } catch (_) { /* ignore */ }
-    try { cmd.run(); } catch (_) { /* contained */ }
+    try { cmd.run(); } catch (err) { log.logError(`command palette action "${cmd.label}" threw`, err); }
   }
 }
 

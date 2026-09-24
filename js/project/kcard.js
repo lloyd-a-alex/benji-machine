@@ -28,6 +28,9 @@ import { STITCH_TYPE } from '../math/knit-topology.js';
 // file format can never disagree with the editor about what a guide looks like.
 import { sanitizeAnnotations } from '../edit/annotations.js';
 import { normalizeGuideList } from '../edit/guides.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('project/kcard');
 
 /** Bump this when the document shape changes; readers migrate from older ones. */
 export const KCARD_SCHEMA_VERSION = 2;
@@ -313,6 +316,7 @@ export function readProject(raw) {
     try {
       data = JSON.parse(data);
     } catch (err) {
+      log.warn('a .kcard file was not valid JSON', { error: err?.message, bytes: raw.length });
       return { ok: false, warnings, error: `That is not JSON at all: ${err.message}` };
     }
   }
@@ -416,6 +420,9 @@ export function readProject(raw) {
     project.layers = null;
   }
 
+  // A successful-but-partial load is the interesting case for debugging a "my file
+  // opened but lost things" report — surface exactly what was dropped or upgraded.
+  if (warnings.length) log.warn(`.kcard loaded with ${warnings.length} advisory(ies)`, { name: project.name || null, warnings });
   return { ok: true, project, warnings };
 }
 

@@ -22,6 +22,9 @@
  */
 
 import { MACHINE_PROFILES } from '../../machine/profiles.js';
+import { logger } from '../../core/logging.js';
+
+const log = logger('compiler/backends/_card');
 
 /** The default punch width when a machine id has no matching physical profile. */
 const FALLBACK_COLUMNS = 24;
@@ -37,6 +40,11 @@ export function resolveProfile(machineOrId) {
     return machineOrId.profile;
   }
   const id = typeof machineOrId === 'string' ? machineOrId : (machineOrId && machineOrId.id) || 'brother_standard_24';
+  if (!MACHINE_PROFILES[id] && id !== 'brother_standard_24') {
+    // An unknown machine id silently knits on Brother geometry — the wrong card width
+    // for (say) an E6000. Surface it rather than emitting a mis-sized card unnoticed.
+    log.warn(`unknown machine profile "${id}" — falling back to Brother standard-24 card geometry`, { id });
+  }
   return MACHINE_PROFILES[id] || MACHINE_PROFILES.brother_standard_24 || syntheticProfile(id);
 }
 
@@ -104,7 +112,10 @@ export function punchMatrix(ir, opts = {}) {
   }
   const maxRows = profile.maxRows || 240;
   if (matrix.length > maxRows) { matrix = matrix.slice(0, maxRows); truncated = true; notes.push(`card truncated to machine max ${maxRows} rows`); }
-  if (truncated) notes.push(`matrix clamped to ${columns}-stitch card width`);
+  if (truncated) {
+    notes.push(`matrix clamped to ${columns}-stitch card width`);
+    log.warn('a card was truncated to fit the machine — the punched card is not the full design', { profile: profile.name || profile.id, columns, maxRows });
+  }
 
   return { matrix, columns, rows: matrix.length, source, truncated, notes, profile };
 }
@@ -119,6 +130,7 @@ function synthesiseFromOperations(ir, columns, notes) {
   const piece = pieces[0];
   const detail = piece ? piece.rowsDetail || [] : [];
   if (!detail.length) {
+    log.warn('no colourwork matrix and no rows to derive a card from — emitting a blank knit card');
     notes.push('no colourwork matrix and no rows to derive a card from — emitting a blank knit card');
     return [new Array(columns).fill(false)];
   }

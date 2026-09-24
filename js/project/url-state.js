@@ -28,6 +28,9 @@
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
 import { MACHINE_PROFILES } from '../machine/profiles.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('project/url-state');
 
 export const URL_STATE_PARAM = 'p';
 /** Bump only when the bit layout below changes. */
@@ -228,6 +231,7 @@ export function decodeCard(code) {
   try {
     bytes = fromBase64Url(code.trim());
   } catch (err) {
+    log.warn('a share link carried undecodable base64url data', { error: err?.message });
     return { ok: false, error: `That link's pattern data is not valid: ${err.message}` };
   }
   const raw = unpackRuns(bytes);
@@ -308,7 +312,8 @@ export function readShareUrl(href) {
     if (fromHash) return decodeURIComponent(fromHash[1]);
     const fromQuery = url.searchParams.get(URL_STATE_PARAM);
     return fromQuery ? decodeURIComponent(fromQuery) : null;
-  } catch (_) {
+  } catch (err) {
+    log.warn('a share URL could not be parsed for pattern data', { href, error: err?.message });
     return null;
   }
 }

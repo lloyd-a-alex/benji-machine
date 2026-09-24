@@ -350,7 +350,7 @@ export function createConsolePanel(deps) {
       setTimeout(() => URL.revokeObjectURL(url), 4000);
       copyText(json);
       notifier && notifier.success && notifier.success('Console session exported and copied.');
-    } catch (_) { copyText(json); }
+    } catch (err) { diag && diag.warn && diag.warn('Console session export failed — copied to clipboard instead', { error: (err && err.message) || String(err) }); copyText(json); }
   }
   function copyVisible() {
     const recs = diag.records().filter(matches);

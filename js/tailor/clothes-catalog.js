@@ -18,7 +18,11 @@ import { gradeSizes } from './grading.js';
 import { estimateYarn } from './yarn-estimate.js';
 import { BeanieEngine } from './beanie-engine.js';
 import { TankTopTailoringEngine } from './tank-top-engine.js';
+import { SweaterEngine, SockEngine, MittenEngine } from './drafted-engines.js';
 import { MACHINE_PROFILES } from '../machine/profiles.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('tailor/clothes-catalog');
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const round = Math.round;
@@ -493,8 +497,9 @@ export class ClothesEngine {
       plan.fashioning = buildFashioning(plan, MACHINE_PROFILES.brother_standard_24);
       plan.yarn = estimateYarn(plan, g, {});
       plan.sizes = gradeSizes(garment, p, {});
-    } catch (_) {
+    } catch (err) {
       // Augmentation is additive polish — never let it break a valid plan.
+      log.warn(`a garment plan could not be augmented (outline / fashioning / yarn / sizes) — it stays usable but incomplete`, { structure: garment?.structure, error: err?.message });
     }
   }
 
@@ -532,63 +537,41 @@ export class ClothesEngine {
     plan.footprintCm = { w: toF(width), h: toF(length) };
   }
 
+  // Sweaters, cardigans, hoodies, vests, crops, camisoles and baby sweaters are all
+  // routed through the shared SweaterEngine, which drives the SAME shaping scheduler the
+  // Fit Engine uses — so a body garment now gets an exact row-by-row schedule instead of
+  // prose. Falls back to the simple tube if an engine ever yields nothing.
   _body(plan, p, spc, rpc, N) {
-    const chest = N(p.chest); const length = N(p.length); const rib = N(p.rib); const sleeve = N(p.sleeve);
-    const bodySts = Math.max(16, round(chest * spc));
-    const ribSts = Math.max(16, Math.floor(bodySts * 0.92 / 2) * 2);
-    const waistSts = Math.max(16, round((chest + N(p.waist)) * spc / 2) * 2); // designer waist shaping
-    const bodyRows = Math.max(8, round(length * rpc));
-    const armhole = N(p.armhole) || length * 0.4;
-    const armSts = round(bodySts * 0.24);
-    const sleeveRows = Math.max(6, round(sleeve * rpc));
-    plan.parts.push({ name: 'Body', castOn: ribSts, rows: bodyRows, circumferenceCm: toF(chest), heightCm: toF(length) });
-    if (sleeve > 0) plan.parts.push({ name: 'Sleeves ×2', castOn: round(chest * 0.18 * spc), rows: sleeveRows, circumferenceCm: toF(chest * 0.24) });
-    const inst = [
-      { step: 1, title: 'Hem rib', text: `Cast on ${ribSts} sts, join in the round. Work ${rib} cm rib.` },
-      N(p.waist) !== 0
-        ? { step: 2, title: 'Waist shaping', text: `Change to ${bodySts} sts; shape in to ${waistSts} sts at the waist then back out, reaching the armhole at ${toF(length - armhole)} cm.` }
-        : { step: 2, title: 'Body to armholes', text: `Change to ${bodySts} sts; knit until the piece measures ${toF(length - armhole)} cm to the armhole.` },
-      { step: 3, title: 'Shoulders & neck', text: `Put ${armSts} sts on hold for each armhole; shape the neck over the last ${round(N(p.neckdrop) * rpc)} rows.` },
-      sleeve > 0
-        ? { step: 4, title: 'Sleeves', text: `Knit two sleeves of ${plan.parts[1].castOn} sts working a few increases to ${armSts} sts at the top, ${sleeve} cm long.` }
-        : { step: 4, title: 'Straps / bands', text: 'Pick up and knit the shoulder straps and neckband to length.' },
-      { step: 5, title: 'Finish', text: 'Seam underarms, weave in ends, block.' }
-    ];
-    plan.instructions = inst;
-    plan.footprintCm = { w: toF(chest / 2), h: toF(length + sleeve) };
+    const model = new SweaterEngine().compute(p, { stitchesPer10Cm: spc * 10, rowsPer10Cm: rpc * 10 });
+    if (!model || !model.parts || !model.parts.length) { this._tube(plan, p, spc, rpc, N); return; }
+    plan.parts = model.parts;
+    plan.instructions = model.instructions;
+    plan.footprintCm = model.footprintCm;
+    plan.drafted = model;
+    plan.schedule = model.schedule;
+    plan.body = model.metrics;
   }
 
   _hand(plan, p, spc, rpc, N) {
-    const circ = N(p.hand); const length = N(p.length); const rib = N(p.rib);
-    const sts = Math.max(24, round(circ * spc));
-    const rows = Math.max(20, round(length * rpc));
-    const thumbSts = round(sts * 0.28);
-    plan.parts.push({ name: 'Mitten', castOn: sts, rows, circumferenceCm: toF(circ), heightCm: toF(length) });
-    plan.instructions = [
-      { step: 1, title: 'Cuff', text: `Cast on ${sts} sts, join; rib for ${rib} cm (${round(rib * rpc)} rounds).` },
-      { step: 2, title: 'Hand', text: `Knit even until ${toF(length * 0.55)} cm from the cuff.` },
-      { step: 3, title: 'Thumb gusset', text: `Increase ${thumbSts} sts over 4 rounds at the base of the thumb; keep them on hold.` },
-      { step: 4, title: 'Close the top', text: `Knit to the fingertip then decrease ${Math.max(2, round(sts / 8))} sts per round to close.` },
-      { step: 5, title: 'Thumb', text: `Return the ${thumbSts} held sts, pick up 4 around the gusset, knit the thumb down 3.5 cm and tip it.` }
-    ];
-    plan.footprintCm = { w: toF(circ), h: toF(length) };
+    const model = new MittenEngine().compute(p, { stitchesPer10Cm: spc * 10, rowsPer10Cm: rpc * 10 });
+    if (!model || !model.parts || !model.parts.length) { this._tube(plan, p, spc, rpc, N); return; }
+    plan.parts = model.parts;
+    plan.instructions = model.instructions;
+    plan.footprintCm = model.footprintCm;
+    plan.drafted = model;
+    plan.schedule = model.schedule;
+    plan.mitten = model.metrics;
   }
 
   _sock(plan, p, spc, rpc, N) {
-    const leg = N(p.leg), foot = N(p.foot), rib = N(p.rib);
-    const ankle = Math.max(16, round((N(p.calf) * 0.72) * spc));
-    const legRows = Math.max(10, round(leg * rpc));
-    const footRows = Math.max(10, round(foot * rpc));
-    const heelRows = round(ankle / 2);
-    plan.parts.push({ name: 'Sock', castOn: ankle, rows: legRows + heelRows + footRows, circumferenceCm: toF(N(p.calf)), heightCm: toF(leg + foot) });
-    plan.instructions = [
-      { step: 1, title: 'Cuff', text: `Cast on ${ankle} sts, join; rib ${rib} cm (${round(rib * rpc)} rounds).` },
-      { step: 2, title: 'Leg', text: `Knit even for ${leg} cm (${legRows} rounds).` },
-      { step: 3, title: 'Heel flap', text: `Work ${ankle / 2} sts flat over ${heelRows} rows, then turn the wedge (short rows).` },
-      { step: 4, title: 'Gusset & foot', text: `Pick up ${round(heelRows * 0.6)} sts each side, decrease the gusset back to ${ankle} sts, foot down ${toF(foot * 0.6)} cm.` },
-      { step: 5, title: 'Toe', text: `Decrease 4 sts every other round until ${Math.max(8, round(ankle / 3))} remain; Kitchener the seam.` }
-    ];
-    plan.footprintCm = { w: toF(N(p.calf)), h: toF(leg + foot) };
+    const model = new SockEngine().compute(p, { stitchesPer10Cm: spc * 10, rowsPer10Cm: rpc * 10 });
+    if (!model || !model.parts || !model.parts.length) { this._tube(plan, p, spc, rpc, N); return; }
+    plan.parts = model.parts;
+    plan.instructions = model.instructions;
+    plan.footprintCm = model.footprintCm;
+    plan.drafted = model;
+    plan.schedule = model.schedule;
+    plan.sock = model.metrics;
   }
 
   _triangle(plan, p, spc, rpc, N) {

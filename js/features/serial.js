@@ -20,6 +20,10 @@
  * @module features/serial
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('features/serial');
+
 /** Default AYAB / Arduino serial line rate. Configurable per connection. */
 export const DEFAULT_BAUD_RATE = 115200;
 
@@ -88,8 +92,9 @@ export function createSerialSender(opts = {}) {
         // We surface device chatter as a toast-able log but never block on it.
         if (value && value.length) emit('device', value);
       }
-    } catch (_) {
+    } catch (err) {
       /* a read error simply ends the loop; disconnect() does the teardown */
+      log.debug('the device read loop ended on a read error', { error: err?.message });
     } finally {
       try { reader.releaseLock(); } catch (_) { /* port may already be closed */ }
     }
@@ -123,7 +128,7 @@ export function createSerialSender(opts = {}) {
         const name = err && err.name;
         const cancelled = name === 'NotFoundError'; // user closed the picker
         const error = cancelled ? 'No port was chosen.' : `Could not open the port: ${err && err.message ? err.message : err}`;
-        if (!cancelled) say('error', error, { details: [String(err && err.message || err)] });
+        if (!cancelled) { log.error('the serial port could not be opened', { error: err && err.message ? err.message : String(err) }); say('error', error, { details: [String(err && err.message || err)] }); }
         emit(cancelled ? 'cancelled' : 'error', error);
         port = null;
         return { ok: false, cancelled, error };
@@ -166,6 +171,7 @@ export function createSerialSender(opts = {}) {
         return { ok: true, bytes: bytes.length };
       } catch (err) {
         const error = `The transfer stopped: ${err && err.message ? err.message : err}`;
+        log.error('a serial transfer failed partway through', { error: err && err.message ? err.message : String(err), bytes: bytes.length });
         say('error', error, { details: [String(err && err.message || err)] });
         emit('error', error);
         return { ok: false, error, bytes: bytes.length };

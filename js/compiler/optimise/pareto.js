@@ -17,6 +17,10 @@
  * @module compiler/optimise/pareto
  */
 
+import { logger } from '../../core/logging.js';
+
+const log = logger('compiler/optimise/pareto');
+
 /** The three axes, all minimised. */
 export const AXES = Object.freeze(['time', 'yarn', 'appearance']);
 
@@ -70,7 +74,12 @@ export function weightsForPriority(priority) {
     case 'time': case 'fast': return { time: 3, yarn: 1, appearance: 1 };
     case 'yarn': case 'cheap': case 'economy': return { time: 1, yarn: 3, appearance: 1 };
     case 'appearance': case 'pretty': return { time: 1, yarn: 1, appearance: 3 };
-    default: return { time: 1, yarn: 1, appearance: 1 };
+    default: {
+      // An unrecognised priority name silently becomes "balanced" — worth a line, so
+      // "I asked to optimise for X and nothing changed" is diagnosable.
+      if (typeof priority === 'string' && priority) log.debug(`unknown optimiser priority "${priority}" — falling back to balanced weights`, { priority });
+      return { time: 1, yarn: 1, appearance: 1 };
+    }
   }
 }
 

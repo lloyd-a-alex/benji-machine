@@ -23,6 +23,9 @@ import { openDriver, STORES } from '../project/storage.js';
 import { Project, summarizeProject, newChart } from '../project/project-model.js';
 import { previewMatrix, renderThumbnail } from '../ui/thumbnail.js';
 import { escHtml as _esc } from '../ui/text.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('features/project-hub');
 
 const LIVE_CHART = 'live';
 const ACTIVE_KEY = 'knitcad.activeProject.v1';
@@ -35,7 +38,7 @@ let _modal = null;
 let _sort = 'recent';
 
 function _driver() {
-  if (!_driverP) _driverP = openDriver({ logger: _opts.logger || console });
+  if (!_driverP) _driverP = openDriver({ logger: _opts.logger || log });
   return _driverP.then(r => r.driver);
 }
 
@@ -51,7 +54,7 @@ function _recallActive() {
 
 export async function listProjects() {
   let raw = [];
-  try { raw = (await (await _driver()).getAll(STORES.PROJECTS)) || []; } catch (_) { raw = []; }
+  try { raw = (await (await _driver()).getAll(STORES.PROJECTS)) || []; } catch (err) { log.warn('the saved projects could not be read from storage — the hub shows none', { error: err?.message }); raw = []; }
   const projects = [];
   for (const item of raw) {
     const { project } = Project.fromJSON(item);
@@ -63,7 +66,7 @@ export async function listProjects() {
 
 async function _save(p) {
   p.touch();
-  try { await (await _driver()).put(STORES.PROJECTS, p.toJSON(), p.id); } catch (_) { /* quota: still usable this session */ }
+  try { await (await _driver()).put(STORES.PROJECTS, p.toJSON(), p.id); } catch (err) { log.warn(`a project could not be saved to storage — it stays only in this session ("${p.name || p.id}")`, { id: p.id, error: err?.message }); /* quota: still usable this session */ }
   _activeId = p.id;
   _rememberActive(p.id);
   _renderResume();
@@ -71,7 +74,7 @@ async function _save(p) {
 }
 
 async function removeProject(id) {
-  try { await (await _driver()).delete(STORES.PROJECTS, id); } catch (_) { /* gone either way */ }
+  try { await (await _driver()).delete(STORES.PROJECTS, id); } catch (err) { log.debug(`a project delete did not reach storage (it may already be gone)`, { id, error: err?.message }); }
   if (_activeId === id) { _activeId = null; _rememberActive(null); }
 }
 
@@ -171,16 +174,24 @@ async function createNew() {
 function _ensureStyles() {
   if (typeof document === 'undefined' || document.getElementById('kx-studio-style')) return;
   const css = `
-  .kx-studio-backdrop{position:fixed;inset:0;z-index:1610;background:rgba(5,8,16,.62);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
-    display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px 16px}
-  .kx-studio{width:min(1080px,96vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;
-    background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:18px;color:var(--text-primary);
-    box-shadow:0 30px 90px rgba(0,0,0,.66)}
-  .kx-studio-head{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border-subtle);cursor:move;user-select:none;
+  /* The Studio is a full-viewport LANDING page, not a centered popup: it owns the
+     screen so a maker either resumes a project or starts one, then hands back to the
+     editor. The backdrop is the page itself (opaque), never a dimmed click-away. */
+  .kx-studio-backdrop{position:fixed;inset:0;z-index:1610;background:var(--bg-main);color:var(--text-primary);
+    display:flex;align-items:stretch;justify-content:center;padding:0;overflow:hidden}
+  .kx-studio{width:100%;max-width:none;height:100%;max-height:none;display:flex;flex-direction:column;overflow:hidden;
+    background:var(--bg-surface);border:0;border-radius:0;color:var(--text-primary);box-shadow:none}
+  .kx-studio-head{display:flex;align-items:center;gap:12px;padding:18px min(28px,5vw);border-bottom:1px solid var(--border-subtle);user-select:none;
     background:linear-gradient(180deg,color-mix(in srgb,var(--accent-cyan) 9%,var(--bg-surface)),var(--bg-surface))}
-  .kx-studio-head h2{font-size:16px;margin:0;letter-spacing:.03em;text-transform:uppercase;display:flex;align-items:center;gap:9px}
+  .kx-studio-head h2{font-size:18px;margin:0;letter-spacing:.03em;text-transform:uppercase;display:flex;align-items:center;gap:9px}
   .kx-studio-head .grow{flex:1 1 auto}
-  .kx-studio-body{overflow:auto;padding:16px 20px 22px;display:flex;flex-direction:column;gap:14px}
+  .kx-studio-body{overflow:auto;padding:22px min(28px,5vw) 30px;display:flex;flex-direction:column;gap:16px;flex:1 1 auto}
+  .kx-studio-hero{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;
+    padding:clamp(36px,12vh,110px) 20px;margin:auto;max-width:560px}
+  .kx-studio-hero-mark{font-size:46px;line-height:1;color:var(--accent-cyan);opacity:.9}
+  .kx-studio-hero h3{margin:0;font-size:22px;letter-spacing:.01em}
+  .kx-studio-hero p{margin:0;color:var(--text-secondary);font-size:13.5px;line-height:1.7}
+  .kx-studio-hero .btn-action{font-size:14px;padding:11px 22px}
   .kx-studio-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .kx-studio-search{flex:1 1 220px;min-width:180px;box-sizing:border-box;padding:9px 13px;border-radius:10px;border:1px solid var(--border-subtle);
     background:var(--bg-main);color:var(--text-primary);font-size:13px}
@@ -253,6 +264,17 @@ async function _render() {
   const shown = q ? list.filter(p => ((p.name || '') + ' ' + (p.machine || '')).toLowerCase().includes(q)) : list;
   grid.innerHTML = '';
   if (!shown.length) {
+    // A genuinely empty library becomes a single-focus hero: one obvious action that
+    // starts a project and drops the maker straight into the editor. No dead end.
+    if (!projects.length && !q) {
+      grid.innerHTML = `<div class="kx-studio-hero">
+        <div class="kx-studio-hero-mark" aria-hidden="true">\u25A4</div>
+        <h3>Start your first project</h3>
+        <p>KNITCAT keeps every card you make, so you can pick up exactly where you left off. Give a project a name to begin \u2014 whatever is on the canvas comes with it.</p>
+        <button type="button" class="btn-action btn-primary" data-new-hero>+ New Project</button>
+      </div>`;
+      return;
+    }
     grid.innerHTML = `<div class="kx-studio-empty">${q
       ? `No projects match \u201c${_esc(q)}\u201d.`
       : 'Your Studio is empty. \u201c+ New Project\u201d starts one, and \u201cSnapshot current chart\u201d folds whatever is on the canvas into it \u2014 so the app finally remembers what you are making.'}</div>`;
@@ -302,9 +324,24 @@ async function _doOpen(id) {
   if (p) { await openProject(p); _opts.onOpened?.(p); close(); }
 }
 
+/**
+ * Create a project, open it and leave the landing page for the editor — the one
+ * streamlined path shared by the header button and the empty-state hero, so "start
+ * making" is always a single decisive action rather than a form to fill in.
+ */
+async function _startNewProject() {
+  const name = (typeof window !== 'undefined' && window.prompt?.('Project name', 'Untitled project')) || 'Untitled project';
+  const p = await _save(Project.create({ name: String(name).slice(0, 200) }));
+  await openProject(p);
+  _opts.onOpened?.(p);
+  close();
+  return p;
+}
+
 function _bindGrid() {
   const grid = _modal.querySelector('.kx-studio-grid');
   grid.addEventListener('click', async e => {
+    if (e.target.closest('[data-new-hero]')) return void _startNewProject();
     const open = e.target.closest('[data-open]');
     const ren = e.target.closest('[data-ren]');
     const dup = e.target.closest('[data-dup]');
@@ -359,7 +396,9 @@ export function open() {
   _modal = backdrop;
   _bindGrid();
   backdrop.querySelector('[data-close]').addEventListener('click', close);
-  backdrop.addEventListener('mousedown', e => { if (e.target === backdrop) close(); });
+  // A landing page is dismissed deliberately (the close button or Escape), never by a
+  // stray click outside it — that is popup behaviour this screen has moved past.
+  backdrop.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } });
   backdrop.querySelector('.kx-studio-search').addEventListener('input', () => _render());
   backdrop.querySelector('.kx-studio-sort').addEventListener('click', e => {
     const b = e.target.closest('[data-sort]');
@@ -368,13 +407,7 @@ export function open() {
     backdrop.querySelectorAll('.kx-studio-sort button').forEach(x => x.classList.toggle('on', x === b));
     _render();
   });
-  backdrop.querySelector('[data-new]').addEventListener('click', async () => {
-    const name = (window.prompt?.('Project name', 'Untitled project') || 'Untitled project').slice(0, 200);
-    const p = Project.create({ name });
-    await _save(p);
-    await openProject(p);
-    await _render();
-  });
+  backdrop.querySelector('[data-new]').addEventListener('click', () => { _startNewProject(); });
   backdrop.querySelector('[data-snapshot]').addEventListener('click', async () => {
     const p = await commitCurrentChart();
     _opts.notifier?.success?.(p ? `Saved \u201c${p.name}\u201d.` : 'Nothing on the canvas to save yet.');
@@ -398,7 +431,7 @@ function _renderResume() {
   listProjects().then(projects => {
     const p = projects.find(x => x.id === _activeId) || projects[0];
     const s = p ? summarizeProject(p) : null;
-    el.textContent = s && s.resume && s.pieceCount ? `\u25b6 ${s.name}: ${s.resume} \u00b7 ${s.completion}%` : 'Studio';
+    el.textContent = s && s.resume && s.pieceCount ? `\u25b6 ${s.name}: ${s.resume} \u00b7 ${s.completion}%` : '\u25a4 Studio';
   }).catch(() => { /* leave last text */ });
 }
 
@@ -422,17 +455,19 @@ export function initProjectHub(options = {}) {
     _ensureStyles();
     const right = document.querySelector('.status-right');
     if (right && !document.getElementById('kx-studio-link')) {
+      // One control, not two: a single "Studio" link that also carries the
+      // where-I-left-off resume line, so the status bar never shows "Studio | Studio".
       const link = document.createElement('a');
       link.className = 'status-docs-link kx-studio-link';
       link.id = 'kx-studio-link';
       link.href = '#';
       link.title = 'Open your studio — every project you have started';
-      link.textContent = 'Studio';
-      link.addEventListener('click', e => { e.preventDefault(); open(); });
       const resume = document.createElement('span');
       resume.id = 'kx-studio-resume';
       resume.className = 'kx-studio-resume';
-      right.insertBefore(resume, right.firstChild);
+      resume.textContent = '\u25a4 Studio';
+      link.appendChild(resume);
+      link.addEventListener('click', e => { e.preventDefault(); open(); });
       right.insertBefore(link, right.firstChild);
       _renderResume();
     }

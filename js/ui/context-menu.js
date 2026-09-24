@@ -22,6 +22,9 @@
  */
 
 import { escHtml as escapeHtml } from './text.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/context-menu');
 
 const MENU_ID = 'kx-ctxmenu';
 const STYLE_ID = 'kx-ctxmenu-style';
@@ -274,7 +277,7 @@ export function initContextMenu(deps = {}) {
         + (KEY_HINTS[it.id] ? `<span class="kx-ctx-key">${KEY_HINTS[it.id]}</span>` : '');
       b.addEventListener('click', () => {
         closeMenu();
-        try { onAction(it.id, Object.assign({ anchor, kind, flags }, lastCtx || {})); } catch (_) { /* contained */ }
+        try { onAction(it.id, Object.assign({ anchor, kind, flags }, lastCtx || {})); } catch (err) { log.logError(`context-menu action "${it.id}" threw`, err, { context: { kind } }); }
       });
       menu.appendChild(b);
     }

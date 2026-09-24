@@ -29,6 +29,9 @@ import { defineYarnNodes } from './nodes/yarn-nodes.js';
 import { defineCostNodes } from './nodes/cost-nodes.js';
 import { migrate } from './migrations.js';
 import { validateProject } from './validate-deep.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('project/project');
 
 /** Current Project schema version; migrations up to this number run on load. */
 export const PROJECT_VERSION = 3;
@@ -78,7 +81,7 @@ export class Project {
    * @param {string} id @param {*} value @returns {string[]} changed node ids
    */
   set(id, value) {
-    if (!this.graph.has(id)) return [];
+    if (!this.graph.has(id)) { log.debug('set() targeted a node that does not exist — the edit was a no-op', { id }); return []; }
     const changed = this.graph.set(id, value);
     if (changed.length) {
       this.editCount++;

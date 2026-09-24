@@ -9,6 +9,12 @@
  */
 
 import { calculateCardDimensions } from '../machine/profiles.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('exporters/vector-svg');
+
+/** Geometry fields the SVG circle coordinates depend on — a missing one becomes a NaN path. */
+const REQUIRED_GEOMETRY = ['pitchX', 'pitchY', 'holeDiameter', 'sprocketDiameter', 'sprocketPitchY', 'marginSide', 'sprocketToFirstHole', 'marginTopBottom', 'cardWidth'];
 
 export class VectorSvgExporter {
   /**
@@ -21,6 +27,8 @@ export class VectorSvgExporter {
     if (!profile || typeof profile !== 'object') {
       throw new TypeError('VectorSvgExporter.generateLaserSvg requires a machine profile.');
     }
+    const badFields = REQUIRED_GEOMETRY.filter((k) => !Number.isFinite(profile[k]));
+    if (badFields.length) log.error('machine profile is missing non-numeric geometry fields, SVG will carry NaN coordinates', { profile: profile.name || profile.id, badFields });
     const {
       cutColor = '#ff0000',
       scoreColor = '#0000ff',
@@ -82,7 +90,9 @@ export class VectorSvgExporter {
     // Group: Text & Markings
     if (includeText) {
       svg.push(`<g id="engrave-labels">`);
-      svg.push(`  <text class="engrave-text" x="${dims.widthMm / 2}" y="7" text-anchor="middle">${profile.name.toUpperCase()}</text>`);
+      const title = profile.name ? String(profile.name).toUpperCase() : 'KNITCAT CARD';
+      if (!profile.name) log.warn('generateLaserSvg profile has no name — labelling with a placeholder');
+      svg.push(`  <text class="engrave-text" x="${dims.widthMm / 2}" y="7" text-anchor="middle">${title}</text>`);
 
       for (let r = 0; r < rows; r += 2) {
         const y = dims.rowOffsetYMm + r * profile.pitchY + 0.8;
@@ -104,6 +114,8 @@ export class VectorSvgExporter {
     if (!profile || typeof profile !== 'object') {
       throw new TypeError('VectorSvgExporter.generateTiledPrintablePages requires a machine profile.');
     }
+    const badFields = REQUIRED_GEOMETRY.filter((k) => !Number.isFinite(profile[k]));
+    if (badFields.length) log.error('machine profile is missing non-numeric geometry fields, tiled print will carry NaN coordinates', { profile: profile.name || profile.id, badFields });
     const paperDims = (paperType === 'Letter')
       ? { widthMm: 215.9, heightMm: 279.4 }
       : { widthMm: 210.0, heightMm: 297.0 }; // Standard A4
@@ -206,7 +218,7 @@ export class VectorSvgExporter {
       svg.push(`</g>`);
 
       // Page Header Info
-      svg.push(`<text class="title" x="${paperDims.widthMm / 2}" y="10" text-anchor="middle">${profile.name} - Page ${pageIdx + 1} of ${totalPages}</text>`);
+      svg.push(`<text class="title" x="${paperDims.widthMm / 2}" y="10" text-anchor="middle">${profile.name || 'KNITCAT CARD'} - Page ${pageIdx + 1} of ${totalPages}</text>`);
 
       svg.push(`</svg>`);
       pages.push(svg.join('\n'));

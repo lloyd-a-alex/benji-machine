@@ -28,6 +28,10 @@
  * @module ui/dialogs
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/dialogs');
+
 const DIALOG_STACK = [];
 
 /** Escape/cancel for `window.prompt`, which can throw in embedded frames. */
@@ -36,7 +40,8 @@ export function safePrompt(title, value = '') {
     if (typeof window === 'undefined' || typeof window.prompt !== 'function') return null;
     const answer = window.prompt(title, value);
     return typeof answer === 'string' ? answer : null;
-  } catch (_) {
+  } catch (err) {
+    log.debug('window.prompt threw (sandboxed frame?) — treating it as a cancel', { error: err?.message });
     return null;
   }
 }
@@ -46,7 +51,8 @@ export function safeConfirm(message) {
   try {
     if (typeof window === 'undefined' || typeof window.confirm !== 'function') return true;
     return Boolean(window.confirm(message));
-  } catch (_) {
+  } catch (err) {
+    log.debug('window.confirm threw (sandboxed frame?) — defaulting to denial', { error: err?.message });
     return false;
   }
 }
@@ -292,8 +298,9 @@ function notify(spec, result) {
   const kind = result.ok === false ? 'warn' : (result.kind || 'success');
   try {
     (notifier?.[kind] || notifier?.info || (() => {})).call(notifier, result.message, { details: result.details });
-  } catch (_) {
+  } catch (err) {
     /* a dialog must never fail because a toast did */
+    log.warn('a dialog result could not be reported through the notifier', { kind, error: err?.message });
   }
 }
 

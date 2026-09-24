@@ -15,6 +15,9 @@
 import { CadDxfExporter } from '../../exporters/cad-dxf.js';
 import { calculateCardDimensions } from '../../machine/profiles.js';
 import { punchMatrix, resolveProfile } from './_card.js';
+import { logger } from '../../core/logging.js';
+
+const log = logger('compiler/backends/dxf');
 
 /**
  * Compile an IR into an AutoCAD R12 DXF punchcard.
@@ -29,7 +32,7 @@ export function dxfBackend(ir, options = {}) {
   const errors = [];
   try {
     dxf = CadDxfExporter.generateDxf(profile, card.matrix, { includeSprockets: options.includeSprockets !== false });
-  } catch (e) { errors.push(`dxf: ${e && e.message ? e.message : e}`); }
+  } catch (e) { log.logError('DXF generation failed', e, { context: { profile: profile.name } }); errors.push(`dxf: ${e && e.message ? e.message : e}`); }
   const meta = {
     machine: profile.name, columns: card.columns, rows: card.rows, source: card.source,
     widthMm: round1(dims.widthMm), heightMm: round1(dims.heightMm),

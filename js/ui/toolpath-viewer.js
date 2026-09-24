@@ -19,6 +19,9 @@
 
 import { calculateCardDimensions } from '../machine/profiles.js';
 import { optimizeToolpath, pathLengthMm } from '../math/tsp-path.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/toolpath-viewer');
 
 /** Linear interpolation */
 const lerp = (a, b, t) => a + (b - a) * Math.min(1, Math.max(0, t));
@@ -30,10 +33,12 @@ export class ToolpathViewer {
   constructor(canvasElement, options = {}) {
     this.canvas = canvasElement;
     this.ctx    = canvasElement.getContext('2d', { alpha: false });
+    if (!this.ctx) log.error('toolpath viewer 2D context is unavailable — the simulation cannot render', { hasElement: !!canvasElement });
 
     // Offscreen buffer — render here, blit to display canvas each frame
     this.offscreen = document.createElement('canvas');
     this.offCtx    = this.offscreen.getContext('2d', { alpha: false });
+    if (!this.offCtx) log.error('toolpath viewer offscreen 2D context is unavailable');
     this.dpr       = 1;
 
     this.profile    = options.profile || null;

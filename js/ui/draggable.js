@@ -18,6 +18,10 @@
  * @module ui/draggable
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/draggable');
+
 const STORE_PREFIX = 'knitcat.drag.v1.';
 const PAD = 6; // px of the title bar that must stay on-screen after a clamp
 
@@ -79,7 +83,7 @@ function storeKey(el) {
 function persist(el) {
   const key = storeKey(el);
   if (!key) return;
-  try { localStorage.setItem(key, JSON.stringify(offset(el))); } catch (_) { /* storage off */ }
+  try { localStorage.setItem(key, JSON.stringify(offset(el))); } catch (err) { log.debug('a dragged panel position could not be persisted (storage off)', { key, error: err?.message }); }
 }
 
 function restore(el) {
@@ -90,7 +94,7 @@ function restore(el) {
     if (!raw) return;
     const o = JSON.parse(raw);
     if (o && Number.isFinite(o.x) && Number.isFinite(o.y)) applyOffset(el, o.x, o.y);
-  } catch (_) { /* corrupt offset: start put-put */ }
+  } catch (err) { log.debug('a stored drag offset was corrupt — the panel starts at its default spot', { key, error: err?.message }); }
 }
 
 let zCounter = 9100;

@@ -13,6 +13,10 @@
  * @module project/nodes/gauge-nodes
  */
 
+import { logger } from '../../core/logging.js';
+
+const log = logger('project/nodes/gauge-nodes');
+
 /** Typical stitches-per-10cm range by yarn weight (midpoint drives the expected gauge). */
 export const WEIGHT_GAUGE = Object.freeze({
   lace: [32, 40], 'light-fingering': [28, 36], fingering: [27, 32], baby: [26, 30],
@@ -28,8 +32,14 @@ const ROW_RATIO = 1.35;
  * @param {string} weight @returns {{sts:number, rows:number}}
  */
 export function expectedGauge(weight) {
-  const range = WEIGHT_GAUGE[String(weight || '').toLowerCase()];
-  if (!range) return { sts: 22, rows: Math.round(22 * ROW_RATIO) };
+  const key = String(weight || '').toLowerCase();
+  const range = WEIGHT_GAUGE[key];
+  if (!range) {
+    // A typo'd or unknown weight silently becomes a generic sport-weight gauge —
+    // worth a line, because every stitch count downstream trusts this number.
+    if (key) log.debug('unknown yarn weight — falling back to a generic expected gauge', { weight });
+    return { sts: 22, rows: Math.round(22 * ROW_RATIO) };
+  }
   const sts = (range[0] + range[1]) / 2;
   return { sts, rows: sts * ROW_RATIO };
 }

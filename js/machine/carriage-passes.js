@@ -45,6 +45,9 @@
  */
 
 import { STITCH_TYPE } from '../math/knit-topology.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('machine/carriage-passes');
 
 export const PASS_PURPOSE = {
   POSITION: 'position', // idle traverse to get the carriage onto the right side
@@ -647,6 +650,7 @@ export function validateRackRow(transfers = []) {
   if (!transfers.length) return { ok: true, rack: 0, conflicts: [], message: 'No transfers on this row.' };
   if (values.length > 1) {
     const conflicts = transfers.filter(transfer => Math.sign(transfer.rack || 0) !== values[0]);
+    log.warn('mixed racking on one double-bed row (the bed can only rack one way)', { conflicts: conflicts.length, values });
     return {
       ok: false,
       rack: values[0],
@@ -678,23 +682,28 @@ export function validateRackRow(transfers = []) {
 export function occupancyAfterTransfers(bed, transfers = []) {
   const counts = Array.isArray(bed) ? bed.map(value => Math.trunc(value) || 0) : new Array(Math.max(0, Math.trunc(bed))).fill(1);
   const events = [];
+  const impossible = [];
   for (const transfer of transfers) {
     if (transfer.from < 0 || transfer.from >= counts.length) {
       events.push({ kind: 'error', needle: transfer.from, message: `Source needle ${transfer.from} is off the bed.` });
+      impossible.push(`src ${transfer.from} off-bed`);
       continue;
     }
     if (transfer.to < 0 || transfer.to >= counts.length) {
       events.push({ kind: 'error', needle: transfer.to, message: `Needle ${transfer.to} is off the bed, so the stitch would drop.` });
+      impossible.push(`dst ${transfer.to} off-bed`);
       continue;
     }
     if (counts[transfer.from] < 1) {
       events.push({ kind: 'empty', needle: transfer.from, message: `Needle ${transfer.from} has nothing on it to transfer.` });
+      impossible.push(`${transfer.from} empty`);
       continue;
     }
     counts[transfer.from] -= 1;
     counts[transfer.to] += 1;
     events.push({ kind: 'moved', from: transfer.from, to: transfer.to });
   }
+  if (impossible.length) log.warn(`${impossible.length} physically-impossible transfer(s) in occupancy model`, { bed: counts.length, impossible });
   return {
     counts,
     events,

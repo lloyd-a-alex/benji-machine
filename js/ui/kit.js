@@ -17,6 +17,10 @@
  * @module ui/kit
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/kit');
+
 const STYLE_ID = 'kx-kit-style';
 let injected = false;
 
@@ -40,8 +44,9 @@ export function ensureKitStyles() {
     style.textContent = KIT_CSS;
     document.head.appendChild(style);
     injected = true;
-  } catch (_) {
+  } catch (err) {
     injected = true; // unstyled but functional beats throwing into boot
+    log.debug('the shared UI kit stylesheet failed to inject — docks stay unstyled but functional', { error: err?.message });
   }
 }
 
@@ -107,11 +112,11 @@ const KIT_CSS = `
 .kx-panel{position:fixed;z-index:9000;display:flex;flex-direction:column;
   background:var(--panel-bg);backdrop-filter:blur(var(--panel-blur));-webkit-backdrop-filter:blur(var(--panel-blur));
   color:var(--panel-text);border:1px solid var(--panel-border);border-radius:var(--radius-xl);
-  box-shadow:var(--shadow-float);font:13px/1.5 var(--font-ui);overflow:hidden}
+  box-shadow:var(--shadow-float);font:13px/1.5 var(--font-ui);overflow:hidden;max-width:calc(100vw - 24px)}
 .kx-panel--br{right:14px;bottom:14px}
-.kx-panel--tr{right:14px;top:96px}
+.kx-panel--tr{right:14px;top:132px}
 .kx-panel--bl{left:14px;bottom:14px}
-.kx-panel--tl{left:14px;top:96px}
+.kx-panel--tl{left:14px;top:132px}
 .kx-panel__bar{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--panel-hairline);
   background:var(--panel-bar-bg);position:sticky;top:0;z-index:1}
 .kx-panel__title{font-weight:700;font-size:13px;display:flex;align-items:center;gap:7px;white-space:nowrap}

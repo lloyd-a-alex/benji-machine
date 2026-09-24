@@ -19,6 +19,9 @@
 
 import { inspectCell, inspectCellWarnings } from '../edit/stitch-info.js';
 import { ensureKitStyles } from './kit.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/stitch-inspector');
 
 const STYLE_ID = 'kx-stitch-inspector-style';
 const PANEL_ID = 'kx-stitch-inspector';
@@ -152,7 +155,7 @@ export function createStitchInspector(deps) {
 
     els.warns.textContent = '';
     let warns = [];
-    try { warns = inspectCellWarnings(ed.matrix, hc.r, hc.c, { mode }) || []; } catch (_) { /* warnings are best-effort */ }
+    try { warns = inspectCellWarnings(ed.matrix, hc.r, hc.c, { mode }) || []; } catch (err) { log.warn('cell warnings could not be computed for the inspector', { row: hc.r, col: hc.c, error: err?.message }); }
     for (const w of warns) {
       const li = document.createElement('li');
       li.className = `kxi-warn kxi-warn--${w.level || 'info'}`;
@@ -219,5 +222,5 @@ function injectStyles() {
     style.id = STYLE_ID; style.textContent = css;
     document.head.appendChild(style);
     stylesInjected = true;
-  } catch (_) { stylesInjected = true; /* unstyled but functional is acceptable */ }
+  } catch (err) { stylesInjected = true; log.debug('the stitch-inspector stylesheet failed to inject — it stays unstyled but functional', { error: err?.message }); }
 }

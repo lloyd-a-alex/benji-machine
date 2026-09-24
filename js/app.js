@@ -17,6 +17,8 @@ import { CncGcodeExporter } from './exporters/cnc-gcode.js';
 import { CadDxfExporter } from './exporters/cad-dxf.js';
 import { VectorSvgExporter } from './exporters/vector-svg.js';
 import { FormatsExporter } from './exporters/formats-dak.js';
+import { generatePassapPattern, passapSummary } from './exporters/formats-passap.js';
+import { generateKnitMatePattern, knitMateSummary } from './exporters/formats-knitmate.js';
 import { readProject } from './project/kcard.js';
 // One door for every importable text file: .kcard (which still defers to readProject
 // above as the trust boundary) plus DesignaKnit, AYAB, CSV, DXF and KNITCAT G-code.
@@ -38,6 +40,7 @@ import { createStitchInspector } from './ui/stitch-inspector.js';
 import { createClipShelf } from './ui/clip-shelf.js';
 import { createStructurePanel } from './ui/structure-panel.js';
 import { createHeritagePanel } from './ui/heritage-panel.js';
+import { createGuidePanel } from './ui/guide-panel.js';
 import { createKnitAlong } from './features/knit-along.js';
 import { createSymbolLegend } from './features/symbol-legend.js';
 import { initExtras } from './features/extras.js';
@@ -66,6 +69,12 @@ import { enableDraggable } from './ui/draggable.js';
 import { initContextMenu } from './ui/context-menu.js';
 import { createMenuBar } from './ui/menubar.js';
 import { createTaskbar } from './ui/taskbar.js';
+// The fused shell chrome — one command bar + context bar + surface rail + sub-tabs
+// + tabbed inspector that RE-PARENTS the existing desktop nodes (moving an element
+// keeps its id and every bound listener) so the whole app reads as a single
+// workspace instead of five parallel navigation systems. DOM-free at import; gated
+// at boot and behind `body.kx-shell`, so a throw here leaves the legacy chrome up.
+import { createChrome } from './ui/chrome.js';
 import { runCommand as dispatchCommand } from './ui/commands.js';
 // KNITCAT V2 — the fused six-system re-architecture (KnitScript Project + Fit Engine + Yarn Lab
 // + Compiler V2 + Reverse Engineer + Production). Importing the facade pulls every V2 module into
@@ -202,13 +211,28 @@ class KnitApp {
     // lazy about the editor, so it is fine that initComponents() has not run yet.
     runGuarded('Desktop chrome', () => this._initDesktopChrome(), { notifier: this.notifications, announce: true });
 
-    // KNITCAT V2 — the fused six-system layer. `installV2` builds a launcher strip and mounts the
-    // `.kv2-` docks on demand (nothing renders until a system is opened), each operating on one
-    // shared Project derived from the live machine profile + card name. Fully contained: if any
-    // V2 module ever fails to boot, the classic CAD editor is completely unaffected.
+    // KNITCAT V2 — the fused six-system layer. `installV2` mounts the `.kv2-` docks on demand
+    // (nothing renders until a system is opened), each carrying an in-dock six-way switch so the
+    // systems are navigated inside the main layout, and all operating on one shared Project derived
+    // from the live machine profile + card name. Fully contained: if any V2 module ever fails to
+    // boot, the classic CAD editor is completely unaffected.
     runGuarded('KNITCAT V2', () => {
       this.v2 = installV2Systems(this);
       getDiagnostics().info(`KNITCAT V2 systems online (v${KNITCAT_V2_VERSION})`);
+    }, { notifier: this.notifications, announce: true });
+
+    // The unified shell. Mounted after every subsystem (editor, events, desktop
+    // chrome, V2) so it can re-parent live nodes whose listeners are already bound
+    // and read projectMeta for the inline title. Reaches the app only through the
+    // command dispatcher + hidden tab proxies — never by poking internals — so if
+    // it ever throws, runGuarded swallows it and the legacy chrome stays visible.
+    runGuarded('Shell chrome', () => {
+      this.chrome = createChrome({
+        getApp: () => this,
+        runCommand: (id, ctx) => this.runCommand(id, ctx || {}),
+        notify: (msg, opts) => this.notifications && this.notifications.show && this.notifications.show(msg, opts)
+      });
+      getDiagnostics().info('Unified shell online');
     }, { notifier: this.notifications, announce: true });
 
     // Show the Benji love popup ONCE per browser (not on every refresh).
@@ -333,6 +357,10 @@ class KnitApp {
     this.updateMachineSpecs();
     this.applyProfileLimits();
     this.recompile();
+    // A new machine can change which contextual tools are relevant, so let the
+    // shell rebuild its context bar / primary action. Optional chaining keeps the
+    // legacy path (no chrome mounted) completely unaffected.
+    this.chrome && this.chrome.reflectMode && this.chrome.reflectMode();
   }
 
   initComponents() {
@@ -388,6 +416,9 @@ class KnitApp {
         const brotherEl = document.getElementById('brother-canvas');
         if (brotherEl) {
           this.brotherCanvas = new BrotherSimCanvas(brotherEl, { profile: this.currentProfile });
+          // The sim opens rigged the way the app is set up: a lace machine locks
+          // the bed to the single Lace carriage from the very first frame.
+          this.brotherCanvas.setLaceMode(this.currentMode === 'lace');
         }
 
         // Now that components are ready, load the preset
@@ -418,22 +449,69 @@ class KnitApp {
             await panel.keepVersion(panel.pendingAutosave(), 'Card from before the link you opened');
           }
           return panel.settle({ ignoreAutosave: incoming.found && incoming.ok });
-        }).catch(err => console.error('[KNITCAT] could not settle autosave:', err));
-        if (!this.dataPromise) this._consumeIncomingShare();
+        }).then(() => this._revealWorkspace(), () => this._revealWorkspace())
+          .catch(err => getDiagnostics().logError('could not settle autosave', err));
+        if (!this.dataPromise) { this._consumeIncomingShare(); this._revealWorkspace(); }
         // A Ctrl+Shift+R hard reload asks the fresh page to land on the Projects
         // Dashboard once the recovered card has had its beat to apply.
         this._armStudioOnLoad();
       } catch (e) {
-        console.error('[KNITCAT] Component initialization error:', e);
+        getDiagnostics().logError('Component initialization failed', e, { context: { phase: 'boot' } });
+        // Never trap the user behind the boot veil: if the settled paint path blew
+        // up, lift it anyway so whatever did render is at least reachable.
+        this._revealWorkspace();
       }
     };
 
-    // Defer initialization for faster startup
+    // Defer initialization for faster startup.
+    // The boot veil is held across this whole deferred window and the async
+    // autosave settle underneath it, so the user only ever sees the ONE settled
+    // design — never the preset painting first and swapping seconds later. A hard
+    // 4s cap guarantees the veil lifts even if IndexedDB hangs or never resolves.
+    setTimeout(() => this._revealWorkspace(), 4000);
     if ('requestIdleCallback' in window) {
       requestIdleCallback(() => initComponents(), { timeout: 1000 });
     } else {
       setTimeout(() => initComponents(), 100);
     }
+  }
+
+  /**
+   * Lift the boot veil so the settled workspace is revealed. Idempotent — the first
+   * call wins and any later call is a no-op. Reached once the canvas is showing the
+   * one real card (the preset OR a recovered autosave, never both in turn), and also
+   * from a safety timer so a stalled storage layer can never trap the user.
+   * @private
+   */
+  _revealWorkspace() {
+    if (this._workspaceRevealed || typeof document === 'undefined') return;
+    this._workspaceRevealed = true;
+    // Double-rAF: hand the settled card back to the compositor, then fade the veil,
+    // so there is no chance of catching a half-painted frame underneath.
+    const paint = () => document.body.classList.add('kx-ready');
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => requestAnimationFrame(() => { paint(); this._armStudioFirstVisit(); }));
+    } else {
+      paint();
+      this._armStudioFirstVisit();
+    }
+  }
+
+  /**
+   * First-ever visit with an empty library: land the maker on the Studio so they
+   * start (or name) a project the app can keep. Guarded by a one-time flag, so a
+   * returning maker is dropped straight back into their recovered card and never sees
+   * it twice — the guide appears exactly once, then gets out of the way forever.
+   * @private
+   */
+  _armStudioFirstVisit() {
+    let greeted = true;
+    try { greeted = localStorage.getItem('knitcat.studioGreeted') === '1'; } catch (_) { greeted = true; }
+    if (greeted) return;
+    try { localStorage.setItem('knitcat.studioGreeted', '1'); } catch (_) { /* private mode: best-effort */ }
+    Promise.resolve(this.projects && this.projects.list && this.projects.list())
+      .then(list => { if (!list || !list.length) this.projects.open(); })
+      .catch(() => { /* storage unavailable — stay in the editor */ });
   }
 
   /**
@@ -681,6 +759,18 @@ class KnitApp {
           notifications: this.notifications
         });
       }, { notifier: this.notifications, announce: true });
+      // The guided handbook is the manual that lives inside the machine: every section
+      // carries "try it" buttons that run a real command id or open a real tab, so the
+      // words and the software cannot drift. It only dispatches existing commands and
+      // clicks existing tabs — it never mutates a card — so a boot failure means no
+      // handbook dock, never a broken editor.
+      runGuarded('Guided handbook panel', () => {
+        this.guidePanel = createGuidePanel({
+          runCommand: (id) => this.runCommand(id),
+          openTab: (name) => document.querySelector(`.tab-btn[data-tab="${name}"]`)?.click(),
+          notifications: this.notifications
+        });
+      }, { notifier: this.notifications, announce: true });
       // The knit-along companion walks the compiled schedule one row at a time and
       // spotlights the current row on the card. It only reads the compilation and
       // paints a highlight — never mutates the matrix — so a boot failure means no
@@ -730,6 +820,8 @@ class KnitApp {
         this.elements.modeButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         this.setPatternMode(btn.dataset.mode);
+        // The pattern mode drives which tools the shell surfaces, so reflect it.
+        this.chrome && this.chrome.reflectMode && this.chrome.reflectMode();
       });
     });
 
@@ -1024,6 +1116,8 @@ class KnitApp {
     
     // Additional advanced exports
     document.getElementById('btn-export-ayab')?.addEventListener('click', () => this.exportAYAB());
+    document.getElementById('btn-export-passap')?.addEventListener('click', () => this.exportPassap());
+    document.getElementById('btn-export-knitmate')?.addEventListener('click', () => this.exportKnitMate());
     document.getElementById('btn-send-machine')?.addEventListener('click', () => this.sendToMachine());
     document.getElementById('btn-export-brother')?.addEventListener('click', () => this.exportBrotherDisk());
     document.getElementById('btn-export-xml')?.addEventListener('click', () => this.exportXML());
@@ -1202,6 +1296,12 @@ class KnitApp {
       this.elements.lacePalette.style.display = 'none';
       this.elements.colorPalette.style.display = 'flex';
     }
+
+    // A lace setup is a physical rig, not just a colour: on a single-carriage lace
+    // machine the bed is locked to the one Lace carriage, so tell the kinematics
+    // sim which way the machine is rigged whenever the working mode changes. The
+    // optional chaining keeps the legacy path (no sim mounted) a no-op.
+    this.brotherCanvas?.setLaceMode?.(mode === 'lace');
 
     if (recompile) this.recompile();
   }
@@ -1575,30 +1675,35 @@ class KnitApp {
   updateMachineSpecs() {
     const p = this.currentProfile;
     if (!p) return;
-    const setElem = (id, val, tip) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.textContent = val;
-      if (tip !== undefined) el.title = tip;
-    };
-    setElem('spec-pitch-x', `${p.pitchX.toFixed(2)} mm`);
-    setElem('spec-pitch-y', `${p.pitchY.toFixed(2)} mm`);
-    setElem('spec-hole-dia', `${p.holeDiameter.toFixed(2)} mm`);
-    setElem('spec-sprock-dia', `${p.sprocketDiameter.toFixed(2)} mm`);
 
     let carriageRuleName = 'Brother Separated (L/K)';
     if (p.carriageRules?.type === 'silver_reed_combined') carriageRuleName = 'Silver Reed Simultaneous (LC)';
     else if (p.carriageRules?.type === 'passap_pushers') carriageRuleName = 'Passap Duo Pushers';
     else if (p.carriageRules?.type === 'brother_bulky') carriageRuleName = 'Brother Bulky 9mm';
     else if (p.carriageRules?.type === 'toyota_simplex') carriageRuleName = 'Toyota Simplex';
-    setElem('spec-carriage-rule', carriageRuleName);
-    // Bed count is the difference that changes what a "transfer" even means, so it
-    // is stated here rather than left inside the profile description.
-    setElem('spec-beds', p.beds === 2 ? 'Double bed (front + back)' : 'Single bed', p.beds === 2
-      ? 'Loops move between two opposed needle beds. Transfers designed for a single bed do not apply — the advisor flags this profile.'
-      : 'A transfer moves a loop to the neighbouring needle on the same bed, and only while the carriage travels that way.');
-    setElem('spec-max-float', `up to ${profileLimits(p).maxFloatNeedles} sts carried`,
-      'Longer stranded runs than this catch on fingers and pull the fabric in. Tuck and slip have their own limits, which the advisor checks.');
+    const bedName = p.beds === 2 ? 'Double bed' : 'Single bed';
+    const limits = profileLimits(p);
+
+    // Machine settings are one live chip in the command bar now, beside the
+    // project title — not a duplicate sidebar panel. The chip shows the three
+    // numbers that decide what a pattern even means (gauge · bed · carriage
+    // rules); the full dimensions and the single/double-bed caveat ride in its
+    // tooltip, so nothing is lost, only de-duplicated.
+    const chip = document.getElementById('cb-machine-spec');
+    if (chip) {
+      chip.textContent = `${p.pitchX.toFixed(2)}mm · ${bedName} · ${carriageRuleName}`;
+      chip.title = [
+        p.name,
+        `Needle pitch (X) ${p.pitchX.toFixed(2)} mm · Row pitch (Y) ${p.pitchY.toFixed(2)} mm`,
+        `Hole Ø ${p.holeDiameter.toFixed(2)} mm · Sprocket Ø ${p.sprocketDiameter.toFixed(2)} mm`,
+        `${bedName} · ${limits.maxNeedles} needles · carriage rules: ${carriageRuleName}`,
+        `Safe float: up to ${limits.maxFloatNeedles} sts carried`,
+        p.beds === 2
+          ? 'Loops move between two opposed beds — single-bed transfer plans do not apply.'
+          : 'A transfer moves a loop to the neighbouring needle on the same bed, only while the carriage travels that way.'
+      ].join('\n');
+    }
+
     // 5.5 — the yarn sim's fabric physics are derived from the machine's real gauge.
     // Stamping the profile here is enough: the next updateFabric (tab open, edit)
     // rebuilds the topology with this spacing, so no work is done until it is seen.
@@ -2467,7 +2572,7 @@ class KnitApp {
       }
       return result;
     } catch (err) {
-      console.error('[KNITCAT] shared link could not be applied:', err);
+      getDiagnostics().logError('a shared link could not be applied', err);
       return { found: false, ok: false };
     }
   }
@@ -2644,6 +2749,42 @@ class KnitApp {
   }
 
   /**
+   * Export the compiled card as a Passap E6000 two-bed (Front/Back) pattern. This is
+   * the double-bed representation KNITCAT previously could not emit: the colour matrix
+   * is mapped so every needle punches exactly one bed (colour A → front, colour B →
+   * back), which is how a Passap E-print / piqué card is laid out. Round-trips back
+   * through the Passap reader untouched.
+   */
+  exportPassap() {
+    if (!this.compilationResult || !this.compilationResult.cardMatrix) {
+      this.notifications.warn('Nothing to export yet — draw a pattern and the compiler will punch the card.', { duration: 6000 });
+      return;
+    }
+    const mirrorBack = this.currentProfile?.carriageRules?.type === 'passap_pushers';
+    const text = generatePassapPattern(this.compilationResult.cardMatrix, { title: this.projectName || 'KNITCAT', mirrorBack });
+    const s = passapSummary(this.compilationResult.cardMatrix, { mirrorBack });
+    this.downloadFile(text, 'pattern_passap.txt', 'text/plain');
+    this.notifications.success(`Passap double-bed card: ${s.width}×${s.height}, ${s.frontPunches} front + ${s.backPunches} back punches.`);
+  }
+
+  /**
+   * Export the compiled card as a KnitMate two-bed punch-map. This is the richer double-
+   * bed dialect: one character per needle carrying all four states (front, back, both,
+   * none) that a Passap card cannot express, so a camera-read or hand-edited card
+   * round-trips without collapsing. A colour chart writes F/B only and reads back exactly.
+   */
+  exportKnitMate() {
+    if (!this.compilationResult || !this.compilationResult.cardMatrix) {
+      this.notifications.warn('Nothing to export yet — draw a pattern and the compiler will punch the card.', { duration: 6000 });
+      return;
+    }
+    const text = generateKnitMatePattern(this.compilationResult.cardMatrix, { title: this.projectName || 'KNITCAT' });
+    const s = knitMateSummary(this.compilationResult.cardMatrix);
+    this.downloadFile(text, 'pattern_knitmate.txt', 'text/plain');
+    this.notifications.success(`KnitMate two-bed card: ${s.width}×${s.height}, ${s.frontPunches} front + ${s.backPunches} back + ${s.bothPunches} both-bed punches.`);
+  }
+
+  /**
    * Send to machine over Web Serial (plan §6.4). This is the *transfer* only: the
    * bytes are exactly the AYAB bitstream the file exporter already produces. We
    * lazily build one sender, connect (the browser's own port picker is the user
@@ -2783,6 +2924,8 @@ class KnitApp {
     }
     acts.push({ label: 'Export / CNC', group: 'Export', keywords: 'export save dxf gcode laser cnc download', run: click('#btn-open-export') });
     acts.push({ label: 'Send to machine (USB Serial)', group: 'Export', keywords: 'serial send machine ayab usb stream chrome edge transfer', run: () => this.sendToMachine() });
+    acts.push({ label: 'Export Passap double-bed card', group: 'Export', keywords: 'passap e6000 duo double bed front back two-bed pique eprint export save pattern', run: () => this.exportPassap() });
+    acts.push({ label: 'Export KnitMate two-bed punch-map', group: 'Export', keywords: 'knitmate two bed double bed front back both dropped four state punch map eprint card camera read export save pattern', run: () => this.exportKnitMate() });
     acts.push({ label: 'Presets browser', group: 'Design', keywords: 'presets library browse patterns', run: click('#btn-open-presets') });
     acts.push({ label: 'Math Studio', group: 'Design', keywords: 'math procedural generative reaction diffusion waves automata', run: click('#btn-open-math') });
     acts.push({ label: 'Image Dither', group: 'Design', keywords: 'image photo dither import picture atkinson floyd steinberg', run: click('#btn-open-image') });
@@ -2794,6 +2937,7 @@ class KnitApp {
     acts.push({ label: 'Check machine feasibility', group: 'Advisor', keywords: 'feasibility check valid fix float snag machine advice expert score health', run: () => this.openFeasibility() });
     acts.push({ label: 'Compare across all machines (universe)', group: 'Advisor', keywords: 'machine universe compatibility cross fit any machine universal adapt brother silver reed passap toyota bulky', run: () => this.openMachineUniverse() });
     acts.push({ label: 'Make this card fit every machine', group: 'Advisor', keywords: 'universal tune all machines compatible strictest adapt everywhere portability', run: () => { const r = this.universe?.tuneForAll?.(); this.recompile(); this.notifications?.[r && r.changed ? 'success' : 'info']?.(r && r.changed ? 'Tuned to fit every machine.' : 'Already fits every machine.'); } });
+    acts.push({ label: 'Carriage pass sheet (how to knit it at the machine)', group: 'Advisor', keywords: 'carriage pass passes sheet instructions how do i knit this select transfer complete park return narration print notes plan walk through machine order', run: () => { this.structurePanel?.open?.(); this.notifications?.info?.('Carriage pass sheet is in the Card Structure panel.'); } });
     acts.push({ label: 'Show love letter', group: 'Romance', keywords: 'love letter ily benji popup heart romantic', run: () => this._showLovePopup() });
     acts.push({ label: 'Clear the canvas', group: 'Edit', keywords: 'clear erase reset blank canvas new empty', run: () => this.editor?.clear() });
     acts.push({ label: 'Toggle console', group: 'Diagnostics', keywords: 'console log terminal debug view panel open close ctrl backtick inspect telemetry', run: () => this.console?.toggle?.() });
@@ -2801,6 +2945,27 @@ class KnitApp {
     acts.push({ label: 'Toggle stitch inspector', group: 'Inspector', keywords: 'inspect hover cell symbol meaning transfer eyelet yarn over inspector hud readout needle', run: () => this._toggleInspector() });
     acts.push({ label: 'Open clip shelf', group: 'Clipboard', keywords: 'clip clipboard shelf history slot copy paste motif vocabulary library panel open close recent', run: () => this.clipShelf?.open?.() });
     acts.push({ label: 'Walk me through it row by row (Knit-Along)', group: 'Advisor', keywords: 'knit along row counter companion step through what do i do next row carriage direction walk guide progress panel open close', run: () => this.knitAlong?.toggle?.() });
+    // The compiler's Pareto optimiser — choose what "best" means and see the honest trade-off.
+    const openOptimise = (p) => { this.v2?.open?.('compiler'); this.v2?.setOptimisePriority?.(p); };
+    acts.push({ label: 'Optimise passes — balanced', group: 'Compiler', keywords: 'optimise optimize optimize balanced default passes order pareto compiler tradeoff', run: () => openOptimise('balanced') });
+    acts.push({ label: 'Optimise passes — fewest (fastest)', group: 'Compiler', keywords: 'optimise optimize fastest least time fewest passes carriage order speed pareto compiler', run: () => openOptimise('fast') });
+    acts.push({ label: 'Optimise passes — least yarn', group: 'Compiler', keywords: 'optimise optimize save yarn economy cheap minimise waste colour changes pareto compiler', run: () => openOptimise('yarn') });
+    acts.push({ label: 'Optimise passes — best looking', group: 'Compiler', keywords: 'optimise optimize appearance tidiness neat joins repeats pareto compiler', run: () => openOptimise('appearance') });
+    acts.push({ label: 'Why these numbers (how the counts were derived)', group: 'Compiler', keywords: 'why derive derivation cast on stitches count formula explanation how many 212 228 explain numbers trail proof trust compiler', run: () => this.runCommand('v2.derivation') });
+    acts.push({ label: 'Colour-blindness preview (see the card as they do)', group: 'Accessibility', keywords: 'colour color blind blindness cvd deuteranopia protanopia tritanopia accessibility contrast palette legible yarn confusion sim see vision compiler', run: () => this.runCommand('v2.colorblind') });
+    acts.push({ label: 'Swap this yarn (substitute & see what changes)', group: 'Yarn', keywords: 'substitute substitution swap yarn discontinued unavailable gauge yardage balls needle fibre fiber color match rank what changes dk worsted stash', run: () => this.runCommand('v2.substitute') });
+    acts.push({ label: 'Hold strands to hit a gauge you don\'t own', group: 'Yarn', keywords: 'hold strand blend marle gauge target fake combined sts yarn two three together DK lace fingering mohair halo suggest stash', run: () => this.runCommand('v2.blend') });
+    acts.push({ label: 'Garment care (wash · dry · iron · symbols)', group: 'Yarn', keywords: 'care wash hand machine dry flat tumble iron bleach dry clean symbol laundry wool cotton silk superwash linen hemp temp temperature', run: () => this.runCommand('v2.care') });
+    acts.push({ label: 'Fair Isle check (floats & contrast safety)', group: 'Compiler', keywords: 'fair isle colourwork colorwork float snag tuck weave contrast legible machine safe check warn rows motif plan blend', run: () => this.runCommand('v2.fairisle') });
+    acts.push({ label: 'Finish this garment (bands, pick-up & seaming)', group: 'Fit', keywords: 'finish finishing pick up pickup neckband collar cuff hem band buttonhole seaming seam block blocking rib stitches count edge how to assemble made not knitted', run: () => this.runCommand('v2.finishing') });
+    acts.push({ label: 'Drape simulation (how it hangs & where it pinches)', group: 'Fit', keywords: 'drape hang pinch tight ease fluid boardy stiff cloth fabric simulate body pull cling silhouette heatmap panel score', run: () => this.runCommand('v2.drape') });
+    acts.push({ label: 'Short-row atlas (where the wedges are)', group: 'Fit', keywords: 'short row short-row wedge wrap turn shoulder back neck bust dart heel German entrelac atlas wedge plan partial knitting rows stitches where how many', run: () => this.runCommand('v2.shortrows') });
+    acts.push({ label: 'Design quote (chart → yarn → time → money)', group: 'Production', keywords: 'quote price cost retail wholesale margin profit yarn demand carriage pass time batch commercial sell sell-in customer sales revenue design to quote chart histogram colourway ball meters grams wastage', run: () => this.runCommand('v2.quote') });
+    acts.push({ label: 'What to fix (verification action list)', group: 'Compiler', keywords: 'verify verification action list blocking warning fix do this gauge swatch machine float tuck ease color colour time yarn stash shortfall check to-do todo what to do errors failures passed', run: () => this.runCommand('v2.verify') });
+    acts.push({ label: 'QC inspection card (before you ship)', group: 'Production', keywords: 'qc quality control inspection checklist ship block measurements seams ends weave blocked dropped floats holes labels packaging approved rejected verdict tolerance pass rate passfail pending done eleven', run: () => this.runCommand('v2.qc') });
+    acts.push({ label: 'Chart DNA (repeat · symmetry · density)', group: 'Compiler', keywords: 'chart dna pattern intel repeat tile stitch multiple symmetry mirror rotational vertical horizontal density punched blank worked busiest content bounds crop structural fingerprint tile smallest period', run: () => this.runCommand('v2.chartdna') });
+    acts.push({ label: 'Pattern Health (ready to cast on?)', group: 'Project', keywords: 'health readiness cast on traffic light check pass fail warn model verification yarn shortfall feasibility QC machine status all clear', run: () => this.runCommand('v2.health') });
+    acts.push({ label: 'Print Pattern Sheet (clean output for paper)', group: 'Compiler', keywords: 'print pdf paper pattern sheet written instructions chart tech pack hardcopy output', run: () => this.runCommand('v2.print') });
     acts.push({ label: 'Stitch-symbol legend (what do the symbols mean)', group: 'Inspector', keywords: 'symbol legend chart notation mean what is o circle transfer eyelet tuck slip purl explain highlight symbols key glossary panel open close', run: () => this.symbolLegend?.toggle?.() });
     acts.push({ label: 'Toggle card structure & analysis', group: 'Inspector', keywords: 'structure layers guides repeat tile fit annotations notes document history trail size mm needles rows analysis panel open close', run: () => this.structurePanel?.toggle?.() });
     acts.push({ label: 'Capture selection to clip shelf', group: 'Clipboard', keywords: 'clip clipboard capture copy selection shelf store remember motif', run: () => { if (this.editor?.copySelection()) this.clipShelf?.capture?.(); this.clipShelf?.open?.(); } });
@@ -2970,6 +3135,7 @@ class KnitApp {
     document.getElementById('btn-clothes-dxf')?.addEventListener('click', () => this.exportClothesDxf());
     document.getElementById('btn-clothes-print')?.addEventListener('click', () => this.printClothesPattern());
     document.getElementById('btn-clothes-editor')?.addEventListener('click', () => this.sendClothesToEditor());
+    document.getElementById('btn-clothes-use-editor-pattern')?.addEventListener('click', () => this.useEditorPatternOnGarment());
     document.getElementById('btn-clothes-feasibility')?.addEventListener('click', () => this.checkClothesFeasibility());
     document.getElementById('btn-clothes-compare-gauges')?.addEventListener('click', () => this._compareGauges());
 
@@ -3090,6 +3256,9 @@ class KnitApp {
     this._renderInstructions(plan);
     this._renderGrading();
     this._renderYarn();
+    // Quietly offer the editor's motif once a garment is up (guarded to fire at most
+    // once per session, and never over art the maker has already drawn).
+    this._maybeSuggestEditorPattern();
   }
 
   _readTailorGauge() {
@@ -3328,6 +3497,61 @@ class KnitApp {
   checkClothesFeasibility() {
     this.sendClothesToEditor();
     this.openFeasibility('advisor');
+  }
+
+  /**
+   * Reduce the live editor card to a 0/1 motif so it can be dropped onto a garment.
+   * The most common stitch value is treated as the background and every other cell
+   * becomes a contrast stitch, so a drawn lace eyelet run and a Fair Isle block both
+   * read as "the pattern" regardless of the underlying stitch codes.
+   * @returns {number[][]|null} rows×cols of 0/1, or null when there is no editor card.
+   * @private
+   */
+  _editorContrastMatrix() {
+    const m = this.editor && this.editor.matrix;
+    if (!m || !m.length) return null;
+    const tally = new Map();
+    for (const row of m) for (const v of row) tally.set(v, (tally.get(v) || 0) + 1);
+    let bg = 0, best = -1;
+    for (const [v, n] of tally) if (n > best) { best = n; bg = v; }
+    return m.map(row => row.map(v => (v !== bg ? 1 : 0)));
+  }
+
+  /**
+   * Apply the pattern currently drawn in the CAD editor as the fabric motif of the
+   * selected garment — tiled across the piece and clipped to the silhouette. This is
+   * the reverse of {@link KnitApp.sendClothesToEditor}, closing the loop between the
+   * two surfaces so a motif only ever has to be authored once.
+   */
+  useEditorPatternOnGarment() {
+    if (!this.garmentCanvas) return;
+    const motif = this._editorContrastMatrix();
+    const hasMotif = !!motif && motif.some(row => row.some(v => v));
+    if (!hasMotif) {
+      this.notifications?.info?.('Draw a motif in the editor first, then bring it onto the garment here.', { duration: 6000 });
+      return;
+    }
+    const n = this.garmentCanvas.setPaintedMatrix(motif, { tile: true });
+    this._editorPatternSuggested = true; // a manual apply counts as having seen the hint
+    this.notifications?.success?.(`Applied your editor pattern to the garment (${n} stitches).`, { duration: 5000 });
+  }
+
+  /**
+   * Once per session, when a garment is opened while the editor already holds a real
+   * motif and the piece is still blank, quietly point at the "Use Editor Pattern"
+   * action. Deliberately non-blocking (a toast, not a dialog) so returning makers are
+   * never nagged and can simply carry on with their own drawing.
+   * @private
+   */
+  _maybeSuggestEditorPattern() {
+    if (this._editorPatternSuggested || !this.garmentCanvas) return;
+    const motif = this._editorContrastMatrix();
+    const hasMotif = !!motif && motif.some(row => row.some(v => v));
+    if (!hasMotif) return;
+    const painted = this.garmentCanvas.painted;
+    if (painted && painted.size) return; // they already drew something — leave it alone
+    this._editorPatternSuggested = true;
+    this.notifications?.info?.('You have a pattern in the editor — tap "Use Editor Pattern" to knit it into this garment.', { duration: 8000 });
   }
 
   // ---- Feasibility advisor modal (drives feasibility.js + machine-universe.js) ----
@@ -4243,13 +4467,22 @@ class KnitApp {
 
   setBrotherCarriage(type) {
     if (!this.brotherCanvas) return;
-    this.brotherCanvas.setCarriageType(type);
-    
-    // Update button states
+    // Route through the mechanism's carriage bay so the single-carriage and
+    // lace-mode rules are enforced, not just a cosmetic toggle: the bed seats one
+    // carriage and ejects the previous one, and a lace-rigged bed refuses any
+    // carriage but the Lace one.
+    const result = this.brotherCanvas.setCarriageType(type);
+
+    // Light whichever carriage is actually on the bed (result.mounted), not the one
+    // that was clicked — so a blocked swap bounces the button back and the UI never
+    // claims a carriage is riding the bed when the physical rules say it cannot be.
     ['btn-brother-lace', 'btn-brother-knit', 'btn-brother-garter'].forEach(id => {
       const btn = document.getElementById(id);
-      if (btn) btn.classList.toggle('active', id === `btn-brother-${type}`);
+      if (btn) btn.classList.toggle('active', id === `btn-brother-${result.mounted}`);
     });
+    if (result.blocked) {
+      this.notifications?.warn?.(result.reason || 'That carriage cannot be seated on this bed right now.');
+    }
   }
 
   analyzeBrotherTiming() {
@@ -4304,7 +4537,7 @@ class KnitApp {
     const heartsRain = document.getElementById('love-hearts-rain');
     
     if (!popup) {
-      console.warn('[KNITCAT] Love popup element not found');
+      getDiagnostics().warn('the love popup element was not found in the DOM — it cannot open', { elementId: 'benji-love-popup' });
       return;
     }
 
@@ -4327,7 +4560,9 @@ class KnitApp {
       else if (++chimeTries > 20) clearInterval(chimeRetry);
     }, 150);
 
-    const HEARTS = ['💗', '💖', '💓', '💕', '♥'];
+    // Refined heart-rain: a few soft typographic hearts in the brand rose (coloured
+    // in CSS) instead of a shower of multicolour emoji — tender, not tacky.
+    const HEARTS = ['\u2665'];
     const OPTIMIZED_COUNT = 6;
     
     if (heartsRain) {

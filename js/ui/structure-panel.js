@@ -39,6 +39,7 @@ import { createRepeat, repeatTiles } from '../edit/guides.js';
 import { pitchFor, gridSizeMm, formatLength } from '../edit/measure.js';
 import { isPunched } from '../edit/modes.js';
 import { addAnnotation, dimensionText, annotationSummary, sanitizeAnnotations } from '../edit/annotations.js';
+import { buildPassSheet, passSheetToText } from '../machine/pass-sheet.js';
 import { getDiagnostics } from '../core/diagnostics.js';
 import { buildPanel } from './kit.js';
 
@@ -310,6 +311,9 @@ export function createStructurePanel(deps = {}) {
         <ul data-branch class="kx-branch"></ul>
       </section>
       <section class="kxs-sec"><h3 class="kx-panel__h3">Measurement</h3><div data-measure></div></section>
+      <section class="kxs-sec"><h3 class="kx-panel__h3">Carriage passes <button class="kx-btn kx-btn--ghost" data-pass-copy>Copy pass sheet</button></h3>
+        <div data-passes class="kxs-passes"></div>
+      </section>
       <section class="kxs-sec"><h3 class="kx-panel__h3">Notes <button class="kx-btn kx-btn--ghost" data-add-note>Add note at hover</button></h3>
         <ul data-notes class="kx-list"></ul>
       </section>`;
@@ -324,6 +328,7 @@ export function createStructurePanel(deps = {}) {
     layerAdd: q('[data-layer-add]'), layerMerge: q('[data-layer-merge]'), layerFlatten: q('[data-layer-flatten]'),
     trail: q('[data-trail]'), branch: q('[data-branch]'), undo: q('[data-undo]'), redo: q('[data-redo]'),
     checkpoint: q('[data-checkpoint]'), measure: q('[data-measure]'),
+    passes: q('[data-passes]'), passCopy: q('[data-pass-copy]'),
     addNote: q('[data-add-note]'), notes: q('[data-notes]')
   };
 
@@ -411,6 +416,23 @@ export function createStructurePanel(deps = {}) {
   els.undo.addEventListener('click', () => { const ed = getEditor(); try { ed && ed.undo && ed.undo(); } catch (err) { diag.warn('undo: ' + err.message); } });
   els.redo.addEventListener('click', () => { const ed = getEditor(); try { ed && ed.redo && ed.redo(); } catch (err) { diag.warn('redo: ' + err.message); } });
 
+  // Copy the whole pass sheet as plain text — the printed pattern notes a knitter takes to the
+  // machine. Falls back to a selectable prompt when the clipboard API is blocked or absent.
+  if (els.passCopy) els.passCopy.addEventListener('click', () => {
+    const ed = getEditor();
+    const profile = getProfile();
+    const sheet = buildPassSheet((ed && ed.matrix) || [], { mode: getMode(), profile });
+    const text = passSheetToText(sheet, { title: `${getName()} \u2014 carriage passes`, profileLabel: (profile && (profile.name || profile.id)) || '' });
+    const fallback = () => { safePrompt('Copy the pass sheet', text); diag.warn('pass sheet clipboard unavailable — shown a selectable prompt instead'); };
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        Promise.resolve(navigator.clipboard.writeText(text))
+          .then(() => notifier && notifier.success && notifier.success('Pass sheet copied to the clipboard.'))
+          .catch(fallback);
+      } else { fallback(); }
+    } catch (err) { fallback(); }
+  });
+
   els.addNote.addEventListener('click', () => {
     const ed = getEditor();
     const hc = ed && ed.hoverCell;
@@ -473,6 +495,7 @@ export function createStructurePanel(deps = {}) {
     renderBranch(ed);
 
     renderMeasure(ed);
+    renderPasses(ed);
     renderNotes();
   }
 
@@ -595,6 +618,44 @@ export function createStructurePanel(deps = {}) {
       li.textContent = 'No history yet.';
       els.branch.appendChild(li);
     }
+  }
+
+  /**
+   * Paint the Carriage Pass Sheet — the at-the-machine narration the planner could always
+   * compute but nobody could see. Reuses `machine/pass-sheet.js` (a pure consumer of
+   * `planPatternPasses` + `describePasses`), so what is listed here is literally the same plan
+   * the optimiser times and the quote costs. DOM is built with textContent throughout, so a
+   * preset's pass note can never inject markup.
+   */
+  function renderPasses(ed) {
+    if (!els.passes) return;
+    const sheet = buildPassSheet(ed.matrix || [], { mode: getMode(), profile: getProfile() });
+    els.passes.textContent = '';
+    const put = (text, cls) => {
+      const el = document.createElement('div');
+      if (cls) el.className = cls;
+      el.textContent = text;
+      els.passes.appendChild(el);
+      return el;
+    };
+    if (!sheet.ok) { put(sheet.error || 'Could not plan the carriage passes.', 'kxs-muted'); return; }
+    if (!sheet.totalPasses) { put('Nothing on the card to knit yet.', 'kxs-muted'); return; }
+
+    put(`${sheet.patternRows} rows · ${sheet.laceRows} lace, ${sheet.plainRows} plain · ${sheet.totalPasses} passes · start ${String(sheet.startSide).toLowerCase()}, end ${String(sheet.endsOn).toLowerCase()}`);
+
+    const ol = document.createElement('ol');
+    ol.style.margin = '6px 0';
+    ol.style.paddingLeft = '20px';
+    ol.style.lineHeight = '1.5';
+    for (const line of sheet.lines) {
+      const li = document.createElement('li');
+      li.textContent = line;
+      ol.appendChild(li);
+    }
+    els.passes.appendChild(ol);
+
+    for (const a of sheet.assumptions) put(`\u2022 assumes: ${a}`, 'kxs-muted');
+    for (const w of sheet.warnings) put(`! ${w}`, 'kxs-warn');
   }
 
   function mkIconBtn(text, title, onClick) {

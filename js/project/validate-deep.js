@@ -16,6 +16,10 @@
  * @module project/validate-deep
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('project/validate-deep');
+
 /**
  * Validate a live Project. @param {import('./project.js').Project} project
  * @returns {Array<import('../knitscript/diagnostics.js').Diagnostic>}
@@ -52,6 +56,12 @@ export function validateProject(project) {
   if (fitToBed === false) {
     out.push({ severity: 'warning', message: 'The garment is wider than the machine bed — it needs seaming panels or a bigger machine.', rule: 'too-wide' });
   }
+
+  // Surface the graph's structural failures into the diagnostics stream: a node that
+  // threw is quietly serving a stale last-good value, which is exactly the kind of
+  // error that otherwise never reaches a console. Warn on advisories, error on breaks.
+  const errors = out.filter(d => d.severity === 'error');
+  if (errors.length) log.error('deep project validation found structural errors', { count: errors.length, first: errors[0].message, rule: errors[0].rule });
 
   return out;
 }

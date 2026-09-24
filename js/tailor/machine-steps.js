@@ -12,6 +12,7 @@
  */
 
 import { profileLimits } from '../machine/profiles.js';
+import { describeSchedule } from './drafted-engines.js';
 
 const round = Math.round;
 const finite = (v, d = 0) => (Number.isFinite(v) ? v : d);
@@ -90,6 +91,21 @@ export function buildFashioning(plan, profile) {
   }
 
   push('Bind off', `Bind off in pattern on a ${structure === 'tube' || structure === 'hat' ? 'stretchy (sewn / tubular)' : 'standard'} edge. Block to the finished measurements.`);
+
+  // When the plan carries a drafted row schedule (Sweater / Sock / Mitten engines),
+  // append the exact, needle-centred shaping events so the prose "shape the armhole"
+  // becomes the literal rows a KH-830 operator follows. Additive — the base schedule
+  // above already stands on its own.
+  if (Array.isArray(plan.schedule) && plan.schedule.length) {
+    for (const pc of plan.schedule) {
+      const events = describeSchedule(pc);
+      if (!events.length) continue;
+      const detail = events.slice(0, 8).map(e => `R${e.row} ${e.action} ${e.count} → ${e.stsAfter} sts`).join('; ');
+      const more = events.length > 8 ? `; +${events.length - 8} more` : '';
+      const width = Math.max(1, round(finite(pc.castOn, sts)));
+      push(`${pc.name || 'Piece'} — exact rows`, `${detail}${more}. Kept centred on needle 0 across ${needleSpan(width)}.`);
+    }
+  }
 
   return steps;
 }

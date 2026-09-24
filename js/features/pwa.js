@@ -15,6 +15,10 @@
  *     between what one tab shows and the next one gets
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('features/pwa');
+
 const SW_PATH = 'sw.js';
 
 let notifier = null;
@@ -164,7 +168,7 @@ export async function promptInstall() {
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !window.isSecureContext) {
     if (!window.isSecureContext) {
-      console.info('[KNITCAT][PWA] Insecure origin: service worker skipped (needs HTTPS or localhost).');
+      log.info('insecure origin: service worker skipped (needs HTTPS or localhost)');
     }
     return null;
   }
@@ -197,7 +201,7 @@ async function registerServiceWorker() {
 
     return registration;
   } catch (err) {
-    console.warn('[KNITCAT][PWA] Service worker registration failed:', err);
+    log.warn('service worker registration failed — offline install features are unavailable', { error: err?.message });
     return null;
   }
 }
@@ -232,7 +236,7 @@ function consumeUrlIntent() {
     // silently delete the pattern the visitor came for.
     const clean = `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash || ''}`;
     window.history.replaceState(null, '', clean);
-  } catch (_) { /* sandboxed history is not fatal */ }
+  } catch (err) { log.debug('the launch-intent URL cleanup was blocked by a sandboxed history', { error: err?.message }); }
 }
 
 /**

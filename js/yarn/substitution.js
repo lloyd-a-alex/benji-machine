@@ -198,7 +198,8 @@ export function gradeRecommendation(gaugeDelta, yardageDelta, fiberDelta, colorM
  */
 export function computeAdjustments(a, b, patternGauge = {}) {
   const ga = { sts: Number(patternGauge.stitchesPer10cm) || representativeGauge(a).stsPer10cm, rows: Number(patternGauge.rowsPer10cm) || representativeGauge(a).rowsPer10cm };
-  const gb = representativeGauge(b);
+  const _gb = representativeGauge(b);
+  const gb = { sts: _gb.stsPer10cm, rows: _gb.rowsPer10cm }; // align field names with `ga`
   const adjustments = [];
 
   if (patternGauge.castOn != null) {

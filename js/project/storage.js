@@ -22,6 +22,10 @@
  * run the whole storage policy without a browser.
  */
 
+import { logger as createScopedLogger } from '../core/logging.js';
+
+const log = createScopedLogger('project/storage');
+
 export const DB_NAME = 'knitcat';
 export const DB_VERSION = 1;
 
@@ -104,7 +108,11 @@ export function createLocalDriver(storage = globalThis.localStorage, prefix = 'k
     return out;
   };
   const read = raw => {
-    try { return JSON.parse(raw); } catch (_) { return null; }
+    try { return JSON.parse(raw); } catch (err) {
+      // A corrupt stored value must not be silently mistaken for "nothing stored".
+      log.warn('stored value is not valid JSON — treating as absent', { prefix, error: err?.message });
+      return null;
+    }
   };
 
   return {
@@ -244,6 +252,7 @@ export async function openDriver(options = {}) {
       return { driver: await openIdbDriver(options), warning: null };
     } catch (err) {
       logger?.debug?.('[KNITCAT] IndexedDB unavailable, falling back:', err?.message || err);
+      log.warn('IndexedDB unavailable — falling back to a simpler driver', { error: err?.message || String(err) });
     }
   }
   if (allowLocal) {
@@ -251,8 +260,10 @@ export async function openDriver(options = {}) {
       return { driver: createLocalDriver(options.storage), warning: 'indexeddb-unavailable' };
     } catch (err) {
       logger?.debug?.('[KNITCAT] localStorage unavailable too:', err?.message || err);
+      log.warn('localStorage unavailable too — falling back to memory-only', { error: err?.message || String(err) });
     }
   }
+  log.error('no persistent storage driver available — this session will not survive a reload');
   return { driver: createMemoryDriver(), warning: 'memory-only' };
 }
 
@@ -264,7 +275,12 @@ export async function openDriver(options = {}) {
  */
 function clone(value) {
   if (typeof structuredClone === 'function') {
-    try { return structuredClone(value); } catch (_) { /* fall through */ }
+    try { return structuredClone(value); } catch (err) { log.debug('structuredClone failed, falling back to a JSON round trip', { error: err?.message }); /* fall through */ }
   }
-  return JSON.parse(JSON.stringify(value));
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (err) {
+    log.error('value could not be cloned for storage (circular or non-serialisable)', { error: err?.message });
+    throw err;
+  }
 }

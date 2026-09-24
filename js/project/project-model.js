@@ -29,6 +29,10 @@
  *     a finished cuff, not as "one of two pieces."
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('project/project-model');
+
 /** Bump when the persisted superstructure shape changes; readers migrate down. */
 export const SUPERSTRUCTURE_VERSION = 1;
 
@@ -339,6 +343,7 @@ export class Project {
     }
     const v = Number.isFinite(obj.version) ? obj.version : 0;
     if (v > SUPERSTRUCTURE_VERSION) {
+      log.warn('refusing to load a superstructure written by a newer KNITCAT', { version: v, latest: SUPERSTRUCTURE_VERSION });
       return {
         project: null,
         warnings: [`Written by a newer KNITCAT (superstructure v${v} > v${SUPERSTRUCTURE_VERSION}).`]
@@ -346,9 +351,12 @@ export class Project {
     }
     if (v < SUPERSTRUCTURE_VERSION && v !== 0) warnings.push(`Upgraded superstructure v${v} → v${SUPERSTRUCTURE_VERSION}.`);
 
-    const dedupe = (list, make, cap) => {
+    const dedupe = (list, make, cap, label) => {
       const seen = new Set();
       const out = [];
+      if (Array.isArray(list) && list.length > cap) {
+        log.warn(`a project's ${label} list is past the ${cap}-entry ceiling — the extras were dropped`, { count: list.length, cap });
+      }
       for (const raw of (list || []).slice(0, cap)) {
         const item = make(raw);
         if (seen.has(item.id)) { item.id = uid(item.id.split('_')[0]); }
@@ -363,15 +371,15 @@ export class Project {
       name: clean(obj.name, NAME_MAX) || 'Untitled project',
       machine: clean(obj.machine, NAME_MAX) || null,
       gaugeId: clean(obj.gaugeId, 64) || null,
-      charts: dedupe(obj.charts, newChart, MAX_CHARTS),
+      charts: dedupe(obj.charts, newChart, MAX_CHARTS, 'chart'),
       garments: dedupe(obj.garments, g => {
         const gar = newGarment(g);
-        gar.pieces = dedupe(gar.pieces, newPiece, MAX_PIECES);
+        gar.pieces = dedupe(gar.pieces, newPiece, MAX_PIECES, 'piece');
         return gar;
-      }, MAX_GARMENTS),
-      yarns: dedupe(obj.yarns, newYarn, MAX_YARNS),
-      gauges: dedupe(obj.gauges, newGauge, MAX_GAUGES),
-      timeline: dedupe(obj.timeline, t => newTimelineEvent(t), MAX_TIMELINE),
+      }, MAX_GARMENTS, 'garment'),
+      yarns: dedupe(obj.yarns, newYarn, MAX_YARNS, 'yarn'),
+      gauges: dedupe(obj.gauges, newGauge, MAX_GAUGES, 'gauge'),
+      timeline: dedupe(obj.timeline, t => newTimelineEvent(t), MAX_TIMELINE, 'timeline event'),
       favourites: obj.favourites,
       createdAt: obj.createdAt,
       updatedAt: obj.updatedAt

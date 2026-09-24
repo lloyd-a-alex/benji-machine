@@ -34,6 +34,9 @@ import { verifyColor } from './color.js';
 import { verifyTime } from './time.js';
 import { verifyYarn } from './yarn.js';
 import { makeResult } from './_result.js';
+import { logger } from '../../core/logging.js';
+
+const log = logger('compiler/verify');
 
 export { makeResult, VERDICT_WEIGHT, pass, warn, fail } from './_result.js';
 
@@ -70,10 +73,13 @@ export function verifyIr(ir, ctx = {}) {
 /** Run one check by id, catching throws into an `error` verdict. */
 export function runCheck(id, ir, ctx = {}) {
   const fn = CHECKS[id];
-  if (!fn) return makeResult(id, 'error', `No check named "${id}".`, `Known checks: ${DEFAULT_CHECKS.join(', ')}.`);
+  if (!fn) { log.warn(`requested a check that does not exist: "${id}"`, { known: DEFAULT_CHECKS }); return makeResult(id, 'error', `No check named "${id}".`, `Known checks: ${DEFAULT_CHECKS.join(', ')}.`); }
   try {
     return fn(ir, ctx.project, ctx.options || {});
   } catch (e) {
+    // A check throwing means malformed upstream data or a bug in the check itself —
+    // capture it before it collapses into a plain error verdict the caller may ignore.
+    log.logError(`verify check "${id}" threw`, e, { context: { check: id } });
     return makeResult(id, 'error', `Check "${id}" threw: ${e && e.message}`, 'Fix the IR upstream (derive stage).');
   }
 }

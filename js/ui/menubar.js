@@ -28,7 +28,10 @@ import { escHtml } from './text.js';
 // the id tables here means the two new menus can never advertise an action the
 // dispatcher does not answer, and the "no dead commands" test stays honest as the
 // command set grows — there is no second list to keep in step.
-import { CHART_COMMAND_IDS, SELECT_COMMAND_IDS } from './chart-commands.js';
+import { CHART_COMMAND_IDS, SELECT_COMMAND_IDS, PATTERN_COMMAND_IDS, MOTIF_COMMAND_IDS, LACE_COMMAND_IDS } from './chart-commands.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/menubar');
 
 const BAR_ID = 'kx-menubar';
 const STYLE_ID = 'kx-menubar-style';
@@ -48,15 +51,22 @@ export const MENUBAR_ACTIONS = new Set([
   'view.status', 'view.structure', 'view.systems',
   'project.dashboard', 'project.snapshot', 'project.rename', 'project.recent', 'project.open',
   'design.presets', 'design.math', 'design.image', 'design.knitalong', 'design.legend',
+  'design.punchcard-photo',
   'design.heritage',
   // KNITCAT V2 — the six fused systems, mounted as runtime `.kv2-` docks.
-  'v2.project', 'v2.knitscript', 'v2.fit', 'v2.yarn', 'v2.compiler', 'v2.compile',
+  'v2.project', 'v2.knitscript', 'v2.fit', 'v2.yarn', 'v2.compiler', 'v2.compile', 'v2.derivation', 'v2.colorblind', 'v2.substitute', 'v2.blend', 'v2.care', 'v2.fairisle', 'v2.finishing', 'v2.drape', 'v2.quote', 'v2.shortrows', 'v2.verify', 'v2.qc', 'v2.chartdna', 'v2.health', 'v2.print',
   'v2.reverse', 'v2.production', 'v2.launcher', 'v2.closeAll',
-  'machine.feasibility', 'machine.universe', 'machine.fitAll', 'machine.pick',
-  'help.about', 'help.guide', 'help.eyelets', 'help.shortcuts', 'help.search', 'help.love',
+  'machine.feasibility', 'machine.universe', 'machine.fitAll', 'machine.pick', 'machine.passes',
+  'help.about', 'help.guide', 'help.docs', 'help.eyelets', 'help.shortcuts', 'help.search', 'help.love',
   // Every chart-row/column/transform/region/matrix verb and every selection verb.
   ...CHART_COMMAND_IDS,
-  ...SELECT_COMMAND_IDS
+  ...SELECT_COMMAND_IDS,
+  // The Pattern Intelligence verbs (crop, repeat, symmetry, speckle, border, density).
+  ...PATTERN_COMMAND_IDS,
+  // The Motif & Shape Intelligence verbs (motifs, morphology, holes, kaleidoscope).
+  ...MOTIF_COMMAND_IDS,
+  // The Lace Intelligence verbs (find unpaired eyelets, pair them, stitch balance).
+  ...LACE_COMMAND_IDS
 ]);
 
 /**
@@ -86,6 +96,7 @@ export function buildMenus(flags = {}) {
         it('Save / snapshot into project', 'file.save', { shortcut: 'Ctrl S' }),
         it('Save Project file (.kcard)…', 'file.saveAs'),
         it('Export / CNC (DXF · G-code · PDF)…', 'file.export'),
+        it('Print Pattern Sheet', 'v2.print'),
         sep(),
         it('Back up everything (.kbak)…', 'file.backup'),
         it('Restore from backup…', 'file.restore'),
@@ -157,8 +168,57 @@ export function buildMenus(flags = {}) {
         it('Soften region (stagger floats)', 'chart.soften', { disabled: !flags.hasSelection }),
         it('Smudge last stroke', 'chart.smudge'),
         sep(),
+        it('Find & replace symbol\u2026', 'chart.replace'),
         it('Jump to cell\u2026', 'chart.jumpTo', { shortcut: 'Ctrl G' }),
         it('Card statistics', 'chart.info')
+      ]
+    },
+    {
+      id: 'pattern', title: 'Pattern',
+      items: [
+        sec('Fit the card to the design'),
+        it('Crop empty border\u2026', 'pattern.crop'),
+        it('Pad to a larger card\u2026', 'pattern.pad'),
+        it('Frame with a border\u2026', 'pattern.border'),
+        it('Tile as a repeat\u2026', 'pattern.tile'),
+        it('Half-drop (brick) shift\u2026', 'pattern.halfDrop'),
+        sep(),
+        sec('Understand the design'),
+        it('Find the smallest repeat', 'pattern.detectRepeat'),
+        it('Symmetry report', 'pattern.symmetry'),
+        it('Density report', 'pattern.density'),
+        sep(),
+        sec('Make it true'),
+        it('Mirror left \u2192 right', 'pattern.symmetric.h'),
+        it('Mirror top \u2192 bottom', 'pattern.symmetric.v'),
+        it('De-speckle stray holes\u2026', 'pattern.despeckle'),
+        it('Fill enclosed blanks', 'pattern.fillSpecks')
+      ]
+    },
+    {
+      id: 'shape', title: 'Shape',
+      items: [
+        sec('See the figures'),
+        it('Count & locate motifs', 'motif.summary'),
+        it('Classify symmetry', 'motif.symmetry'),
+        sep(),
+        sec('Reshape the worked area'),
+        it('Thicken (dilate)\u2026', 'motif.dilate'),
+        it('Thin (erode)\u2026', 'motif.erode'),
+        it('Keep outline only\u2026', 'motif.outline'),
+        it('Punch enclosed holes closed', 'motif.fillHoles'),
+        sep(),
+        sec('Multiply'),
+        it('Kaleidoscope from a corner\u2026', 'motif.kaleidoscope')
+      ]
+    },
+    {
+      id: 'lace', title: 'Lace',
+      items: [
+        sec('Yarn-overs & transfers'),
+        it('Find unpaired eyelets', 'lace.unpaired'),
+        it('Pair the lone eyelets\u2026', 'lace.pair'),
+        it('Stitch-count balance', 'lace.balance')
       ]
     },
     {
@@ -245,10 +305,23 @@ export function buildMenus(flags = {}) {
         it('Fit Engine', 'v2.fit'),
         it('Yarn Lab', 'v2.yarn'),
         it('Compiler V2 (all outputs)', 'v2.compiler'),
+        it('Why these numbers (derivation)', 'v2.derivation'),
+        it('Colour-blindness preview', 'v2.colorblind'),
+        it('Swap this yarn (substitutions)', 'v2.substitute'),
+        it('Hold strands to hit gauge', 'v2.blend'),
+        it('Garment care (wash · dry · iron)', 'v2.care'),
+        it('Fair Isle check (floats & contrast)', 'v2.fairisle'),
+        it('What to fix (verification actions)', 'v2.verify'),
+        it('Chart DNA (repeat · symmetry · density)', 'v2.chartdna'),
+        it('Pattern Health (ready to cast on?)', 'v2.health'),
+        it('Finish this garment (bands & pick-up)', 'v2.finishing'),
+        it('Drape simulation (how it hangs)', 'v2.drape'),
+        it('Short-row atlas (where the wedges are)', 'v2.shortrows'),
+        it('Design quote (chart → yarn → money)', 'v2.quote'),
+        it('QC inspection card (before you ship)', 'v2.qc'),
         it('Reverse Engineer (photo → pattern)', 'v2.reverse'),
         it('Production (cost · batch · orders)', 'v2.production'),
         sep(),
-        it('Toggle the V2 launcher', 'v2.launcher'),
         it('Close all V2 docks', 'v2.closeAll', { danger: true })
       ]
     },
@@ -259,6 +332,7 @@ export function buildMenus(flags = {}) {
         it('Compare across all machines', 'machine.universe'),
         it('Make this card fit every machine', 'machine.fitAll'),
         sep(),
+        it('Carriage pass sheet…', 'machine.passes'),
         it('Change machine profile…', 'machine.pick')
       ]
     },
@@ -266,6 +340,7 @@ export function buildMenus(flags = {}) {
       id: 'help', title: 'Help',
       items: [
         it('Search commands…', 'help.search', { shortcut: 'Ctrl K' }),
+        it('The KNITCAT handbook', 'help.docs'),
         it('Lace carriage guide', 'help.guide'),
         it('Eyelets vs transfers explained', 'help.eyelets'),
         it('Keyboard shortcuts', 'help.shortcuts'),
@@ -565,8 +640,8 @@ export function createMenuBar(deps = {}) {
     menuEls.forEach(m => m.title.setAttribute('aria-expanded', 'false'));
     openIndex = -1;
   }
-  function hide() { bar.hidden = true; try { localStorage.setItem(HIDE_KEY, '1'); } catch (_) {} doc.body.classList.add('kx-mb-collapsed'); }
-  function show() { bar.hidden = false; reopen.style.display = 'none'; try { localStorage.setItem(HIDE_KEY, '0'); } catch (_) {} doc.body.classList.remove('kx-mb-collapsed'); }
+  function hide() { bar.hidden = true; try { localStorage.setItem(HIDE_KEY, '1'); } catch (err) { log.debug('the collapsed menubar state could not be persisted', { error: err?.message }); } doc.body.classList.add('kx-mb-collapsed'); }
+  function show() { bar.hidden = false; reopen.style.display = 'none'; try { localStorage.setItem(HIDE_KEY, '0'); } catch (err) { log.debug('the expanded menubar state could not be persisted', { error: err?.message }); } doc.body.classList.remove('kx-mb-collapsed'); }
 
   function wireGlobal() {
     if (bar.__kxWired) return;
@@ -575,6 +650,6 @@ export function createMenuBar(deps = {}) {
     bar.addEventListener('keydown', onBarKey);
     doc.addEventListener('pointerdown', e => { if (!bar.contains(e.target)) closeAll(); }, true);
     doc.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
-    try { if (localStorage.getItem(HIDE_KEY) === '1') hide(); } catch (_) { /* default shown */ }
+    try { if (localStorage.getItem(HIDE_KEY) === '1') hide(); } catch (err) { log.debug('the menubar hidden-state could not be read — it stays shown', { error: err?.message }); }
   }
 }

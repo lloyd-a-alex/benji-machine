@@ -22,6 +22,9 @@
  */
 
 import { machineProfile as validateMachineProfile } from '../core/validate.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('machine/profiles');
 
 /**
  * The profiles that ship with KNITCAT — a frozen reference set.
@@ -71,6 +74,9 @@ export const BUILT_IN_PROFILES = Object.freeze({
     // Consecutive held loops one needle can carry before the bulk lifts it out of
     // the cam channel.
     maxTuckLoops: 6,
+    // A punchcard is binary: hole or no hole selects one of TWO yarn positions per
+    // needle per row, so the carriage can only auto-strand two colours.
+    maxColors: 2,
     description: 'Standard 4.5mm gauge for Brother KH-830, KH-836, KH-881, KH-890, KH-892, KH-894 with LC-2 lace carriage. Single needle bed — transfers stay within the same bed.'
   },
 
@@ -107,6 +113,7 @@ export const BUILT_IN_PROFILES = Object.freeze({
     bedLengthMm: 900,       // same 4.5mm pitch and bed length as the Brother family
     maxFloatNeedles: 9,
     maxTuckLoops: 6,
+    maxColors: 2, // punchcard reader: two automatic yarn positions
     description: 'Standard 4.5mm gauge for Silver Reed SK-280, SK-700, Singer Memo-Matic, Studio with LC-580 or punchcard LC-1. Single needle bed.'
   },
 
@@ -144,6 +151,7 @@ export const BUILT_IN_PROFILES = Object.freeze({
     bedLengthMm: 900,
     maxFloatNeedles: 7,     // 5mm pitch: the same stitch count is a longer loose strand
     maxTuckLoops: 6,
+    maxColors: 2, // Deco/punchcard patterning selects between two feeders
     description: 'Double-bed (two needle beds) 5mm system for Passap Duo 80 with U-100E transfer carriage or Deco punchcard reader. Transfers cross between the two beds.'
   },
 
@@ -180,6 +188,7 @@ export const BUILT_IN_PROFILES = Object.freeze({
     bedLengthMm: 900,
     maxFloatNeedles: 5,     // each skipped needle is 9mm of loose yarn
     maxTuckLoops: 4,
+    maxColors: 2, // punchcard reader: two automatic yarn positions
     description: '9mm heavy yarn machine for Brother KH-260, KH-270 with punchcard patterning. Single needle bed.'
   },
 
@@ -215,6 +224,7 @@ export const BUILT_IN_PROFILES = Object.freeze({
     bedLengthMm: 900,
     maxFloatNeedles: 7,
     maxTuckLoops: 6,
+    maxColors: 2, // punchcard reader: two automatic yarn positions
     description: 'Toyota KS-901, KS-950 standard 4.5mm punchcard machines. Single needle bed.'
   },
 
@@ -253,6 +263,9 @@ export const BUILT_IN_PROFILES = Object.freeze({
     bedLengthMm: 300,
     maxFloatNeedles: 7,     // 5mm pitch — the same needle count is a looser strand than 4.5mm
     maxTuckLoops: 6,
+    // The KH-9xx are electronic (driven from a computer, not a card) and carry a
+    // six-position colour changer, so they can auto-strand up to six yarns.
+    maxColors: 6,
     description: 'Brother KH-940/KH-950/KH-960/KH-970 "Maxi" — a 60-needle, 5mm punchcard bed. Single needle bed; wider than the 24-stitch machines, so motifs get more room before they tile.'
   },
 
@@ -288,6 +301,7 @@ export const BUILT_IN_PROFILES = Object.freeze({
     bedLengthMm: 900,
     maxFloatNeedles: 9,
     maxTuckLoops: 6,
+    maxColors: 6, // you are the carriage — set a permissive feeder count by default
     description: 'Fully customizable physical parameters for experimental CNC cut cards or DIY knitting machines. Modelled as a single bed.'
   }
 });
@@ -354,6 +368,7 @@ export function registerProfile(profile) {
     value: { ...profile, id: checked.id, custom: true },
     writable: true, enumerable: true, configurable: true
   });
+  log.info(`registered custom machine profile "${checked.id}"`);
   return { ok: true, profile: MACHINE_PROFILES[checked.id] };
 }
 
@@ -388,11 +403,16 @@ export function loadCustomProfiles(storage = (typeof localStorage !== 'undefined
   try {
     const raw = storage.getItem(CUSTOM_PROFILES_KEY);
     const parsed = JSON.parse(raw || '[]');
-    if (!Array.isArray(parsed)) return 0;
+    if (!Array.isArray(parsed)) { log.warn('stored custom profiles were not an array — ignoring', { type: typeof parsed }); return 0; }
     for (const p of parsed) {
-      if (registerProfile(p).ok) loaded++;
+      const res = registerProfile(p);
+      if (res.ok) loaded++;
+      else log.warn(`skipping a malformed stored profile: ${res.error}`, { id: p?.id });
     }
-  } catch (_) { /* unreadable storage is not fatal — built-ins still work */ }
+  } catch (err) {
+    // unreadable storage is not fatal — built-ins still work — but it should be visible
+    log.logError('could not read saved custom profiles', err, { context: { key: CUSTOM_PROFILES_KEY } });
+  }
   return loaded;
 }
 
@@ -408,7 +428,8 @@ export function saveCustomProfiles(storage = (typeof localStorage !== 'undefined
   try {
     storage.setItem(CUSTOM_PROFILES_KEY, JSON.stringify(listCustomProfiles()));
     return true;
-  } catch (_) {
+  } catch (err) {
+    log.logError('failed to persist custom profiles', err, { context: { key: CUSTOM_PROFILES_KEY } });
     return false;
   }
 }
@@ -442,7 +463,11 @@ export function profileLimits(profile) {
     maxNeedles: bedNeedleCapacity(profile),
     maxFloatNeedles: profile?.maxFloatNeedles ?? 9,
     maxTuckLoops: profile?.maxTuckLoops ?? 6,
-    beds: profile?.beds ?? 1
+    beds: profile?.beds ?? 1,
+    // How many yarns the patterning system can select between automatically. A
+    // machine that never declares feeders is treated as the safe punchcard floor of
+    // two, so an over-coloured chart is flagged rather than silently truncated.
+    maxColors: profile?.maxColors ?? 2
   };
 }
 
@@ -466,6 +491,12 @@ export function calculateCardDimensions(profile, rows, cols) {
   // Total active height
   const gridHeight = (r - 1) * profile.pitchY;
   const totalHeight = gridHeight + (profile.marginTopBottom * 2);
+
+  if (!Number.isFinite(width) || !Number.isFinite(totalHeight)) {
+    log.error('calculateCardDimensions produced non-finite geometry — a profile field is missing', {
+      profile: profile.name || profile.id, rows: r, cols: c, width, totalHeight,
+    });
+  }
 
   return {
     widthMm: width,

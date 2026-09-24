@@ -19,6 +19,10 @@
  * source of truth and can never disagree.
  */
 
+import { logger } from './logging.js';
+
+const log = logger('core/apca');
+
 /** The APCA 0.1.9-W3 working constants, verbatim from the reference source. */
 const C = {
   mainTRC: 2.4, // the tone-response curve APCA uses (a straight power, not the sRGB piecewise curve)
@@ -77,7 +81,13 @@ export function sRGBtoY(rgb) {
  * @returns {number} signed Lightness Contrast (`< 0` = light-on-dark)
  */
 export function apcaContrastY(txtY, bgY) {
-  if ([txtY, bgY].some(Number.isNaN) || Math.min(txtY, bgY) < 0 || Math.max(txtY, bgY) > C.maxInput) {
+  if ([txtY, bgY].some(Number.isNaN)) {
+    // A NaN luminance means a caller fed a colour that never parsed — a real bug,
+    // not an out-of-range value — so surface it before returning the neutral 0.
+    log.warn('apcaContrastY received a NaN luminance — a colour could not be parsed', { txtY, bgY });
+    return 0;
+  }
+  if (Math.min(txtY, bgY) < 0 || Math.max(txtY, bgY) > C.maxInput) {
     return 0;
   }
   // Soft black clamp: near-black values are nudged up to avoid a false zero.
@@ -108,7 +118,7 @@ export function apcaContrastY(txtY, bgY) {
 export function apcaLc(text, background) {
   const t = Array.isArray(text) ? text : parseHexColor(text);
   const b = Array.isArray(background) ? background : parseHexColor(background);
-  if (!t || !b) return 0;
+  if (!t || !b) { log.debug('apcaLc could not parse a colour, returning neutral contrast', { text, background }); return 0; }
   return apcaContrastY(sRGBtoY(t), sRGBtoY(b));
 }
 

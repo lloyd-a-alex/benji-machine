@@ -17,6 +17,9 @@
  */
 
 import { DiagError, CATEGORIES } from './diagnostics.js';
+import { logger } from './logging.js';
+
+const log = logger('core/validate');
 
 let _vseq = 0;
 /** @returns {string} a fresh validation code (KV-nnn). */
@@ -274,6 +277,10 @@ export function machineProfile(value, opts = {}) {
     beds: (v) => oneOf(v, [1, 2], { field: 'beds' }),
     maxFloatNeedles: (v) => integer(v, { min: 1, field: 'maxFloatNeedles' }),
     maxTuckLoops: (v) => integer(v, { min: 1, field: 'maxTuckLoops' }),
+    // Optional: how many yarns the patterning system can auto-select between. Absent
+    // means the binary punchcard floor of two, which the advisor treats as the safe
+    // assumption rather than inventing a permissive capacity.
+    maxColors: { validate: (v) => integer(v, { min: 1, field: 'maxColors' }), optional: true, default: 2 },
     carriageRules: (v) => object(v, { field: 'carriageRules' })
   }, { field });
 }
@@ -307,6 +314,9 @@ export function soft(fn, field = 'value') {
   try { return { ok: true, value: fn() }; }
   catch (err) {
     if (err instanceof DiagError) return { ok: false, error: err };
+    // A non-DiagError escaping a validator is a bug in the validator, not bad input:
+    // the caller expects {ok:false, error} quietly, so surface it in diagnostics.
+    log.logError(`validator for "${field}" threw an unexpected (non-validation) error`, err, { context: { field } });
     return { ok: false, error: validationError(field, String((err && err.message) || err), undefined, 'a valid value') };
   }
 }

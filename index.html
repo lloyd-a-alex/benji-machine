@@ -134,6 +134,288 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css?v=__BUILD__">
+  <!-- ══════════════════════════════════════════════════════════════════════
+       KNITCAT unified shell. Scoped as its own source so it layers over the
+       base sheet without ever fighting it. The whole overhaul is gated behind
+       body.kx-shell, which js/ui/chrome.js adds ONLY after a successful mount:
+       a failed chrome leaves the legacy header / tool rail / tab strip / menubar
+       exactly as they were. New regions are hidden until that flag appears.
+       ══════════════════════════════════════════════════════════════════════ -->
+  <style id="kx-shell-css">
+    /* ══════════════════════════════════════════════════════════════════════
+       KNITCAT unified shell. Inert until chrome.js mounts and adds body.kx-shell,
+       so a failed mount leaves the legacy header / rail / tab strip exactly as
+       they were. This is a SEPARATE stylesheet source from css/styles.css: base
+       classes are re-scoped under shell regions, never redefined.
+       ══════════════════════════════════════════════════════════════════════ */
+
+    /* regions stay hidden until the shell mounts */
+    #command-bar,#context-bar,#surface-rail,#setup-rail,#subtab-strip{display:none}
+    #right-sidebar .insp-tabs,#right-sidebar .insp-host{display:none}
+    /* the single switch: demote the five legacy nav systems, promote the shell */
+    body.kx-shell #main-header,body.kx-shell #left-toolbar,body.kx-shell #kx-menubar,body.kx-shell #viewport-workspace>.tab-bar{display:none!important}
+    body.kx-shell #command-bar{display:flex}
+    body.kx-shell #context-bar{display:block}
+    body.kx-shell #surface-rail{display:flex}
+    /* the flat view toolbar retired the sub-tab strip: it stays in the DOM (a wired
+       tablist for any future use) but renders nothing, so hide its empty shell. */
+    body.kx-shell #subtab-strip{display:none}
+    body.kx-shell #right-sidebar .insp-tabs{display:flex}
+
+    /* ── BOOT VEIL — covers the app until the first settled design paints ──
+       Present from the very first frame (opaque, so nothing flashes behind it)
+       and dissolved by body.kx-ready, which app.js sets once the canvas shows
+       the one real card (preset OR recovered autosave — never both in turn). */
+    #kx-boot-veil{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--bg-main,#070a12);color:var(--accent-rose,#ff97a8);transition:opacity .32s ease,visibility .32s}
+    #kx-boot-veil .kx-boot-mark{font-size:34px;line-height:1;animation:kx-boot-pulse 1.3s ease-in-out infinite}
+    #kx-boot-veil .kx-boot-word{font-size:12px;font-weight:800;letter-spacing:.34em;text-transform:uppercase;color:var(--text-muted,#64748b)}
+    body.kx-ready #kx-boot-veil{opacity:0;visibility:hidden;pointer-events:none}
+    @keyframes kx-boot-pulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.16);opacity:1}}
+    @media (prefers-reduced-motion:reduce){#kx-boot-veil .kx-boot-mark{animation:none}}
+
+    /* ── COMMAND BAR — identity · setup · patterns · one action · overflow ──
+       Compact "precision instrument" density: the canvas is the hero, so this
+       bar is a thin 44px instrument strip rather than a tall banner. */
+    #command-bar{align-items:center;gap:10px;flex-wrap:nowrap;min-height:44px;padding:5px 12px;background:linear-gradient(180deg,var(--bg-surface-elevated),var(--bg-surface));border-bottom:1px solid var(--border-subtle);box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--accent-cyan,#38bdf8) 40%,transparent),0 6px 18px -14px rgba(0,0,0,.7);position:relative;z-index:45}
+    .cb-identity{display:flex;align-items:center;gap:10px;min-width:0;flex:0 1 170px}
+    .cb-brand{display:inline-flex;color:var(--accent-cyan,#38bdf8);flex:0 0 auto;filter:drop-shadow(0 0 6px color-mix(in srgb,var(--accent-cyan,#38bdf8) 40%,transparent))}
+    .cb-brand svg{width:24px;height:24px}
+    .cb-project{display:inline-flex;align-items:center;gap:6px;min-width:0;flex:1 1 200px;position:relative}
+    .cb-project-input{width:100%;min-width:0;background:transparent;border:1px solid transparent;border-radius:9px;padding:7px 28px 7px 9px;color:var(--text-primary,#e5eaf2);font:inherit;font-size:14px;font-weight:600;letter-spacing:.01em;transition:background .14s ease,border-color .14s ease}
+    .cb-project-input:hover{background:color-mix(in srgb,var(--bg-surface-elevated) 65%,transparent)}
+    .cb-project-input:focus{outline:none;background:var(--bg-main);border-color:var(--accent-cyan,#38bdf8);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent-cyan,#38bdf8) 22%,transparent)}
+    .cb-project-input::placeholder{color:var(--text-muted,#64748b);font-weight:500}
+    .cb-project-saved{position:absolute;right:9px;color:var(--accent-emerald,#34d399);font-size:13px;pointer-events:none;animation:cbSaveFade 1.4s ease forwards}
+    @keyframes cbSaveFade{0%{opacity:1}70%{opacity:1}100%{opacity:0}}
+    .cb-setup{display:flex;align-items:center;gap:12px;flex:1 1 auto;min-width:0;overflow-x:auto;scrollbar-width:none;padding:2px}
+    .cb-setup::-webkit-scrollbar{display:none}
+    .cb-picker,.cb-modes{display:inline-flex;align-items:center;flex:0 0 auto}
+    .cb-picker .profile-picker{display:inline-flex;align-items:center;gap:7px;padding:4px 10px;border-radius:10px;background:var(--bg-inset);border:1px solid var(--border-subtle)}
+    .cb-picker label{color:var(--text-muted,#64748b);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+    #command-bar .select-control{max-width:240px}
+    /* Machine settings live right in the command bar next to the project title — a
+       live spec chip (headline gauge · bed · carriage rules, full detail in its
+       tooltip) and a gear that opens the editor — replacing the duplicate sidebar
+       panel that used to sit on the right. */
+    .cb-machine-spec{display:inline-flex;align-items:center;flex:0 0 auto;max-width:280px;padding:6px 10px;border-radius:9px;background:var(--bg-inset);border:1px solid var(--border-subtle);color:var(--text-primary,#e5eaf2);font:600 11.5px var(--font-ui,system-ui,sans-serif);letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help}
+    #btn-cb-machine-settings .cb-act-glyph{font-size:14px;line-height:1}
+    .cb-actions{display:flex;align-items:center;gap:6px;justify-content:flex-end;flex:0 0 auto;min-width:0}
+    .cb-surface-chip{display:inline-flex;align-items:center;gap:8px;padding:5px 10px;border-radius:9px;border:1px solid var(--border-subtle);background:var(--bg-surface-elevated);color:var(--text-secondary,#94a3b8);font:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;transition:border-color .14s ease,color .14s ease}
+    .cb-surface-chip:hover{color:var(--text-primary,#e5eaf2);border-color:var(--accent-cyan,#38bdf8)}
+    .cb-surface-glyph{font-size:15px}
+    /* the surface chip CYCLES the moments (it is not a dropdown), so it carries a
+       ⇄ affordance rather than a ▾ that promises a menu that never opens. */
+    .cb-surface-name::after{content:" \21C4";font-size:11px;opacity:.6}
+    .cb-act{display:inline-flex;align-items:center;gap:7px;min-height:30px;padding:5px 11px;background:var(--bg-surface-elevated);color:var(--text-primary,#e5eaf2);border:1px solid var(--border-subtle);border-radius:9px;font:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .12s ease,border-color .12s ease,transform 80ms ease,box-shadow .12s ease}
+    .cb-act:hover{border-color:var(--accent-cyan,#38bdf8);box-shadow:0 4px 14px -8px rgba(0,0,0,.8)}
+    .cb-act:active{transform:translateY(1px)}
+    .cb-act--primary{background:var(--accent-cyan,#38bdf8);color:#04101e;border-color:transparent;font-weight:800}
+    .cb-act--primary:hover{filter:brightness(1.08)}
+    .cb-act--patterns{border-color:color-mix(in srgb,var(--accent-rose,#ff97a8) 45%,var(--border-subtle));color:var(--text-primary,#e5eaf2)}
+    .cb-act--patterns .cb-act-glyph{color:var(--accent-rose,#ff97a8)}
+    .cb-act--patterns:hover{border-color:var(--accent-rose,#ff97a8);background:color-mix(in srgb,var(--accent-rose,#ff97a8) 12%,var(--bg-surface-elevated))}
+    .cb-act--icon{padding:5px 9px}
+    .cb-act--ghost .cb-kbd{font-family:var(--font-mono,monospace);font-size:10px;opacity:.75;border:1px solid var(--border-subtle);border-radius:5px;padding:1px 5px}
+    .cb-act-glyph{font-size:15px}
+    #cb-health-slot .btn-action{display:inline-flex;align-items:center;gap:7px;border-radius:11px}
+    .cb-health-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--accent-emerald,#34d399);box-shadow:0 0 8px color-mix(in srgb,var(--accent-emerald,#34d399) 60%,transparent)}
+    .cb-health-dot[data-sev="warn"]{background:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.6)}
+    .cb-health-dot[data-sev="error"]{background:#f87171;box-shadow:0 0 8px rgba(248,113,113,.6)}
+    #cb-health-score{font-weight:800;font-variant-numeric:tabular-nums}
+
+    /* ── CONTEXT BAR — the real tools for this exact moment ── */
+    #context-bar{min-height:40px;padding:5px 12px;background:linear-gradient(180deg,color-mix(in srgb,var(--bg-surface-elevated) 55%,var(--bg-surface)),var(--bg-surface));border-bottom:1px solid var(--border-subtle);overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+    #context-bar::-webkit-scrollbar{display:none}
+    .ctx-inner{display:flex;align-items:center;gap:10px;flex-wrap:nowrap;min-height:28px}
+    .ctx-label{color:var(--text-muted,#64748b);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+    .ctx-group{display:inline-flex;align-items:center;gap:6px;flex-wrap:nowrap}
+    .ctx-view{gap:4px}
+    .ctx-view .ctx-view-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--bg-surface-elevated);color:var(--text-secondary,#94a3b8);font:inherit;font-size:16px;font-weight:700;cursor:pointer;transition:color .12s ease,border-color .12s ease,background .12s ease}
+    .ctx-view .ctx-view-btn:hover{color:var(--text-primary,#e5eaf2);border-color:var(--accent-cyan,#38bdf8)}
+    .ctx-patterns{gap:6px;padding:1px 10px 1px 4px;margin-right:2px;border-right:1px solid var(--border-subtle)}
+    .ctx-patterns-label{margin-right:2px;color:var(--accent-rose,#ff97a8)}
+    .ctx-pattern-btn{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:9px;border:1px solid var(--border-subtle);background:var(--bg-surface-elevated);color:var(--text-primary,#e5eaf2);font:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:border-color .12s ease,background .12s ease,transform 80ms ease}
+    .ctx-pattern-btn:hover{border-color:var(--accent-rose,#ff97a8);background:color-mix(in srgb,var(--accent-rose,#ff97a8) 12%,var(--bg-surface-elevated))}
+    .ctx-pattern-btn:active{transform:translateY(1px)}
+    .ctx-pattern-glyph{color:var(--accent-rose,#ff97a8);font-size:14px}
+    .ctx-tools .ctx-tool{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--bg-surface-elevated);color:var(--text-secondary,#94a3b8);cursor:pointer;transition:color .12s ease,border-color .12s ease,background .12s ease}
+    .ctx-tools .ctx-tool svg{width:17px;height:17px}
+    .ctx-tools .ctx-tool:hover{color:var(--text-primary,#e5eaf2);border-color:var(--accent-cyan,#38bdf8)}
+    .ctx-tools .ctx-tool.active{color:#04101e;background:var(--accent-cyan,#38bdf8);border-color:transparent;box-shadow:0 0 0 3px color-mix(in srgb,var(--accent-cyan,#38bdf8) 22%,transparent)}
+    #context-bar .canvas-subbar,#context-bar .schedule-toolbar,#context-bar .yarn-toolbar,#context-bar .punchcard-toolbar,#context-bar .cnc-toolbar,#context-bar .brother-toolbar{align-items:center;gap:10px;flex-wrap:nowrap;width:100%;border:0;padding:0;background:transparent;position:static}
+    /* The context bar is a single-line instrument strip: it never wraps onto the
+       canvas (which would steal its height); instead it scrolls sideways (no
+       visible bar — wheel / trackpad / drag). Every chip stays on one line. */
+    #context-bar .stitch-selector,#context-bar .symmetry-controls,#context-bar .toolbar-group{flex-wrap:nowrap}
+    #context-bar .canvas-subbar{min-height:0;align-items:center}
+    #context-bar .stitch-btn,#context-bar .toolbar-btn,#context-bar .checkbox-label,#context-bar .mode-btn,#context-bar .num-input,#context-bar .toolbar-label{white-space:nowrap}
+
+    /* ── VIEW TOOLBAR — surfaces + their sub-views in ONE scrollable bar ──
+       chrome.js moves the rail to the top of the stage and docks the sub-tab strip
+       inside it, so this is a horizontal "pick a view" toolbar, not a left column.
+       It scrolls sideways when the row can't fit (no visible bar) so at any width
+       nothing is ever pushed off-screen. The active surface keeps its quiet rose
+       accent bar + faint fill + cyan glyph — the "you are here" cue a precision CAD
+       tool uses — instead of the loud solid block that read as toy-like. */
+    #surface-rail{flex-direction:row;align-items:center;gap:3px;width:auto;max-width:100%;padding:5px 8px;background:linear-gradient(180deg,var(--bg-surface),var(--bg-inset));border-bottom:1px solid var(--border-subtle);flex:0 0 auto;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+    #surface-rail::-webkit-scrollbar{display:none}
+    .sr-btn{position:relative;display:flex;flex-direction:row;align-items:center;gap:6px;padding:6px 11px;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--text-secondary,#94a3b8);font:inherit;font-size:12px;font-weight:600;letter-spacing:.01em;cursor:pointer;white-space:nowrap;flex:0 0 auto;transition:color .14s ease,background .14s ease}
+    .sr-btn::before{content:"";position:absolute;left:0;top:50%;width:3px;height:0;border-radius:0 3px 3px 0;background:var(--accent-rose,#ff97a8);transform:translateY(-50%);transition:height .18s ease}
+    .sr-btn:hover{color:var(--text-primary,#e5eaf2);background:color-mix(in srgb,var(--bg-surface-elevated) 65%,transparent)}
+    .sr-btn.is-active{color:var(--accent-cyan,#38bdf8);background:color-mix(in srgb,var(--accent-cyan,#38bdf8) 13%,transparent)}
+    .sr-btn.is-active::before{height:58%}
+    .sr-glyph{font-size:16px;line-height:1}
+    .sr-label{white-space:nowrap}
+    .sr-btn--ghost{color:var(--text-muted,#64748b)}
+    .sr-btn--ghost:hover{color:var(--text-secondary,#94a3b8)}
+    .sr-divider{width:1px;height:20px;background:var(--border-subtle);margin:0 6px;flex:0 0 auto;align-self:center}
+
+    /* ── SETUP RAIL — the machine selector on the left, stacked for the workflow ──
+       chrome.js re-parents the real #profile-picker (label + <select>) in here, so
+       the same control that used to crowd the top command bar now anchors the left
+       column. Wide enough that a long profile name ("Brother Standard Gauge") is
+       never clipped to "Brother Stanc", and the picker's own label is the single
+       caption — no duplicate "Machine" heading stacked above it. */
+    #setup-rail{flex-direction:column;align-items:stretch;gap:8px;width:172px;flex:0 0 auto;padding:12px 10px;background:linear-gradient(180deg,var(--bg-surface),var(--bg-inset));border-right:1px solid var(--border-subtle)}
+    #setup-rail .profile-picker{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:9px;border-radius:12px;background:var(--bg-inset);border:1px solid var(--border-subtle)}
+    #setup-rail .profile-picker label{color:var(--text-muted,#64748b);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em}
+    #setup-rail .select-control{width:100%;max-width:none;font-size:12px;font-weight:600;padding-right:24px}
+    @media (max-width:1200px){#setup-rail{width:150px}}
+    @media (max-width:1024px){#setup-rail{width:132px}}
+    @media (max-width:900px){#setup-rail{display:none}}
+
+    /* ── SUB-TABS — now docked INSIDE the view toolbar, inline after the surfaces ── */
+    #subtab-strip{align-items:center;gap:2px;padding:0 0 0 8px;margin-left:4px;background:transparent;border-bottom:0;border-left:1px solid var(--border-subtle);min-height:0;flex:0 0 auto}
+    .subtab{position:relative;display:inline-flex;align-items:center;padding:6px 12px;border:0;background:transparent;color:var(--text-secondary,#94a3b8);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:color .12s ease}
+    .subtab:hover{color:var(--text-primary,#e5eaf2)}
+    .subtab.is-active{color:var(--accent-cyan,#38bdf8)}
+    .subtab.is-active::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:2px;border-radius:2px;background:var(--accent-cyan,#38bdf8);box-shadow:0 0 8px color-mix(in srgb,var(--accent-cyan,#38bdf8) 70%,transparent)}
+
+    /* ── INSPECTOR — the right column, tabbed Health · Spec · Layers · Notes ── */
+    /* the old sidebar panels are block-flow; forcing display:flex (row) squashed
+       every child into a one-character column — keep them block. */
+    body.kx-shell #right-sidebar>.sidebar-panel,body.kx-shell #right-sidebar .insp-host{display:none}
+    body.kx-shell #right-sidebar[data-insp="health"]>#kx-health-panel,body.kx-shell #right-sidebar[data-insp="spec"]>.sidebar-panel:not(#kx-health-panel){display:block}
+    body.kx-shell #right-sidebar[data-insp="layers"]>#insp-layers-host,body.kx-shell #right-sidebar[data-insp="notes"]>#insp-notes-host{display:block}
+    body.kx-shell #right-sidebar{overflow-x:hidden}
+    #right-sidebar .insp-tabs{gap:4px;padding:8px;position:sticky;top:0;background:var(--bg-surface);z-index:2;border-bottom:1px solid var(--border-subtle)}
+    .insp-tab{flex:1;padding:8px 4px;border:1px solid transparent;border-bottom:2px solid transparent;background:var(--bg-inset);color:var(--text-secondary,#94a3b8);font:inherit;font-size:11px;font-weight:700;letter-spacing:.02em;cursor:pointer;border-radius:9px 9px 0 0;transition:color .12s ease,background .12s ease}
+    .insp-tab:hover{color:var(--text-primary,#e5eaf2)}
+    .insp-tab.is-active{color:var(--accent-cyan,#38bdf8);background:var(--bg-surface-elevated);border-bottom-color:var(--accent-cyan,#38bdf8)}
+    .insp-host{padding:16px;color:var(--text-muted,#64748b);font-size:12.5px;line-height:1.5}
+    body.kx-shell #kx-health-panel .sidebar-title{color:var(--accent-cyan,#38bdf8)}
+    body.kx-shell #kx-health-panel .kx-health-meta{display:flex;flex-wrap:wrap;gap:6px 10px;margin:8px 0}
+    body.kx-shell #kx-health-panel .kx-health-list-head{margin-top:12px}
+    body.kx-shell #kx-health-panel .kx-health-acts{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+    body.kx-shell #kx-health-panel .kx-health-acts .btn-action{width:100%;justify-content:center;gap:8px}
+    body.kx-shell #kx-health-panel .kx-health-acts .kx-act-glyph{font-size:14px;line-height:1;opacity:.9}
+
+    /* ── OVERFLOW MENU — the one consolidated command surface ── */
+    .cb-menu{position:fixed;z-index:80;min-width:280px;max-height:72vh;overflow:auto;padding:8px;background:var(--bg-surface-elevated);border:1px solid var(--border-subtle);border-radius:14px;box-shadow:0 20px 60px -12px rgba(0,0,0,.7)}
+    .cb-menu[hidden]{display:none}
+    .cb-menu-section{padding:10px 10px 4px;font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-cyan,#38bdf8)}
+    .cb-menu-item{display:flex;align-items:center;gap:11px;width:100%;padding:9px 10px;border:0;border-radius:9px;background:transparent;color:var(--text-primary,#e5eaf2);font:inherit;font-size:13px;text-align:left;cursor:pointer;transition:background .1s ease}
+    .cb-menu-item:hover{background:var(--bg-surface)}
+    .cb-mi-glyph{width:20px;text-align:center;color:var(--accent-cyan,#38bdf8);font-size:14px}
+
+    /* ── INSPECTOR CONTENT — live layers, annotations, empty states ── */
+    #right-sidebar .insp-h{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-cyan,#38bdf8);margin-bottom:10px}
+    #right-sidebar .layer-row{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;margin-bottom:6px;border:1px solid var(--border-subtle);border-radius:10px;background:var(--bg-inset);color:var(--text-primary,#e5eaf2);font:inherit;font-size:12.5px;transition:border-color .12s ease,background .12s ease}
+    #right-sidebar .layer-row:hover{border-color:var(--accent-cyan,#38bdf8)}
+    #right-sidebar .layer-row.is-active{border-color:var(--accent-cyan,#38bdf8);background:color-mix(in srgb,var(--accent-cyan,#38bdf8) 14%,var(--bg-inset))}
+    #right-sidebar .layer-vis{flex:0 0 auto;color:var(--accent-emerald,#34d399);font-size:14px;line-height:1;background:transparent;border:0;padding:2px;cursor:pointer;font-family:inherit}
+    #right-sidebar .layer-vis:hover{color:var(--accent-cyan,#38bdf8)}
+    #right-sidebar .layer-name{flex:1 1 auto;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;color:inherit;background:transparent;border:0;padding:2px 0;cursor:pointer;font:inherit;font-size:12.5px}
+    #right-sidebar .layer-name:hover{color:var(--accent-cyan,#38bdf8)}
+    #right-sidebar .layer-kind{flex:0 0 auto;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted,#64748b);border:1px solid var(--border-subtle);border-radius:6px;padding:1px 6px}
+    #right-sidebar .layer-lock{flex:0 0 auto;font-size:12px;line-height:1;color:var(--text-muted,#64748b);background:transparent;border:0;padding:2px;cursor:pointer}
+    #right-sidebar .layer-lock:hover{color:var(--accent-rose,#ff97a8)}
+    #right-sidebar .note-card{display:flex;align-items:baseline;gap:8px;padding:9px 10px;margin-bottom:6px;border:1px solid var(--border-subtle);border-left:3px solid var(--accent-rose,#ff97a8);border-radius:9px;background:var(--bg-inset)}
+    #right-sidebar .note-kind{flex:0 0 auto;font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:700;color:var(--accent-rose,#ff97a8)}
+    #right-sidebar .note-text{flex:1 1 auto;min-width:0;color:var(--text-primary,#e5eaf2);font-size:12.5px;overflow-wrap:anywhere}
+    #right-sidebar .note-pos{flex:0 0 auto;font-family:var(--font-mono,monospace);font-size:10px;color:var(--text-muted,#64748b)}
+    #right-sidebar .insp-empty{padding:24px 12px;text-align:center;color:var(--text-muted,#64748b)}
+    #right-sidebar .insp-empty-title{font-size:13px;font-weight:600;color:var(--text-secondary,#94a3b8);margin:0 0 6px}
+    #right-sidebar .insp-empty-hint{font-size:12px;line-height:1.5;margin:0}
+
+    /* ── PATTERN SHELF — a bottom pop-out drawer, closed until asked for ──
+       Replaces the old always-open footer carousel that ate the canvas. The
+       drawer parks itself off the bottom edge (translateY(100%)) and slides up
+       over the stage only when the small handle (or the Patterns action) is
+       pressed, so the chart keeps maximum height the whole time. */
+    #kx-pattern-shelf{position:absolute;left:0;right:0;bottom:0;z-index:30;display:flex;flex-direction:column;max-height:min(52%,440px);overflow:hidden;border-top:1px solid var(--border-subtle);border-left:1px solid var(--border-subtle);border-right:1px solid var(--border-subtle);border-radius:16px 16px 0 0;background:linear-gradient(180deg,var(--bg-surface),var(--bg-inset));box-shadow:0 -14px 40px -18px rgba(0,0,0,.9);transform:translateY(100%);transition:transform .28s cubic-bezier(.4,0,.2,1)}
+    #kx-pattern-shelf.is-open{transform:none}
+    #kx-pattern-shelf[hidden]{display:none}
+    /* the little pop-out tab riding the bottom edge — the ONLY affordance while the
+       drawer is shut; it fades away the moment the drawer is up (the drawer carries
+       its own header + close), so it never floats over the middle of the canvas. */
+    #kx-shelf-handle{position:absolute;left:50%;bottom:0;transform:translateX(-50%);z-index:31;display:inline-flex;align-items:center;gap:7px;padding:7px 15px 8px;border:1px solid var(--border-subtle);border-bottom:none;border-radius:12px 12px 0 0;background:linear-gradient(180deg,var(--bg-surface-elevated),var(--bg-inset));color:var(--text-primary,#e5eaf2);font:inherit;font-size:12px;font-weight:700;letter-spacing:.02em;cursor:pointer;box-shadow:0 -6px 20px -14px rgba(0,0,0,.9);opacity:1;transition:color .12s ease,background .12s ease,opacity .18s ease,transform .18s ease}
+    #kx-shelf-handle:hover{color:var(--accent-rose,#ff97a8);background:linear-gradient(180deg,var(--bg-surface-elevated),var(--bg-surface))}
+    #kx-shelf-handle .kx-shelf-glyph{font-size:12px;line-height:1}
+    body.kx-shelf-open #kx-shelf-handle{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(10px)}
+    @media (prefers-reduced-motion:reduce){#kx-pattern-shelf,#kx-shelf-handle{transition-duration:.01ms!important}}
+    /* drawer header — a self-describing title bar with the live count and a close
+       affordance, so the open drawer stands on its own without the edge tab. */
+    .ps-head{display:flex;align-items:center;gap:10px;padding:9px 14px 3px;flex:0 0 auto}
+    .ps-title{font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--accent-rose,#ff97a8);white-space:nowrap;flex:0 0 auto}
+    .ps-hint{font-size:11px;color:var(--text-muted,#64748b);flex:1 1 auto;min-width:0}
+    .ps-close{flex:0 0 auto;margin-left:auto;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-surface-elevated);color:var(--text-secondary,#94a3b8);font:inherit;font-size:17px;line-height:1;cursor:pointer;transition:color .12s ease,border-color .12s ease}
+    .ps-close:hover{color:var(--accent-rose,#ff97a8);border-color:var(--accent-rose,#ff97a8)}
+    .ps-bar{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;padding:2px 14px;overflow-x:auto;scrollbar-width:none}
+    .ps-more{flex:0 0 auto;margin-left:auto;padding:5px 11px;border:1px solid var(--border-subtle);border-radius:9px;background:var(--bg-surface-elevated);color:var(--text-secondary,#94a3b8);font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;transition:border-color .12s ease,color .12s ease}
+    .ps-more:hover{color:var(--text-primary,#e5eaf2);border-color:var(--accent-cyan,#38bdf8)}
+    .ps-strip{display:flex;gap:8px;padding:2px 12px 10px;overflow-x:auto;scrollbar-width:none}
+    #kx-pattern-shelf ::-webkit-scrollbar{display:none;height:0;width:0}
+    .ps-card{flex:0 0 auto;position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;width:100px;padding:5px;border:1px solid var(--border-subtle);border-radius:10px;background:var(--bg-surface-elevated);cursor:pointer;transition:border-color .12s ease,transform 90ms ease,box-shadow .12s ease}
+    .ps-card:hover{border-color:var(--accent-cyan,#38bdf8);transform:translateY(-2px);box-shadow:0 10px 22px -14px rgba(0,0,0,.9)}
+    .ps-card.is-picked{border-color:var(--accent-emerald,#34d399);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent-emerald,#34d399) 30%,transparent)}
+    .ps-thumb{width:90px;height:66px;border-radius:7px;background:var(--bg-main);image-rendering:pixelated}
+    .ps-card-name{font-size:10px;font-weight:600;color:var(--text-secondary,#94a3b8);text-align:center;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ps-chips{display:flex;gap:5px;flex-wrap:nowrap}
+    .ps-chip{padding:4px 10px;border:1px solid var(--border-subtle);border-radius:999px;background:var(--bg-inset);color:var(--text-secondary,#94a3b8);font:inherit;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:border-color .12s ease,color .12s ease,background .12s ease}
+    .ps-chip:hover{color:var(--text-primary,#e5eaf2);border-color:var(--accent-cyan,#38bdf8)}
+    .ps-chip.is-on{color:#04101e;background:var(--accent-cyan,#38bdf8);border-color:transparent;font-weight:800}
+    .ps-search{flex:0 1 170px;min-width:120px;padding:4px 9px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-main);color:var(--text-primary,#e5eaf2);font:inherit;font-size:12px}
+    .ps-search:focus{outline:none;border-color:var(--accent-cyan,#38bdf8);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent-cyan,#38bdf8) 22%,transparent)}
+    .ps-count{font-size:11px;font-weight:700;color:var(--text-muted,#64748b);font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 auto}
+    .ps-empty{padding:16px 4px;font-size:12.5px;color:var(--text-muted,#64748b)}
+    .ps-pick{display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer}
+    .ps-fav{position:absolute;top:5px;right:5px;z-index:2;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border-subtle);border-radius:7px;background:color-mix(in srgb,var(--bg-main) 82%,transparent);color:var(--text-muted,#64748b);font-size:13px;line-height:1;padding:0;cursor:pointer;transition:color .12s ease,border-color .12s ease}
+    .ps-fav:hover,.ps-fav.is-on{color:var(--accent-amber,#fbbf24);border-color:var(--accent-amber,#fbbf24)}
+
+    /* ── STAGE — the canvas is the hero: a top-lit field framed by four rose
+       CAD registration marks, so the live viewport reads as a precision
+       instrument rather than a bare rectangle. Pointer-transparent, so it never
+       intercepts drawing. ── */
+    body.kx-shell #panel-editor .canvas-wrapper{background:radial-gradient(120% 90% at 50% 0%,color-mix(in srgb,var(--accent-cyan,#38bdf8) 8%,transparent),transparent 55%),var(--bg-main)}
+    body.kx-shell #panel-editor::before{content:"";position:absolute;inset:9px;z-index:6;pointer-events:none;opacity:.5;background:linear-gradient(var(--brand-accent,#eba6bc),var(--brand-accent,#eba6bc)) 0 0/16px 2px no-repeat,linear-gradient(var(--brand-accent,#eba6bc),var(--brand-accent,#eba6bc)) 0 0/2px 16px no-repeat,linear-gradient(var(--brand-accent,#eba6bc),var(--brand-accent,#eba6bc)) 100% 0/16px 2px no-repeat,linear-gradient(var(--brand-accent,#eba6bc),var(--brand-accent,#eba6bc)) 100% 0/2px 16px no-repeat,linear-gradient(var(--brand-accent,#eba6bc),var(--brand-accent,#eba6bc)) 0 100%/16px 2px no-repeat,linear-gradient(var(--brand-accent,#eba6bc),var(--brand-accent,#eba6bc)) 0 100%/2px 16px no-repeat,linear-gradient(var(--brand-accent,#eba6bc),var(--brand-accent,#eba6bc)) 100% 100%/16px 2px no-repeat,linear-gradient(var(--brand-accent,#eba6bc),var(--brand-accent,#eba6bc)) 100% 100%/2px 16px no-repeat}
+
+    /* ── STATUS BAR — keep telemetry readable, never collapse to "RE…" ── */
+    body.kx-shell #status-bar{font-size:11px;gap:18px}
+    body.kx-shell .status-left{flex:1 1 auto;min-width:0;gap:14px;overflow-x:auto;scrollbar-width:none}
+    body.kx-shell .status-right{flex:0 1 auto;min-width:0;gap:14px;overflow-x:auto;scrollbar-width:none}
+    body.kx-shell .status-left::-webkit-scrollbar,body.kx-shell .status-right::-webkit-scrollbar{display:none}
+    body.kx-shell .status-left>span,body.kx-shell .status-right>span,body.kx-shell .status-right>a{flex:0 0 auto;white-space:nowrap;overflow:visible;text-overflow:clip}
+    /* the merged Studio link is the single project entry point in the status bar (no
+       more "Studio | Studio"); the decorative "Made with love" line is the first
+       thing to give when space is tight, so machine + gauge telemetry never clips. */
+    body.kx-shell .status-right .kx-studio-link{color:var(--accent-cyan,#38bdf8);font-weight:700;border-bottom:1px solid transparent}
+    body.kx-shell .status-right .kx-studio-link:hover{border-bottom-color:var(--accent-cyan,#38bdf8)}
+    body.kx-shell .status-right .kx-studio-resume{color:inherit}
+    body.kx-shell .status-right>.status-love{flex:0 1 auto;min-width:0;color:var(--text-muted,#64748b);overflow:hidden;text-overflow:ellipsis}
+
+    /* ── focus + motion + contrast ── */
+    #command-bar :focus-visible,#context-bar :focus-visible,#surface-rail :focus-visible,#subtab-strip :focus-visible,#right-sidebar .insp-tab:focus-visible,#kx-pattern-shelf :focus-visible,#right-sidebar .layer-row :focus-visible{outline:2px solid var(--accent-cyan,#38bdf8);outline-offset:2px}
+    @media (max-width:960px){#command-bar{gap:8px;padding:5px 10px}.cb-surface-name,.mode-btn-text,.cb-act--ghost .cb-act-text,.cb-act--patterns .cb-act-text{display:none}.sr-btn--ghost .sr-label{display:none}.ctx-pattern-text{display:none}}
+    /* Phones: the command bar can't hold identity + setup + actions on one line,
+       so setup scrolls under a two-row header and the stage keeps the chrome. */
+    @media (max-width:600px){#command-bar{flex-wrap:wrap;min-height:0;padding:6px 10px}.cb-identity{flex:1 1 auto}.cb-actions{flex:1 1 100%;justify-content:flex-end}.cb-setup{order:3;flex:1 1 100%;padding-top:2px}#context-bar{padding:6px 10px}#surface-rail{gap:2px;padding:4px 6px}.sr-btn{padding:6px 9px}#subtab-strip{padding-left:6px}.subtab{padding:7px 10px}}
+    /* Touch: give every shell control at least the WCAG hit target without
+       growing its visual box beyond the design. */
+    @media (pointer:coarse){.cb-act,.sr-btn,.subtab,.insp-tab,.cb-menu-item,.ps-chip,.ps-fav,.ctx-view .ctx-view-btn,.ctx-tools .ctx-tool{min-height:var(--tap)}}
+    @media (prefers-reduced-motion:reduce){.cb-act,.sr-btn,.subtab,.ctx-tool,.ctx-pattern-btn,.ctx-view-btn,.insp-tab,.cb-menu-item,.cb-project-saved,.ps-card,.ps-more,.ps-chip,.ps-fav,.layer-vis,.layer-name,.layer-lock{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+    @media (forced-colors:active){#command-bar,#context-bar,#surface-rail,#subtab-strip,.cb-menu,.sr-btn.is-active,.subtab.is-active,.ctx-pattern-btn,.cb-act{border-color:CanvasText}}
+  </style>
 </head>
 
 <body class="theme-romance">
@@ -158,11 +440,11 @@
     <div class="love-popup-content">
       <div class="love-hearts-rain" id="love-hearts-rain"></div>
       <div class="love-popup-inner">
-        <div class="love-popup-big-heart">💗</div>
-        <h2 class="love-popup-title">I LOVE YOU BENJI!!!!!</h2>
-        <p class="love-popup-subtitle">You are the best boyfriend ever!!!&nbsp;💖</p>
-        <p class="love-popup-msg">4 my cute boy<br></p>
-        <button class="love-popup-close" id="love-popup-close" type="button">i love u sm to da moon &amp; back!!! ♥ click here</button>
+        <div class="love-popup-big-heart">♥</div>
+        <h2 class="love-popup-title">For Benji, with love</h2>
+        <p class="love-popup-subtitle">A whole knitting studio, built stitch by stitch, just for you.</p>
+        <p class="love-popup-msg">Made so we can make something beautiful together.</p>
+        <button class="love-popup-close" id="love-popup-close" type="button">Thank you — back to the studio ♥</button>
       </div>
     </div>
   </div>
@@ -251,7 +533,48 @@
     })();
   </script>
 
+  <!-- Boot veil: a single opaque cover over the whole app for the instant between
+       markup and the first *settled* design frame. Without it the deferred
+       initComponents() paints the starter preset, then the recovered autosave
+       lands a beat later — the "initial design then final design" flicker. chrome
+       / app.js drop body.kx-ready once the canvas shows the one real card. -->
+  <div id="kx-boot-veil" role="status" aria-live="polite" aria-label="Loading your studio">
+    <span class="kx-boot-mark" aria-hidden="true">♥</span>
+    <span class="kx-boot-word">KNITCAT</span>
+  </div>
+
   <div id="app-container">
+    <!-- ══ COMMAND BAR — identity + setup + one action + overflow ══ -->
+    <header id="command-bar" role="banner">
+      <div class="cb-identity">
+        <span class="cb-brand" aria-label="KNITCAT">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v6M18 9v6M9 6h6M9 18h6"/></svg>
+        </span>
+        <label class="cb-project">
+          <span class="sr-only">Project name</span>
+          <input id="cb-project-name" type="text" class="cb-project-input" placeholder="Untitled project" spellcheck="false" autocomplete="off">
+          <span class="cb-project-saved" id="cb-project-saved" hidden>✓</span>
+        </label>
+      </div>
+      <div class="cb-setup">
+        <div class="cb-picker" id="cb-machine-host"></div>
+        <div class="cb-machine-spec" id="cb-machine-spec" title="Machine gauge &amp; carriage rules — pick another machine to the left">Machine settings loading…</div>
+        <button type="button" class="cb-act cb-act--ghost" id="btn-cb-machine-settings" title="Machine settings — edit gauge, pitch &amp; carriage rules" aria-label="Machine settings"><span class="cb-act-glyph" aria-hidden="true">⚙</span><span class="cb-act-text">Machine</span></button>
+        <div class="cb-modes" id="cb-modes"></div>
+      </div>
+      <div class="cb-actions">
+        <button type="button" class="cb-surface-chip" id="cb-surface-chip" aria-label="Switch view" title="Cycle to the next view">
+          <span class="cb-surface-glyph" id="cb-surface-glyph" aria-hidden="true">✎</span><span class="cb-surface-name" id="cb-surface-name">Chart</span>
+        </button>
+        <button type="button" class="cb-act cb-act--patterns" id="cb-act-patterns" title="Pattern library — presets, math studio, image dither, card photo"><span class="cb-act-glyph" aria-hidden="true">✦</span><span class="cb-act-text">Patterns</span></button>
+        <button type="button" class="cb-act cb-act--ghost" id="cb-act-command" title="Search every command (Ctrl / ⌘ + K)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span class="cb-act-text">Search</span><kbd class="cb-kbd">⌘K</kbd></button>
+        <div id="cb-health-slot"></div>
+        <button type="button" class="cb-act cb-act--primary" id="cb-act-primary"><span class="cb-act-glyph" id="cb-act-glyph" aria-hidden="true">✓</span><span class="cb-act-text" id="cb-act-text">Check</span></button>
+        <button type="button" class="cb-act cb-act--icon" id="cb-act-overflow" aria-haspopup="menu" aria-expanded="false" aria-label="All actions" title="All actions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+      </div>
+    </header>
+    <!-- ══ CONTEXT BAR — real tools for the current moment (chrome moves them in) ══ -->
+    <div id="context-bar" role="toolbar" aria-label="Context tools"><div class="ctx-inner" id="ctx-inner"></div><div id="ctx-park" hidden></div></div>
     <!-- Top Engineering Header Navigation -->
     <header id="main-header">
       <div class="brand-section">
@@ -338,6 +661,32 @@
 
     <!-- Main Workbench Area -->
     <div id="workbench">
+      <!-- ══ VIEW TOOLBAR — every workspace view as ONE flat, scrollable bar.
+           chrome.js moves this whole rail to the top of the workspace, so Chart /
+           Punchcard / CNC / Yarn / Schedule / Kinematics / Clothes / Studio… read as
+           a single row of "pick a view" buttons (no surface → sub-view nesting). ══ -->
+      <nav id="surface-rail" aria-label="Workspace views">
+        <button type="button" class="sr-btn is-active" data-view="editor" title="Chart (1)" aria-label="Chart view, shortcut 1"><span class="sr-glyph" aria-hidden="true">✎</span><span class="sr-label">Chart</span></button>
+        <button type="button" class="sr-btn" data-view="punchcard" title="Punchcard (2)" aria-label="Punchcard view, shortcut 2"><span class="sr-glyph" aria-hidden="true">▦</span><span class="sr-label">Punchcard</span></button>
+        <button type="button" class="sr-btn" data-view="cnc" title="CNC Toolpath (3)" aria-label="CNC toolpath view, shortcut 3"><span class="sr-glyph" aria-hidden="true">⌁</span><span class="sr-label">CNC Toolpath</span></button>
+        <button type="button" class="sr-btn" data-view="yarn" title="Yarn physics simulation (4)" aria-label="Yarn simulation view, shortcut 4"><span class="sr-glyph" aria-hidden="true">◎</span><span class="sr-label">Yarn Sim</span></button>
+        <button type="button" class="sr-btn" data-view="schedule" title="Carriage pass schedule (5)" aria-label="Schedule view, shortcut 5"><span class="sr-glyph" aria-hidden="true">≣</span><span class="sr-label">Schedule</span></button>
+        <button type="button" class="sr-btn" data-view="brother" title="Brother KH-830 kinematics (6)" aria-label="Kinematics view, shortcut 6"><span class="sr-glyph" aria-hidden="true">⊘</span><span class="sr-label">Kinematics</span></button>
+        <button type="button" class="sr-btn" data-view="clothes" title="Clothes planner (7)" aria-label="Clothes view, shortcut 7"><span class="sr-glyph" aria-hidden="true">✂</span><span class="sr-label">Clothes</span></button>
+        <button type="button" class="sr-btn" data-view="project" title="Studio · Project KnitScript (8)" aria-label="Project view, shortcut 8"><span class="sr-glyph" aria-hidden="true">¶</span><span class="sr-label">Project</span></button>
+        <button type="button" class="sr-btn" data-view="fit" title="Studio · Fit engine (9)" aria-label="Fit view, shortcut 9"><span class="sr-glyph" aria-hidden="true">⊿</span><span class="sr-label">Fit</span></button>
+        <button type="button" class="sr-btn" data-view="yarnlab" title="Studio · Yarn lab" aria-label="Yarn lab view"><span class="sr-glyph" aria-hidden="true">◉</span><span class="sr-label">Yarn Lab</span></button>
+        <button type="button" class="sr-btn" data-view="compiler" title="Studio · Compiler" aria-label="Compiler view"><span class="sr-glyph" aria-hidden="true">⚙</span><span class="sr-label">Compiler</span></button>
+        <button type="button" class="sr-btn" data-view="reverse" title="Studio · Reverse engineer" aria-label="Reverse engineer view"><span class="sr-glyph" aria-hidden="true">⇄</span><span class="sr-label">Reverse</span></button>
+        <button type="button" class="sr-btn" data-view="production" title="Studio · Production" aria-label="Production view"><span class="sr-glyph" aria-hidden="true">⏣</span><span class="sr-label">Production</span></button>
+        <span class="sr-divider" aria-hidden="true"></span>
+        <button type="button" class="sr-btn sr-btn--ghost" id="sr-console" title="Console" aria-label="Developer console"><span class="sr-glyph" aria-hidden="true">▸_</span><span class="sr-label">Console</span></button>
+        <button type="button" class="sr-btn sr-btn--ghost" id="sr-settings" title="Settings" aria-label="Settings"><span class="sr-glyph" aria-hidden="true">⚙</span><span class="sr-label">Settings</span></button>
+      </nav>
+      <!-- The former left "Setup Rail" is retired: the machine picker + its live
+           spec chip + the settings gear now live in the command bar (#cb-machine-host
+           / #cb-machine-spec / #btn-cb-machine-settings), so an empty 172px column
+           no longer eats the workspace. ══ -->
       <!-- Left Toolbar (Tool Palette) -->
       <aside id="left-toolbar" aria-label="Tool palette">
         <!-- Professional tool palette: every group is an accessible submenu that
@@ -570,6 +919,8 @@
 
       <!-- Center Viewport Workspace -->
       <main id="viewport-workspace" tabindex="-1">
+        <!-- ══ SUB-TAB STRIP — sub-views of the active surface (chrome fills this) ══ -->
+        <nav id="subtab-strip" role="tablist" aria-label="Sub-views"></nav>
         <!-- Viewport Tabs Bar -->
         <nav class="tab-bar" role="tablist" aria-label="Workspace views" aria-orientation="horizontal">
           <button class="tab-btn active" data-tab="editor" role="tab" id="tab-btn-editor" aria-controls="panel-editor" aria-selected="true" tabindex="0">
@@ -1196,6 +1547,9 @@
                 <button class="btn-action" id="btn-clothes-symmetry" style="flex: 1; justify-content: center;" title="Mirror stitches left/right across the centre" aria-label="Toggle symmetry mirror">⇋ Symmetry</button>
                 <button class="btn-action" id="btn-clothes-clear" style="flex: 1; justify-content: center;" title="Erase all drawn stitches" aria-label="Clear drawn stitches">Clear</button>
               </div>
+              <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <button class="btn-action" id="btn-clothes-use-editor-pattern" style="flex: 1; justify-content: center;" title="Knit the pattern you drew in the editor into this garment's fabric" aria-label="Use editor pattern on this garment">✦ Use Editor Pattern</button>
+              </div>
               <p style="font-size: 10px; color: #64748b; line-height: 1.5; margin: 0 0 6px;">
                 Turn on <b>Draw</b>, then click or drag on the grid to knit contrast stitches. Right-drag erases.
                 <b>Symmetry</b> mirrors each stitch across the centre line. Grid squares are real stitches sized to your gauge.
@@ -1327,6 +1681,15 @@
 
       <!-- Right Sidebar: Diagnostics, Specs & Quick Actions -->
       <aside id="right-sidebar">
+        <!-- ══ INSPECTOR — the right column, tabbed by chrome (Health·Spec·Layers·Notes) ══ -->
+        <div class="insp-tabs" id="insp-tabs" role="tablist" aria-label="Inspector sections">
+          <button type="button" class="insp-tab is-active" data-insp="health" role="tab" aria-selected="true" tabindex="0">Health</button>
+          <button type="button" class="insp-tab" data-insp="spec" role="tab" aria-selected="false" tabindex="-1">Spec</button>
+          <button type="button" class="insp-tab" data-insp="layers" role="tab" aria-selected="false" tabindex="-1">Layers</button>
+          <button type="button" class="insp-tab" data-insp="notes" role="tab" aria-selected="false" tabindex="-1">Notes</button>
+        </div>
+        <div class="insp-host" id="insp-layers-host">Layers appear here when the structure panel is docked.</div>
+        <div class="insp-host" id="insp-notes-host">Annotation notes appear here.</div>
         <!-- Design Health is now the ONE advisory card: the live machine check,
              the fleet fit and the expert fixes all read from the same verdict as
              the modal, so the sidebar and the report can never disagree. -->
@@ -1346,47 +1709,14 @@
             <div class="diag-ok">✓ No carriage conflicts detected.</div>
           </div>
           <div class="kx-health-acts">
-            <button type="button" class="btn-action" id="btn-health-advisor" title="Full expert reading with one-click fixes">Full advisor</button>
-            <button type="button" class="btn-action btn-primary" id="btn-health-universe" title="How close is this card to working on every machine?">Machine universe</button>
+            <button type="button" class="btn-action" id="btn-health-advisor" title="Full expert reading with one-click fixes"><span class="kx-act-glyph" aria-hidden="true">⌕</span>Full advisor</button>
+            <button type="button" class="btn-action btn-primary" id="btn-health-universe" title="How close is this card to working on every machine?"><span class="kx-act-glyph" aria-hidden="true">✧</span>Machine universe</button>
           </div>
         </div>
 
-        <!-- Machine Dimensions & Pitch -->
-        <div class="sidebar-panel">
-          <div class="sidebar-title">Gauge & Metrics</div>
-          <div class="property-row">
-            <span class="property-label">Needle Pitch (X):</span>
-            <span class="property-value" id="spec-pitch-x">4.50 mm</span>
-          </div>
-          <div class="property-row">
-            <span class="property-label">Row Pitch (Y):</span>
-            <span class="property-value" id="spec-pitch-y">5.08 mm</span>
-          </div>
-          <div class="property-row">
-            <span class="property-label">Hole Diameter:</span>
-            <span class="property-value" id="spec-hole-dia">3.20 mm</span>
-          </div>
-          <div class="property-row">
-            <span class="property-label">Tractor Sprocket:</span>
-            <span class="property-value" id="spec-sprock-dia">3.50 mm</span>
-          </div>
-          <div class="property-row">
-            <span class="property-label">Carriage Rules:</span>
-            <span class="property-value" id="spec-carriage-rule">Brother Separated (L/K)</span>
-          </div>
-          <div class="property-row">
-            <span class="property-label">Needle Bed:</span>
-            <span class="property-value" id="spec-beds">Single bed</span>
-          </div>
-          <div class="property-row">
-            <span class="property-label">Bed Capacity:</span>
-            <span class="property-value" id="spec-bed-width">200 needles</span>
-          </div>
-          <div class="property-row">
-            <span class="property-label">Safe Float:</span>
-            <span class="property-value" id="spec-max-float">up to 9 sts</span>
-          </div>
-        </div>
+        <!-- Machine gauge, pitch and carriage rules now live in the command bar
+             (#cb-machine-spec + #btn-cb-machine-settings), so the former duplicate
+             "Gauge & Metrics" sidebar panel was retired here. -->
 
         <!-- Quick Exports -->
         <div class="sidebar-panel">
@@ -1429,7 +1759,7 @@
       <div class="status-right">
         <span id="status-profile">KNITCAT</span>
         <a class="status-docs-link" href="knitting-machine-lace-guide.html" title="Guide: eyelets, transfers, punchcards & single-bed carriage mechanics">Lace guide</a>
-        <span>Made with love for my beautiful cute boyfriend Benji 💗</span>
+        <span class="status-love">Made with love for Benji ♥</span>
       </div>
     </footer>
   </div>
@@ -1727,6 +2057,7 @@
                 <option value="double-bed">Double bed</option>
               </select>
               <label class="presets-fav-label"><input type="checkbox" id="presets-fav-only" /> &#9733; Favourites</label>
+              <label class="presets-fav-label"><input type="checkbox" id="presets-fits-only" /> &#10003; Fits my machine</label>
             </div>
           </div>
         </div>
@@ -1778,6 +2109,8 @@
         
         <div class="quick-exports">
           <button class="btn-action" id="btn-export-ayab">AYAB Format</button>
+          <button class="btn-action" id="btn-export-passap" title="Export the card as a Passap E6000 two-bed (Front/Back) pattern — every needle punched on exactly one bed">Passap Double-Bed</button>
+          <button class="btn-action" id="btn-export-knitmate" title="Export the card as a KnitMate two-bed punch-map — one character per needle carrying all four states (front, back, both, dropped)">KnitMate Two-Bed</button>
           <button class="btn-action" id="btn-send-machine" title="Stream the AYAB bitstream straight to a connected machine over Web Serial (Chrome/Edge)">Send to Machine &#8647;</button>
           <button class="btn-action" id="btn-export-brother">Brother Disk</button>
           <button class="btn-action" id="btn-export-xml">XML Exchange</button>
@@ -1789,6 +2122,10 @@
       </div>
     </div>
   </div>
+
+  <!-- ══ Overflow menu (populated by chrome.js) + drawer host ══ -->
+  <div id="cb-overflow-menu" class="cb-menu" role="menu" hidden></div>
+  <div id="kx-drawer-host"></div>
 
   <!-- Main ES6 Application Script -->
   <script type="module" src="js/app.js?v=__BUILD__"></script>

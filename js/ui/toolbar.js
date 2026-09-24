@@ -18,13 +18,18 @@
  * take the editor down — the buttons just stay all-open (the CSS default).
  */
 
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/toolbar');
+
 const STORE_KEY = 'knitcad.toolbar.open.v1';
 
 function readStore() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     return raw ? JSON.parse(raw) : null;
-  } catch (_) {
+  } catch (err) {
+    log.warn('the saved toolbar layout was corrupt — falling back to the default open state', { error: err?.message });
     return null;
   }
 }
@@ -32,8 +37,9 @@ function readStore() {
 function writeStore(map) {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(map));
-  } catch (_) {
+  } catch (err) {
     /* private mode / quota — the layout simply won't persist, which is fine */
+    log.debug('the toolbar layout could not be persisted (private mode or quota)', { error: err?.message });
   }
 }
 

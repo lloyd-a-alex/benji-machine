@@ -3,6 +3,9 @@
  */
 
 import { KnitTopologyNetwork, STITCH_TYPE } from '../math/knit-topology.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/yarn-simulator');
 
 // Set to true via window.__KNITCAT_DEBUG__ to emit per-frame timing logs.
 const DEBUG = typeof window !== 'undefined' ? !!window.__KNITCAT_DEBUG__ : false;
@@ -11,6 +14,7 @@ export class YarnSimulator {
   constructor(canvasElement, options = {}) {
     this.canvas = canvasElement;
     this.ctx = canvasElement.getContext('2d');
+    if (!this.ctx) log.error('yarn simulator 2D context is unavailable — the fabric cannot render', { hasElement: !!canvasElement });
     this.dpr = 1;
 
     this.rows = options.rows || 24;
@@ -69,9 +73,9 @@ export class YarnSimulator {
       this.centerFabric();
       this.render();
       this.startAnimationLoop();
-      if (DEBUG) console.log(`[KNITCAT][Yarn] updateFabric completed in ${Math.round(performance.now() - t0)}ms (${this.rows}×${this.cols})`);
+      if (DEBUG) log.debug(`updateFabric completed in ${Math.round(performance.now() - t0)}ms`, { rows: this.rows, cols: this.cols });
     } catch (err) {
-      console.error('[KNITCAT][Yarn] updateFabric error:', err);
+      log.logError('yarn fabric update failed', err);
     }
   }
 
@@ -148,7 +152,7 @@ export class YarnSimulator {
     this.wake();
     this.centerFabric();
     this.render();
-    if (DEBUG) console.log('[KNITCAT][Yarn] Fabric mounting reset to needle-bed anchors');
+    if (DEBUG) log.debug('fabric mounting reset to needle-bed anchors');
   }
 
   centerFabric() {
@@ -360,7 +364,7 @@ export class YarnSimulator {
         }
       }
     } catch (err) {
-      console.warn('[KNITCAT][Yarn] render error:', err);
+      log.logError('yarn render failed', err);
     } finally {
       ctx.restore();
     }

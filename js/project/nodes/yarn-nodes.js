@@ -12,6 +12,9 @@
  */
 
 import { toCm, toNumber, ceilToMultiple } from '../units.js';
+import { logger } from '../../core/logging.js';
+
+const log = logger('project/nodes/yarn-nodes');
 
 /** Centimetres of yarn consumed per square centimetre of fabric, by weight. */
 export const YARN_PER_CM2 = Object.freeze({
@@ -93,5 +96,8 @@ function coverageFor(yarns, s) {
     if (YARN_PER_CM2[w]) return YARN_PER_CM2[w];
   }
   void s;
+  // No yarn carried a weight we know, so yardage is estimated from a generic dk
+  // coverage. Say so: a wrong ball count traces straight back to this fallback.
+  log.debug('no known yarn weight — estimating yardage with the default coverage factor');
   return DEFAULT_COVERAGE;
 }

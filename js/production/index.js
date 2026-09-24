@@ -75,6 +75,10 @@ export {
   planNarrative, PLAN_TRANSITIONS
 } from './plan.js';
 
+export {
+  buildDesignQuote, resolveDesignChart, chartColorHistogram, renderQuoteSheet
+} from './quote.js';
+
 import { computePlan } from './plan.js';
 import { batchSummary } from './batch.js';
 import { openOrders } from './order.js';

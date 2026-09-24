@@ -20,6 +20,11 @@
 
 import { PATTERN_PRESETS } from './preset-library.js';
 import { classify, buildTaxonomy, FAMILIES, BED_LABELS } from './preset-catalog.js';
+import { fitPreset } from './preset-feasibility.js';
+import { MACHINE_PROFILES } from '../machine/profiles.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('presets/presets-browser');
 
 const FAV_KEY = 'knitcad.presetFavourites';
 
@@ -34,7 +39,8 @@ export function loadFavourites() {
   try {
     const raw = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
     return new Set(Array.isArray(raw) ? raw : []);
-  } catch {
+  } catch (err) {
+    log.warn('the saved favourites were corrupt — starting with none', { error: err?.message });
     return new Set();
   }
 }
@@ -42,8 +48,9 @@ export function loadFavourites() {
 export function saveFavourites(set) {
   try {
     localStorage.setItem(FAV_KEY, JSON.stringify([...set]));
-  } catch {
+  } catch (err) {
     /* private mode / quota: favourites simply do not persist, the UI still works */
+    log.debug('favourites could not be persisted (private mode or quota)', { error: err?.message });
   }
 }
 
@@ -73,6 +80,7 @@ export function openPresetsBrowser(app, { favourites = loadFavourites() } = {}) 
     families: document.getElementById('presets-families'),
     bed: document.getElementById('presets-bed'),
     favOnly: document.getElementById('presets-fav-only'),
+    fitsOnly: document.getElementById('presets-fits-only'),
     count: document.getElementById('presets-count'),
     live: document.getElementById('presets-live')
   };
@@ -87,13 +95,21 @@ export function openPresetsBrowser(app, { favourites = loadFavourites() } = {}) 
     p.__hay = haystack(p);
   });
 
-  const state = { query: '', family: 'all', bed: 'all', favOnly: false };
+  // Fit every preset against the machine the user currently has selected, ONCE per open.
+  // `fitPreset` is memoised, but pre-warming here keeps the render loop pure-reading and
+  // means the badge and the "fits my machine" filter can never disagree mid-scroll.
+  const profile = app.currentProfile || MACHINE_PROFILES.brother_standard_24;
+  const fits = new Map();
+  for (const p of presets) fits.set(p.id, fitPreset(p, profile));
+
+  const state = { query: '', family: 'all', bed: 'all', favOnly: false, fitsOnly: false };
 
   function matches(preset) {
     if (state.family !== 'all' && preset.__classification.family !== state.family) return false;
     if (state.bed === 'single-bed' && preset.__classification.bed === 'double-bed') return false;
     if (state.bed === 'double-bed' && preset.__classification.bed === 'single-bed') return false;
     if (state.favOnly && !favourites.has(preset.id)) return false;
+    if (state.fitsOnly && (fits.get(preset.id) || {}).status !== 'feasible') return false;
     if (state.query && !preset.__hay.includes(state.query)) return false;
     return true;
   }
@@ -137,9 +153,16 @@ export function openPresetsBrowser(app, { favourites = loadFavourites() } = {}) 
     const c = preset.__classification;
     const fav = favourites.has(preset.id);
     const passes = preset.mode === 'lace' && preset.passesPerLaceRow ? `${preset.passesPerLaceRow}\u00d7/row` : '';
+    const fit = fits.get(preset.id) || { status: 'unknown', reasons: [] };
+    const fitIcon = { feasible: '\u2713', 'needs-attention': '\u26a0', 'not-feasible': '\u2715', unknown: '?' }[fit.status] || '?';
+    const fitTitle =
+      fit.status === 'feasible'
+        ? `Knits cleanly on the ${profile.name}`
+        : `On the ${profile.name}: ${(fit.reasons || []).join('; ') || fit.status}`;
     return `<div class="preset-card${fav ? ' favourite' : ''}" data-preset="${esc(preset.id)}"
         role="button" tabindex="0" aria-label="Load ${esc(preset.name)}">
         <button class="preset-fav${fav ? ' on' : ''}" aria-pressed="${fav}" aria-label="Toggle favourite" data-fav="${esc(preset.id)}">\u2605</button>
+        <span class="preset-fit fit-${esc(fit.status)}" title="${esc(fitTitle)}" aria-label="${esc(fitTitle)}">${fitIcon}</span>
         <canvas class="preset-thumb" width="132" height="96"></canvas>
         <div class="preset-title">${esc(preset.name)}</div>
         <div class="preset-meta">
@@ -152,8 +175,8 @@ export function openPresetsBrowser(app, { favourites = loadFavourites() } = {}) 
 
   function render() {
     const visible = presets.filter(matches);
-    if (els.count) els.count.textContent = `${visible.length} pattern${visible.length === 1 ? '' : 's'}`;
-    if (els.live) els.live.textContent = `${visible.length} patterns shown`;
+    if (els.count) els.count.textContent = `${visible.length} pattern${visible.length === 1 ? '' : 's'} \u00b7 ${profile.name}`;
+    if (els.live) els.live.textContent = `${visible.length} patterns shown, fit checked against ${profile.name}`;
 
     const taxonomy = buildTaxonomy(visible);
     if (!taxonomy.length) {
@@ -240,6 +263,13 @@ export function openPresetsBrowser(app, { favourites = loadFavourites() } = {}) 
     els.favOnly.checked = state.favOnly;
     els.favOnly.onchange = () => {
       state.favOnly = els.favOnly.checked;
+      render();
+    };
+  }
+  if (els.fitsOnly) {
+    els.fitsOnly.checked = state.fitsOnly;
+    els.fitsOnly.onchange = () => {
+      state.fitsOnly = els.fitsOnly.checked;
       render();
     };
   }

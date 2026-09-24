@@ -17,11 +17,23 @@ import { join } from 'node:path';
 const ROOT = process.cwd();
 const VERSION = process.env.BUILD || new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
 
+let errors = 0;
+function fail(msg, err) {
+  errors++;
+  console.error(`[bust-cache] ${msg}`, err && err.message ? err.message : err);
+}
+
 function walk(dir, filter, out = []) {
   for (const entry of readdirSync(dir)) {
     if (entry === 'node_modules' || entry === '.git') continue;
     const full = join(dir, entry);
-    const st = statSync(full);
+    let st;
+    try {
+      st = statSync(full);
+    } catch (err) {
+      fail(`cannot stat ${full} (broken symlink or race) — skipping`, err);
+      continue;
+    }
     if (st.isDirectory()) walk(full, filter, out);
     else if (filter(full)) out.push(full);
   }
@@ -31,11 +43,15 @@ function walk(dir, filter, out = []) {
 // 1. HTML: swap the __BUILD__ token for the concrete version.
 const htmlFiles = walk(ROOT, f => f.endsWith('.html'));
 for (const file of htmlFiles) {
-  const src = readFileSync(file, 'utf8');
-  const next = src.replace(/__BUILD__/g, VERSION);
-  if (next !== src) {
-    writeFileSync(file, next);
-    console.log(`[bust-cache] versioned HTML ${file} -> v${VERSION}`);
+  try {
+    const src = readFileSync(file, 'utf8');
+    const next = src.replace(/__BUILD__/g, VERSION);
+    if (next !== src) {
+      writeFileSync(file, next);
+      console.log(`[bust-cache] versioned HTML ${file} -> v${VERSION}`);
+    }
+  } catch (err) {
+    fail(`could not version HTML ${file}`, err);
   }
 }
 
@@ -45,14 +61,22 @@ const jsFiles = walk(ROOT, f => f.endsWith('.js'));
 const SPEC_RE = /(\bfrom\s+|\bimport\s+)(['"])(\.\.?\/[^'"]*?\.js)(['"])/g;
 let touched = 0;
 for (const file of jsFiles) {
-  const src = readFileSync(file, 'utf8');
-  const next = src.replace(SPEC_RE, (_m, kw, q1, spec, q2) => {
-    const clean = spec.replace(/\?v=[^'"]*$/, ''); // idempotent
-    return `${kw}${q1}${clean}?v=${VERSION}${q2}`;
-  });
-  if (next !== src) {
-    writeFileSync(file, next);
-    touched++;
+  try {
+    const src = readFileSync(file, 'utf8');
+    const next = src.replace(SPEC_RE, (_m, kw, q1, spec, q2) => {
+      const clean = spec.replace(/\?v=[^'"]*$/, ''); // idempotent
+      return `${kw}${q1}${clean}?v=${VERSION}${q2}`;
+    });
+    if (next !== src) {
+      writeFileSync(file, next);
+      touched++;
+    }
+  } catch (err) {
+    fail(`could not version JS imports in ${file}`, err);
   }
 }
 console.log(`[bust-cache] versioned ${touched} JS file(s) with imports at v${VERSION}`);
+if (errors) {
+  console.error(`[bust-cache] finished with ${errors} error(s) — some files were NOT versioned`);
+  process.exit(1);
+}

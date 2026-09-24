@@ -2,7 +2,7 @@
  * KNITCAT V2 — the shared catalog (leaf module; imported by both the facade and the panels).
  *
  * These three constants are referenced at *module-evaluation time* by `js/v2/panels.js` (it builds
- * the launcher and the panel map as soon as it loads) *and* by `js/v2/index.js`. If they lived in
+ * the panel map and its in-dock switch as soon as it loads) *and* by `js/v2/index.js`. If they lived in
  * the facade, the panels→facade→panels import cycle would put them in the temporal dead zone when
  * the panels evaluate, crashing the whole V2 layer at boot. Hoisting only saves function
  * declarations, not `const`/template data — so the shared, eagerly-needed literals live here, in a
@@ -46,7 +46,7 @@ export const DEFAULT_KNITSCRIPT = [
 ].join('\n');
 
 /**
- * The six systems, in launcher order. Shared by the menu, the command palette and the panel dock so
+ * The six systems, in switch order. Shared by the menu, the command palette and the panel dock so
  * all three surfaces describe the same systems with the same ids and can never drift.
  */
 export const V2_SYSTEM_CATALOG = [

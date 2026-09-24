@@ -221,9 +221,19 @@ const TARGETS = [
 ];
 
 let report = '';
+let failures = 0;
 for (const [name, size, options] of TARGETS) {
-  const png = encodePng(renderIcon(size, options));
-  writeFileSync(join(ROOT, name), png);
-  report += `${name}  ${size}×${size}  ${(png.length / 1024).toFixed(1)} kB\n`;
+  try {
+    const png = encodePng(renderIcon(size, options));
+    writeFileSync(join(ROOT, name), png);
+    report += `  \u2713 ${name} (${size}\u00d7${size}, ${png.length} bytes)\n`;
+  } catch (err) {
+    failures++;
+    console.error(`[generate-icons] could not render/write ${name} (${size}\u00d7${size}): ${err && err.message ? err.message : err}`);
+  }
 }
 process.stdout.write(report);
+if (failures) {
+  console.error(`[generate-icons] ${failures} of ${TARGETS.length} icon(s) failed \u2014 the PWA may ship incomplete`);
+  process.exit(1);
+}

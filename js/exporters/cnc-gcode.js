@@ -13,6 +13,12 @@
 
 import { calculateCardDimensions } from '../machine/profiles.js';
 import { optimizeToolpath, orderColumnSweep, pathLengthMm } from '../math/tsp-path.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('exporters/cnc-gcode');
+
+/** Geometry fields the toolpath maths depends on — a missing one becomes a NaN axis. */
+const REQUIRED_GEOMETRY = ['pitchX', 'pitchY', 'holeDiameter', 'sprocketDiameter', 'sprocketPitchY', 'marginSide', 'sprocketToFirstHole', 'marginTopBottom', 'cardWidth'];
 
 export class CncGcodeExporter {
   constructor(options = {}) {
@@ -42,6 +48,13 @@ export class CncGcodeExporter {
     if (!profile || typeof profile !== 'object') {
       throw new TypeError('CncGcodeExporter.generateGCode requires a machine profile.');
     }
+    const badFields = REQUIRED_GEOMETRY.filter((k) => !Number.isFinite(profile[k]));
+    if (badFields.length) {
+      // A missing pitch/diameter silently becomes NaN coordinates a real machine would
+      // plunge to absurd positions — surface exactly which fields are broken.
+      log.error('machine profile is missing non-numeric geometry fields, G-code will be malformed', { profile: profile.name || profile.id, badFields });
+    }
+    if (!Array.isArray(cardMatrix) || !cardMatrix.length) log.warn('generateGCode given an empty card matrix');
     let cols = cardMatrix[0]?.length || 24;
     // Machine-specific physical leader (Brother 7 vs Silver Reed 5 reading rows)
     // makes the drilled card positionally different between machines.
@@ -103,6 +116,7 @@ export class CncGcodeExporter {
         : patternPoints;
       orderedHoles = [...orderColumnSweep(sprocketPoints), ...orderedPattern];
     }
+    log.debug('generated toolpath', { holes: orderedHoles.length, rapidMm: Number(pathLengthMm(orderedHoles).toFixed(1)), mode: this.options.machineType });
 
     // 3. Assemble G-Code program
     const gcode = [];

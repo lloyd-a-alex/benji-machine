@@ -32,12 +32,16 @@ export { punchcardBackend } from './backends/punchcard.js';
 export { dxfBackend } from './backends/dxf.js';
 export { gcodeBackend } from './backends/gcode.js';
 export { manufacturingBackend } from './backends/manufacturing.js';
+export { ayabBackend, csvBackend, dakBackend, binaryBackend, passapBackend, knitmateBackend, CARD_BACKENDS, CARD_BACKEND_IDS } from './backends/cards.js';
 
 import { deriveIr } from './derive.js';
 import { validateIr, totalRows, countOperations } from './ir.js';
 import { optimiseIr } from './optimise/index.js';
 import { verifyIr, summarizeVerification } from './verify/index.js';
 import { runBackends, DEFAULT_OUTPUTS, BACKEND_IDS } from './backends/index.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('compiler');
 
 /**
  * @typedef {object} CompileReport
@@ -69,12 +73,15 @@ export function compileProject(project, options = {}) {
   try {
     ir = deriveIr(project, { pieces: options.pieces, skipFit: options.skipFit });
   } catch (e) {
+    log.logError('compiler derive stage failed', e, { context: { stage: 'derive' } });
     return emptyReport(`derive failed: ${e && e.message ? e.message : e}`, ['derive'], wantOutputs);
   }
 
   try {
     validateIr(ir);
   } catch (e) {
+    // A structurally invalid IR is a genuine programming error, not bad user data.
+    log.logError('compiler produced an invalid IR', e, { context: { stage: 'validate', errors: e && e.errors } });
     return emptyReport(`invalid IR: ${e && e.message ? e.message : e}`, ['validate'], wantOutputs, ir);
   }
 
@@ -85,6 +92,7 @@ export function compileProject(project, options = {}) {
       ir = opt.ir;
       optimisation = { chosen: opt.chosen, frontier: opt.frontier, candidates: opt.candidates, changes: opt.changes, metrics: opt.metrics };
     } catch (e) {
+      log.logError('optimise stage threw — continuing with the un-optimised IR', e, { context: { stage: 'optimise' } });
       errors.push(`optimise skipped: ${e && e.message ? e.message : e}`);
     }
   }
@@ -97,6 +105,7 @@ export function compileProject(project, options = {}) {
       summary = summarizeVerification(verification);
       ir.checks = verification;
     } catch (e) {
+      log.logError('verify stage threw — skipping feasibility checks', e, { context: { stage: 'verify' } });
       errors.push(`verify skipped: ${e && e.message ? e.message : e}`);
     }
   }
@@ -105,6 +114,8 @@ export function compileProject(project, options = {}) {
     project, quantity: options.quantity, currency: options.currency
   });
   const { results: outputs, errors: backendErrors } = runBackends(ir, wantOutputs, backendOptions);
+  // runBackends already logs each backend failure at the source; here we only fold them
+  // into the report's flat error list so `ok` reflects them.
   for (const [id, msg] of Object.entries(backendErrors)) errors.push(`backend ${id}: ${msg}`);
 
   return {

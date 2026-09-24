@@ -20,11 +20,14 @@
  */
 
 import { renderThumbnail, previewMatrix } from './thumbnail.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/taskbar');
 
 const BAR_ID = 'kx-taskbar';
 const STYLE_ID = 'kx-taskbar-style';
 const POP_ID = 'kx-taskbar-pop';
-const THUMB = 46;         // px square of each taskbar thumbnail
+const THUMB = 38;         // px square of each taskbar thumbnail
 export const MAX_TASKS = 24; // cap so a huge library can't bloat the bar
 
 /**
@@ -65,26 +68,25 @@ function injectStyles() {
   style.id = STYLE_ID;
   style.textContent = `
 #kx-taskbar{position:fixed;left:0;right:0;bottom:0;z-index:8600;display:flex;align-items:center;gap:8px;
-  padding:6px 10px;min-height:60px;box-sizing:border-box;
+  padding:3px 8px;min-height:52px;box-sizing:border-box;
   background:linear-gradient(180deg,color-mix(in srgb,var(--bg-surface,#0f1830) 78%,transparent),var(--bg-surface,#0f1830));
   backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--border-subtle,#24406e);
   box-shadow:0 -10px 30px -18px rgba(0,0,0,.8);font:11px/1.3 var(--font-ui,system-ui,sans-serif);color:var(--text-primary)}
 #kx-taskbar[hidden]{display:none}
 /* Reserve the bar's own height so the fixed dock never hides the in-flow status bar. */
-body.kx-taskbar-on #app-container{padding-bottom:var(--kx-taskbar-h,66px);box-sizing:border-box}
+body.kx-taskbar-on #app-container{padding-bottom:var(--kx-taskbar-h,52px);box-sizing:border-box}
 .kx-tb-label{display:inline-flex;flex-direction:column;gap:3px;align-items:center;padding:2px 8px 2px 2px;
   border-right:1px solid var(--border-subtle);margin-right:2px;color:var(--text-muted);cursor:pointer;background:transparent}
 .kx-tb-label:hover{color:var(--text-primary)}
 .kx-tb-label .kx-tb-ico{font-size:18px;line-height:1}
 .kx-tb-scroll{display:flex;align-items:center;gap:8px;overflow-x:auto;overflow-y:hidden;flex:1 1 auto;padding:2px;scrollbar-width:thin}
 .kx-tb-scroll::-webkit-scrollbar{height:6px}
-.kx-tb-item{position:relative;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:3px;width:60px;
-  padding:4px;border:1px solid var(--border-subtle);border-radius:10px;background:var(--bg-main);cursor:pointer;transition:transform .1s,border-color .15s,background .15s}
+.kx-tb-item{position:relative;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;width:52px;
+  padding:3px;border:1px solid var(--border-subtle);border-radius:9px;background:var(--bg-main);cursor:pointer;transition:transform .1s,border-color .15s,background .15s}
 .kx-tb-item:hover{border-color:var(--accent-cyan);transform:translateY(-2px);background:color-mix(in srgb,var(--accent-cyan) 10%,var(--bg-main))}
 .kx-tb-item.active{border-color:var(--accent-cyan);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent-cyan) 45%,transparent)}
 .kx-tb-thumb{width:${THUMB}px;height:${THUMB}px;border-radius:6px;background:#0a1120;image-rendering:pixelated;display:block}
 .kx-tb-name{max-width:58px;font-size:9.5px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
-.kx-tb-empty{color:var(--text-muted);font-size:11px;padding:8px 10px;font-style:italic}
 .kx-tb-add{flex:0 0 auto;width:44px;height:54px;border-radius:10px;border:1px dashed var(--border-subtle);background:transparent;
   color:var(--text-muted);cursor:pointer;font-size:20px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
 .kx-tb-add:hover{color:var(--accent-cyan);border-color:var(--accent-cyan)}
@@ -165,13 +167,18 @@ export function createTaskbar(deps = {}) {
 
   async function refresh() {
     let projects = [];
-    try { projects = (await (deps.listProjects ? deps.listProjects() : [])) || []; } catch (_) { projects = []; }
+    try { projects = (await (deps.listProjects ? deps.listProjects() : [])) || []; } catch (err) { log.warn('the taskbar could not list saved projects — showing an empty dock', { error: err?.message }); projects = []; }
     items = projects.slice(0, MAX_TASKS);
     render();
   }
 
   function render() {
     const active = typeof deps.activeId === 'function' ? deps.activeId() : null;
+    // An empty library doesn't need a 52px footer eating the workspace: the Studio is
+    // reachable from the merged status-bar link and the command bar, so the dock hides
+    // itself until there is at least one project worth a thumbnail.
+    if (!items.length) { bar.innerHTML = ''; bar.hidden = true; closePop(); syncPad(); return; }
+    bar.hidden = false;
     bar.innerHTML = '';
     const label = doc.createElement('button');
     label.type = 'button';
@@ -183,12 +190,6 @@ export function createTaskbar(deps = {}) {
 
     const scroll = doc.createElement('div');
     scroll.className = 'kx-tb-scroll';
-    if (!items.length) {
-      const empty = doc.createElement('div');
-      empty.className = 'kx-tb-empty';
-      empty.textContent = 'No saved projects yet \u2014 snapshot the canvas or open the Studio to start one.';
-      scroll.appendChild(empty);
-    }
     for (const p of items) {
       const item = doc.createElement('button');
       item.type = 'button';

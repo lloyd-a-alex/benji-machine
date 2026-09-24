@@ -102,6 +102,9 @@ import {
 // Chart operations used by the interactive tools (smudge, soften previews,
 // region flips) so the editor never re-implements a matrix transform.
 import { smudgePath, flipRegion, invertRegion } from '../edit/chart-ops.js';
+import { logger } from '../core/logging.js';
+
+const log = logger('ui/canvas-editor');
 
 /**
  * A wand click on a big blank card would otherwise grab the whole bed and the
@@ -121,6 +124,9 @@ export class CanvasEditor {
   constructor(canvasElement, options = {}) {
     this.canvas = canvasElement;
     this.ctx = canvasElement.getContext('2d');
+    // A null 2D context means nothing will ever render and every later draw call
+    // throws — the single worst silent failure in a canvas app. Say it loudly.
+    if (!this.ctx) log.error('canvas 2D context is unavailable — the editor cannot render', { hasElement: !!canvasElement });
 
     this.rows = options.rows || 60;
     this.cols = options.cols || 24;
@@ -428,7 +434,7 @@ export class CanvasEditor {
    * painted. Pure view of `tree.tree()` — no DOM — so it is unit-testable.
    */
   historyRows() {
-    try { return this.tree.tree(); } catch (_) { return []; }
+    try { return this.tree.tree(); } catch (err) { log.debug('history tree view failed to read', { error: err?.message }); return []; }
   }
 
   /** Name the node we are standing on as a checkpoint (undoable-safe marker). */
@@ -455,12 +461,12 @@ export class CanvasEditor {
 
   /** Branches available to redo() from the current node (for a redo chooser). */
   redoChoices() {
-    try { return this.tree.redoChoices() || []; } catch (_) { return []; }
+    try { return this.tree.redoChoices() || []; } catch (err) { log.debug('redo choices failed to read', { error: err?.message }); return []; }
   }
 
   /** Compact history stats for the panel header (nodes, checkpoints, depth). */
   historyStats() {
-    try { return this.tree.stats(); } catch (_) { return { nodes: 0, branches: 0, checkpoints: 0, depth: 0, cells: 0 }; }
+    try { return this.tree.stats(); } catch (err) { log.debug('history stats failed to read', { error: err?.message }); return { nodes: 0, branches: 0, checkpoints: 0, depth: 0, cells: 0 }; }
   }
 
   _restoreNode(node) {
@@ -490,7 +496,8 @@ export class CanvasEditor {
   serializeHistory() {
     try {
       return this.tree.serialize();
-    } catch (_) {
+    } catch (err) {
+      log.logError('could not serialize the undo history', err);
       return null;
     }
   }
@@ -504,7 +511,8 @@ export class CanvasEditor {
     let tree = null;
     try {
       tree = data ? HistoryTree.deserialize(data) : null;
-    } catch (_) {
+    } catch (err) {
+      log.warn('a saved undo history was malformed and is being dropped', { error: err?.message });
       tree = null;
     }
     if (!tree) return false;
